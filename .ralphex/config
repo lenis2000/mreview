@@ -1,0 +1,4 @@
+plans_dir = docs/plans
+default_branch = main
+external_review_tool = codex
+wait_on_limit = 1h

@@ -1,7 +1,7 @@
 .PHONY: build test lint fmt clean docker-image docker-run
 
 BIN := .bin/mreview
-IMAGE := ralphex-mreview:latest
+IMAGE ?= ralphex-mreview
 RALPHEX_DK ?= $(HOME)/__code/ralphex/scripts/ralphex-dk.sh
 PLAN := docs/plans/2026-04-22-mreview-mvp.md
 
