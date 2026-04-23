@@ -160,6 +160,17 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.schedulePDFRender()
 	}
+	if matches(key, m.Keymap.FocusOutline) {
+		m.Focus = PaneOutline
+		m.CountBuf = ""
+		return m, nil
+	}
+	if matches(key, m.Keymap.FocusSource) {
+		m.Focus = PaneSource
+		m.CountBuf = ""
+		return m, nil
+	}
+
 	if m.PDFManual {
 		switch {
 		case matches(key, m.Keymap.PDFNextPage):

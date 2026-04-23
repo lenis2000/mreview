@@ -82,6 +82,10 @@ type Keymap struct {
 	// saves a bug report (PNG + similarity score + source vs OCR text)
 	// to .mreview-ocr-reports/ for later investigation.
 	OCRReport []string
+
+	// Pane focus — explicit keyboard alternatives to clicking into a pane.
+	FocusOutline []string // h — focus the outline pane
+	FocusSource  []string // l — focus the source pane
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -129,6 +133,9 @@ func DefaultKeymap() Keymap {
 		ExternalEdit: []string{"E"},
 		InlineEdit:   []string{"ctrl+e"},
 		OCRReport:    []string{"B"},
+
+		FocusOutline: []string{"h"},
+		FocusSource:  []string{"l"},
 	}
 }
 
