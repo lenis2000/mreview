@@ -87,6 +87,13 @@ func CropWithContext(d *Doc, r synctex.Region, vpad float64) ([]byte, error) {
 }
 
 // CropWithContextAtDPI is CropWithContext with an explicit render DPI.
+//
+// Column-aware cropping: if the SyncTeX region is narrower than ~55% of
+// the page width, we treat the layout as multi-column (PNAS / two-column
+// journal style) and crop horizontally to the region's column plus a
+// small side padding — otherwise both columns would render and the
+// reviewer has no idea which one the cursor refers to. Wide regions
+// (single-column papers, figures spanning the page) keep full width.
 func CropWithContextAtDPI(d *Doc, r synctex.Region, vpad, dpi float64) ([]byte, error) {
 	if d == nil {
 		return nil, fmt.Errorf("pdf: nil doc")
@@ -104,6 +111,7 @@ func CropWithContextAtDPI(d *Doc, r synctex.Region, vpad, dpi float64) ([]byte, 
 	}
 	bounds := img.Bounds()
 	scale := dpi / 72.0
+
 	y0 := int((r.Y - vpad) * scale)
 	y1 := int((r.Y + r.H + vpad) * scale)
 	if y0 < bounds.Min.Y {
@@ -115,7 +123,30 @@ func CropWithContextAtDPI(d *Doc, r synctex.Region, vpad, dpi float64) ([]byte, 
 	if y1 <= y0 {
 		return nil, fmt.Errorf("pdf: context crop degenerate after clamp")
 	}
-	rect := image.Rect(bounds.Min.X, y0, bounds.Max.X, y1)
+
+	pageWPx := bounds.Max.X - bounds.Min.X
+	x0 := bounds.Min.X
+	x1 := bounds.Max.X
+	regionWPx := int(r.W * scale)
+	if regionWPx > 0 && regionWPx*2 < pageWPx*110/100 {
+		// Region takes less than ~55% of the page width → column layout.
+		// Crop to just this column plus ~20 pt side padding so the column
+		// edges (bullet markers, inline math overflow) still render.
+		const hpadPt = 20.0
+		hpadPx := int(hpadPt * scale)
+		regionX0Px := bounds.Min.X + int(r.X*scale)
+		regionX1Px := regionX0Px + regionWPx
+		x0 = regionX0Px - hpadPx
+		x1 = regionX1Px + hpadPx
+		if x0 < bounds.Min.X {
+			x0 = bounds.Min.X
+		}
+		if x1 > bounds.Max.X {
+			x1 = bounds.Max.X
+		}
+	}
+
+	rect := image.Rect(x0, y0, x1, y1)
 	var cropped image.Image
 	type subImager interface {
 		SubImage(image.Rectangle) image.Image
