@@ -42,68 +42,15 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		return styles.OutlineMuted.Render("(no source)")
 	}
 
-	blockH := b.EndLine - b.StartLine + 1
-	if blockH < 1 {
-		blockH = 1
-	}
-	// Split remaining vertical budget between context above and below the
-	// block, biased slightly to the top so the block sits a touch lower than
-	// dead-centre — matches the way readers naturally land on a target.
-	// Estimate row cost of inline annotations on the cursor block — they
-	// share the visible-row budget with source lines, and ignoring them
-	// pushes the block off-screen when several notes pile up.
-	annRows := 0
-	for _, a := range annotations {
-		if a.BlockID == b.ID {
-			// Suppress the saved version of the annotation that's
-			// currently being edited — the live editor replaces it, so
-			// counting both double-books the row budget.
-			if editor != nil && editor.TargetID == b.ID && a.LineOffset == editor.LineOffset {
-				continue
-			}
-			annRows++
-		}
-	}
-	editorH := 0
-	if editor != nil && editor.TargetID == b.ID {
-		// Textarea rows + the trailing "[Ctrl-S submit · Ctrl-C cancel]"
-		// hint row that editorRows appends.
-		editorH = editor.TA.Height() + 1
-	}
-	ctxBudget := height - blockH - annRows - editorH
-	if ctxBudget < 0 {
-		ctxBudget = 0
-	}
-	topCtx := ctxBudget / 2
-	botCtx := ctxBudget - topCtx
-
-	// Redistribute unused after-context to before-context (and vice versa)
-	// when the block sits near the start or end of the document. Without
-	// this the last paragraph of a paper renders with empty rows below and
-	// no extra context above — the user can't see what came before the
-	// block they're sitting on.
-	maxAfter := total - b.EndLine
-	if maxAfter < 0 {
-		maxAfter = 0
-	}
-	if botCtx > maxAfter {
-		topCtx += botCtx - maxAfter
-		botCtx = maxAfter
-	}
-	maxBefore := b.StartLine - 1
-	if maxBefore < 0 {
-		maxBefore = 0
-	}
-	if topCtx > maxBefore {
-		botCtx += topCtx - maxBefore
-		topCtx = maxBefore
-	}
-
-	startLine := b.StartLine - topCtx
+	// Render a window wider than `height` so the post-render scroll step
+	// always has rows on both sides of the cursor block to choose from.
+	// Worst case is one wrapped row per source line, so `height` lines on
+	// each side suffices.
+	startLine := b.StartLine - height
 	if startLine < 1 {
 		startLine = 1
 	}
-	endLine := b.EndLine + botCtx
+	endLine := b.EndLine + height
 	if endLine > total {
 		endLine = total
 	}
@@ -170,51 +117,37 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		notesByLine[ln] = append(notesByLine[ln], a)
 	}
 
-	var out strings.Builder
-	rows := 0
-	emitRow := func(s string) bool {
-		if rows >= height {
-			return false
-		}
-		if rows > 0 {
-			out.WriteByte('\n')
-		}
-		out.WriteString(s)
-		rows++
-		return rows < height
-	}
-	emitNotes := func(forLine int) {
-		notes, ok := notesByLine[forLine]
-		if !ok {
-			return
-		}
-		for _, n := range notes {
-			for _, r := range annotationRows(n, gutterW, bodyWidth, styles) {
-				if !emitRow(r) {
-					return
-				}
-			}
+	// Render every row in the candidate range into a flat slice, tracking
+	// where the cursor block lives. Then we slice the slice to keep the
+	// block visible and roughly centred. This is more correct than the
+	// older line-budget heuristic, which mis-estimated capacity whenever
+	// soft-wrap or inline annotations multiplied the rows-per-line ratio.
+	var rendered []string
+	blockFirstRow := -1
+	blockLastRow := -1
+	pushNotes := func(forLine int) {
+		for _, n := range notesByLine[forLine] {
+			rendered = append(rendered, annotationRows(n, gutterW, bodyWidth, styles)...)
 		}
 	}
-	emitEditor := func(forLine int) {
+	pushEditor := func(forLine int) {
 		if !editorActive || editorAnchor != forLine {
 			return
 		}
-		for _, r := range editorRows(editor, gutterW, bodyWidth, styles) {
-			if !emitRow(r) {
-				return
-			}
-		}
+		rendered = append(rendered, editorRows(editor, gutterW, bodyWidth, styles)...)
 	}
 
-	// Block-level annotation header (if any) and a block-level editor
-	// render above line 1.
-	emitNotes(b.StartLine - 1)
-	emitEditor(b.StartLine - 1)
+	// Block-level header annotations and a block-level editor land above
+	// line 1.
+	pushNotes(b.StartLine - 1)
+	pushEditor(b.StartLine - 1)
 
-	for ln := startLine; ln <= endLine && rows < height; ln++ {
+	for ln := startLine; ln <= endLine; ln++ {
 		if ln-1 >= len(allLines) {
 			break
+		}
+		if ln == b.StartLine {
+			blockFirstRow = len(rendered)
 		}
 		raw := allLines[ln-1]
 		inBlock := ln >= b.StartLine && ln <= b.EndLine
@@ -230,18 +163,46 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 			gutterStyled := styles.SourceGutter.Render(gutter)
 			rowText := gutterStyled + " " + seg
 			if isCursor {
-				// Re-render the row with the outline-cursor style so the line
-				// the next `a` will annotate stands out at a glance.
 				rowText = styles.OutlineCursor.Width(width).Render(stripANSI(rowText))
 			}
-			if !emitRow(rowText) {
-				return out.String()
-			}
+			rendered = append(rendered, rowText)
 		}
-		emitNotes(ln)
-		emitEditor(ln)
+		if ln == b.EndLine {
+			blockLastRow = len(rendered) - 1
+		}
+		pushNotes(ln)
+		pushEditor(ln)
 	}
-	return out.String()
+
+	if len(rendered) <= height {
+		return strings.Join(rendered, "\n")
+	}
+
+	// Centre the cursor block in the visible window. If the block won't
+	// fit, anchor the window to its first row so we always see the start.
+	offset := 0
+	if blockFirstRow >= 0 {
+		blockRows := blockLastRow - blockFirstRow + 1
+		if blockRows >= height {
+			offset = blockFirstRow
+		} else {
+			offset = blockFirstRow - (height-blockRows)/2
+		}
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(rendered)-height {
+		offset = len(rendered) - height
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := offset + height
+	if end > len(rendered) {
+		end = len(rendered)
+	}
+	return strings.Join(rendered[offset:end], "\n")
 }
 
 // editorRows formats the live annotation textarea as a block of inline rows
