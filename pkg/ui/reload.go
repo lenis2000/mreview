@@ -25,17 +25,24 @@ type reloadMsg struct {
 }
 
 // reloadResultMsg carries the outcome of an asynchronous reload: the
-// reparsed document, freshly opened PDF / SyncTeX handles, remapped
-// sidecar, restored cursor, and any status line the build step emitted.
+// reparsed document plus freshly opened PDF / SyncTeX handles. Sidecar
+// remap and cursor resolution happen in applyReloadResult against the
+// *live* model so user edits made while the rebuild was running (new
+// annotations, reviewed toggles, navigation) survive instead of being
+// clobbered by snapshots taken at startReload time.
+//
 // Running the heavy work off the Update goroutine keeps the UI
 // responsive — the user sees a "rebuilding…" status instead of a frozen
 // pane while latexmk churns.
 type reloadResultMsg struct {
+	// gen carries the reloadGen captured by startReload. Out-of-order
+	// or superseded reloads (gen != m.reloadGen at apply time) are
+	// dropped so the model can never be rolled back to an earlier
+	// snapshot by a slow goroutine finishing late.
+	gen        int
 	newDoc     *parser.Document
-	newSidecar *persist.Sidecar
 	newPDF     *pdf.Doc
 	newSyncTeX *synctex.Index
-	newCursor  string
 	status     string
 	// buildStale is true when this reload could not produce a coherent
 	// (doc, PDF, SyncTeX) triple — either the rebuild failed or one of
@@ -53,28 +60,33 @@ func requestReload(err error) tea.Cmd {
 }
 
 // startReload sets a "rebuilding…" status and returns a tea.Cmd that
-// performs the heavy work (parse, latexmk, PDF+SyncTeX reopen, sidecar
-// remap) off the Update goroutine. When done it emits a reloadResultMsg
-// that the Update handler applies to the model. Keeping the work off
-// the main loop is important: latexmk on a real paper takes seconds and
-// freezing the TUI that long makes it look like the edit had no effect.
+// performs the heavy work (parse, latexmk, PDF+SyncTeX reopen) off the
+// Update goroutine. The result message also carries the reload
+// generation so applyReloadResult can drop superseded reloads. Sidecar
+// remap and cursor resolution are deferred to apply time so they run
+// against the live model — preserving any annotations / reviewed
+// toggles / navigation the user did while the rebuild was running.
+//
+// Keeping the work off the main loop is important: latexmk on a real
+// paper takes seconds and freezing the TUI that long makes it look
+// like the edit had no effect.
 func (m Model) startReload() (Model, tea.Cmd) {
 	if m.Doc == nil || m.Doc.File == "" {
 		m.Status = "reload: no source file"
 		return m, nil
 	}
 	path := m.Doc.File
-	oldSidecar := cloneSidecar(m.Sidecar)
-	oldCursor := m.CursorBlockID
 	oldPDF := m.PDF
 	buildCmd := ""
 	if m.Config != nil {
 		buildCmd = m.Config.BuildCmd
 	}
+	m.reloadGen++
+	gen := m.reloadGen
 	m.Status = "rebuilding…"
 
 	cmd := func() tea.Msg {
-		return performReload(path, oldSidecar, oldCursor, oldPDF, buildCmd)
+		return performReload(path, gen, oldPDF, buildCmd)
 	}
 	return m, cmd
 }
@@ -84,6 +96,12 @@ func (m Model) startReload() (Model, tea.Cmd) {
 // point) so there's no chance of closing a handle that's about to be
 // used by a lingering PDF render goroutine.
 //
+// Sidecar remap and cursor resolution run *here* (not in the
+// goroutine) against m.Sidecar / m.CursorBlockID, so any user edits
+// made during the rebuild — new annotations, reviewed toggles,
+// navigation — survive the reload. Snapshotting at startReload time
+// would silently overwrite them.
+//
 // PDF and SyncTeX are both nil-preserving: a reload that didn't
 // reproduce them (e.g. the rebuild failed) leaves the previous handles
 // in place. When r.buildStale is true the model also keeps its prior
@@ -91,12 +109,16 @@ func (m Model) startReload() (Model, tea.Cmd) {
 // the render anyway) would feed new doc line numbers into the old
 // SyncTeX index and paint a wrong crop on top of a "rebuild failed"
 // status bar.
+//
+// Stale messages (gen != m.reloadGen) are dropped: when two reloads
+// run close together, the slower older one finishing last must not
+// roll the model back to its older artefacts.
 func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
+	if r.gen != m.reloadGen {
+		return m, nil
+	}
 	if r.newDoc != nil {
 		m.Doc = r.newDoc
-	}
-	if r.newSidecar != nil {
-		m.Sidecar = r.newSidecar
 	}
 	if r.newPDF != nil {
 		m.PDF = r.newPDF
@@ -104,9 +126,20 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	if r.newSyncTeX != nil {
 		m.Synctex = r.newSyncTeX
 	}
-	if r.newCursor != "" {
-		m.CursorBlockID = r.newCursor
+
+	// Remap the *live* sidecar against the new doc. Any annotations
+	// the user added during the rebuild live in m.Sidecar.Annotations
+	// and would not be in a snapshot taken at startReload time.
+	if m.Sidecar != nil && m.Doc != nil {
+		newSidecar, detached := persist.Remap(m.Sidecar, m.Doc)
+		newSidecar.Detached = append(newSidecar.Detached, detached...)
+		RefreshRemappedAnnotations(m.Doc, newSidecar)
+		m.Sidecar = newSidecar
 	}
+	// Resolve the cursor against the *live* cursor too — if the user
+	// navigated during the rebuild, m.CursorBlockID is what they
+	// expect to stay on, not the snapshot.
+	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, m.Doc, m.Sidecar)
 	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
 	m.BuildStale = r.buildStale
 	if r.status != "" {
@@ -126,17 +159,18 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 }
 
 // performReload is the goroutine body launched by startReload. Doing
-// the full pipeline here (parse → build → reopen PDF+SyncTeX → remap)
-// keeps the Update loop responsive; we only touch the model through
-// the reloadResultMsg it returns.
-func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, oldPDF *pdf.Doc, buildCmd string) reloadResultMsg {
+// the full pipeline here (parse → build → reopen PDF+SyncTeX) keeps
+// the Update loop responsive; we only touch the model through the
+// reloadResultMsg it returns. Sidecar remap and cursor resolution are
+// intentionally deferred to applyReloadResult so they see live state.
+func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloadResultMsg {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return reloadResultMsg{status: "reload: " + err.Error()}
+		return reloadResultMsg{gen: gen, status: "reload: " + err.Error()}
 	}
 	newDoc, err := parser.Parse(src)
 	if err != nil {
-		return reloadResultMsg{status: "reload: parse: " + err.Error()}
+		return reloadResultMsg{gen: gen, status: "reload: parse: " + err.Error()}
 	}
 	newDoc.File = path
 
@@ -216,13 +250,6 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		}
 	}
 
-	// persist.Remap walks both old.Annotations and old.Detached, so we
-	// must not re-append oldSidecar.Detached here — Remap already gave
-	// previously-orphaned notes a chance to reattach.
-	newSidecar, detached := persist.Remap(oldSidecar, newDoc)
-	newSidecar.Detached = append(newSidecar.Detached, detached...)
-	RefreshRemappedAnnotations(newDoc, newSidecar)
-
 	// PDF + SyncTeX must update as a coherent pair. The render path
 	// (renderPDFForBlock) calls Index.RegionForLines(file, doc.StartLine,
 	// doc.EndLine) — feeding *new* doc line numbers into an *old* SyncTeX
@@ -256,14 +283,11 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		}
 	}
 
-	newCursor := resolveReloadCursor(oldCursor, newDoc, newSidecar)
-
 	return reloadResultMsg{
+		gen:        gen,
 		newDoc:     newDoc,
-		newSidecar: newSidecar,
 		newPDF:     newPDF,
 		newSyncTeX: newSyncTeX,
-		newCursor:  newCursor,
 		status:     status,
 		buildStale: buildStale,
 	}

@@ -132,7 +132,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if matches(key, m.Keymap.PDFManual) {
 		m.PDFManual = !m.PDFManual
 		m.CountBuf = ""
-		m.PDFImage = ""
+		// While BuildStale is true, schedulePDFRender returns nil —
+		// clearing PDFImage here would blank the pane instead of
+		// preserving the last known-good crop the way the stale-build
+		// contract promises. Only clear when a fresh render will
+		// actually replace it.
+		if !m.BuildStale {
+			m.PDFImage = ""
+		}
 		if m.PDFManual {
 			m.Status = manualPDFStatusHint(m)
 		} else {
@@ -221,9 +228,16 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.CountBuf = ""
 		// Geometry of the PDF pane changes — invalidate the cached crop and
-		// schedule a re-render at the new size.
-		m.PDFImage = ""
-		m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+		// schedule a re-render at the new size. Preserve the previous
+		// image + cache under BuildStale because schedulePDFRender is
+		// suppressed then, and blanking would contradict the
+		// "keep the last known-good crop until the next successful
+		// reload" contract. The stale crop is at old geometry and may
+		// look slightly off, but that's less jarring than an empty pane.
+		if !m.BuildStale {
+			m.PDFImage = ""
+			m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+		}
 		return m, m.schedulePDFRender()
 	}
 	if matches(key, m.Keymap.ToggleWrap) {

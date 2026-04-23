@@ -159,6 +159,14 @@ type Model struct {
 	// PDF pane keeps showing whatever PDFImage was last rendered.
 	// Cleared by the next reload that succeeds end-to-end.
 	BuildStale bool
+
+	// reloadGen is the equivalent of pdfGen for the reload pipeline:
+	// startReload bumps it, performReload captures it into the
+	// reloadResultMsg, and applyReloadResult drops messages whose gen
+	// no longer matches. This handles the "two reloads close together"
+	// race where the slower-finishing one would otherwise apply last
+	// and roll the model back to older state.
+	reloadGen int
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.

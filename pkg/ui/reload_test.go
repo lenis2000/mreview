@@ -207,8 +207,8 @@ func TestApplyReloadResult_PreservesPDFAndSyncTeXOnNil(t *testing.T) {
 	priorSynctex := m.Synctex // nil in fresh model; the invariant still
 	// holds — we assert equality of the before/after pointer.
 	nm, _ := m.applyReloadResult(reloadResultMsg{
+		gen:        m.reloadGen,
 		newDoc:     doc,
-		newSidecar: &persist.Sidecar{},
 		newPDF:     nil,
 		newSyncTeX: nil,
 		status:     "rebuild failed — ...",
@@ -232,8 +232,8 @@ func TestApplyReloadResult_BuildStalePreservesImageAndSuppressesRender(t *testin
 	m.PDFImage = sentinel
 
 	nm, cmd := m.applyReloadResult(reloadResultMsg{
+		gen:        m.reloadGen,
 		newDoc:     doc,
-		newSidecar: &persist.Sidecar{},
 		newPDF:     nil,
 		newSyncTeX: nil,
 		status:     "rebuild failed — ...",
@@ -259,8 +259,8 @@ func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
 	m.PDFImage = "leftover-from-stale-session"
 
 	nm, _ := m.applyReloadResult(reloadResultMsg{
+		gen:        m.reloadGen,
 		newDoc:     doc,
-		newSidecar: &persist.Sidecar{},
 		status:     "rebuilt + reloaded · 5 blocks",
 		buildStale: false,
 	})
@@ -292,6 +292,83 @@ func TestSchedulePDFRender_SuppressedWhenBuildStale(t *testing.T) {
 	// Clearing the flag restores normal scheduling.
 	m.BuildStale = false
 	require.NotNil(t, m.schedulePDFRender(), "clearing BuildStale must resume rendering")
+}
+
+// TestApplyReloadResult_DropsStaleGeneration is the review-new.md
+// (pass 5) #1 regression guard for concurrent reloads. When two
+// reloads race, only the latest (gen == m.reloadGen) may apply; an
+// older goroutine finishing late must not roll the model back.
+func TestApplyReloadResult_DropsStaleGeneration(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 5
+	beforeDoc := m.Doc
+	beforeCursor := m.CursorBlockID
+
+	// Message carries gen=4 (older reload finishing late); current is 5.
+	nm, cmd := m.applyReloadResult(reloadResultMsg{
+		gen:    4,
+		newDoc: parsedSample(t), // fresh pointer to prove it didn't install
+		status: "stale reload finishing late",
+	})
+	assert.Same(t, beforeDoc, nm.Doc, "stale-gen reload must not replace m.Doc")
+	assert.Equal(t, beforeCursor, nm.CursorBlockID, "stale-gen reload must not touch cursor")
+	assert.Nil(t, cmd)
+}
+
+// TestApplyReloadResult_MergesLiveSidecarEdits is the regression
+// guard for annotations added *during* a rebuild. The reload
+// pipeline used to snapshot the sidecar at startReload time and
+// install the remapped snapshot on completion — any annotation the
+// user added in between was silently dropped. The fix moves the
+// remap to applyReloadResult, where it runs against the live
+// m.Sidecar.
+func TestApplyReloadResult_MergesLiveSidecarEdits(t *testing.T) {
+	doc := parsedSample(t)
+	require.GreaterOrEqual(t, len(doc.Blocks), 2)
+	targetID := doc.Blocks[1].ID
+
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 1
+	// Simulate: user added an annotation while the rebuild was running.
+	m.Sidecar.Annotations = append(m.Sidecar.Annotations, persist.Annotation{
+		BlockID: targetID,
+		Note:    "added during reload",
+	})
+
+	nm, _ := m.applyReloadResult(reloadResultMsg{
+		gen:    1,
+		newDoc: doc,
+		status: "reloaded",
+	})
+
+	require.Len(t, nm.Sidecar.Annotations, 1, "live annotation must survive reload")
+	assert.Equal(t, "added during reload", nm.Sidecar.Annotations[0].Note)
+	assert.Equal(t, targetID, nm.Sidecar.Annotations[0].BlockID)
+}
+
+// TestApplyReloadResult_RespectsLiveCursor is the counterpart for
+// cursor navigation during a rebuild. resolveReloadCursor now runs
+// against m.CursorBlockID (live), not a snapshot taken at
+// startReload time, so the user's in-flight j/k motion sticks.
+func TestApplyReloadResult_RespectsLiveCursor(t *testing.T) {
+	doc := parsedSample(t)
+	require.GreaterOrEqual(t, len(doc.Blocks), 3)
+
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 1
+	// Pick a cursor block different from the one startReload would
+	// have snapshotted — simulating "user navigated during rebuild".
+	liveCursor := doc.Blocks[2].ID
+	m.CursorBlockID = liveCursor
+
+	nm, _ := m.applyReloadResult(reloadResultMsg{
+		gen:    1,
+		newDoc: doc,
+		status: "reloaded",
+	})
+	assert.Equal(t, liveCursor, nm.CursorBlockID,
+		"live navigation during rebuild must survive applyReloadResult")
 }
 
 // TestNew_PartialReviewWithReviewedCursorKeepsUnreviewedFilter is
