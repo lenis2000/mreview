@@ -89,7 +89,7 @@ func TestRun_ExistingFileLaunchesTUI(t *testing.T) {
 	captured := withStubTUI(t)
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
 	}
@@ -159,7 +159,7 @@ func TestRun_EmitMarkdownOnQuit(t *testing.T) {
 	withStubTUI(t)
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=md", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=md", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
 	}
@@ -201,7 +201,7 @@ func TestRun_EmitJSONOnQuit(t *testing.T) {
 	withStubTUI(t)
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=json", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=json", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d, stderr=%q", code, stderr.String())
 	}
@@ -236,7 +236,7 @@ func TestRun_EmitNoneSkipsStdout(t *testing.T) {
 
 	withStubTUI(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=none", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=none", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr=%q", code, stderr.String())
 	}
@@ -269,7 +269,7 @@ func TestRun_DetachedAnnotationsSurvive(t *testing.T) {
 
 	withStubTUI(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=md", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=md", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr=%q", code, stderr.String())
 	}
@@ -319,7 +319,7 @@ func TestRun_DetachedShowsStatusCountInModel(t *testing.T) {
 
 	captured := withStubTUI(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=none", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=none", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr=%q", code, stderr.String())
 	}
@@ -345,7 +345,7 @@ func TestRun_ConfigFlagLoaded(t *testing.T) {
 
 	captured := withStubTUI(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--config", configPath, "--stdout=none", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--config", configPath, "--stdout=none", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr=%q", code, stderr.String())
 	}
@@ -379,7 +379,7 @@ func TestRun_ThemeEnvApplied(t *testing.T) {
 	t.Setenv("MREVIEW_THEME", "light")
 	captured := withStubTUI(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--stdout=none", paper}, &stdout, &stderr)
+	code := run([]string{"--no-build", "--stdout=none", paper}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("exit %d stderr=%q", code, stderr.String())
 	}
@@ -400,6 +400,47 @@ func TestRun_VersionString(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "0.1.0") {
 		t.Fatalf("expected version 0.1.0 on stdout, got %q", stdout.String())
+	}
+}
+
+// TestRun_AuxAndBBLLoaded verifies that --no-build still loads the .aux and
+// .bbl files sitting next to paper.tex and enriches the document with block
+// numbers and resolved cite refs.
+func TestRun_AuxAndBBLLoaded(t *testing.T) {
+	paper := writeFixturePaper(t)
+	dir := filepath.Dir(paper)
+	// writeFixturePaper produces paper.tex; siblings must share the stem.
+	stem := strings.TrimSuffix(filepath.Base(paper), ".tex")
+	auxPath := filepath.Join(dir, stem+".aux")
+	bblPath := filepath.Join(dir, stem+".bbl")
+	auxContent := `\newlabel{thm:main}{{3.2}{5}}` + "\n"
+	bblContent := "\\begin{thebibliography}{1}\n\\bibitem{smith2020} Smith, Paper.\n\\end{thebibliography}\n"
+	if err := os.WriteFile(auxPath, []byte(auxContent), 0o600); err != nil {
+		t.Fatalf("write aux: %v", err)
+	}
+	if err := os.WriteFile(bblPath, []byte(bblContent), 0o600); err != nil {
+		t.Fatalf("write bbl: %v", err)
+	}
+
+	captured := withStubTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--no-build", "--stdout=none", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%q", code, stderr.String())
+	}
+	m, ok := (*captured).(ui.Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", *captured)
+	}
+	thm := m.Doc.ByLabel["thm:main"]
+	if thm == nil {
+		t.Fatalf("expected block labelled thm:main")
+	}
+	if thm.Number != "3.2" {
+		t.Fatalf("expected Number=3.2 after aux load, got %q", thm.Number)
+	}
+	if m.Doc.BibEntries["smith2020"] == nil {
+		t.Fatalf("expected bib entry for smith2020 after bbl load")
 	}
 }
 

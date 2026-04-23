@@ -97,7 +97,11 @@ func Save(path string, s *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, out, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Marshal serialises a *Sidecar into its markdown representation.

@@ -13,8 +13,10 @@ MVP (v0.1.0). Single-user, kitty-terminal only (no iTerm2/Sixel fallbacks).
 
 ## Install
 
-Requires Go 1.21+, a TeX distribution with `latexmk`, and kitty terminal for PDF
-rendering.
+Requires Go 1.21+ and a TeX distribution with `latexmk` (unless running with
+`--no-build` against pre-built artefacts). kitty terminal is required for the
+PDF pane; other panes work in any terminal (the PDF pane shows a placeholder
+elsewhere).
 
 ```
 git clone <repo> mreview
@@ -66,7 +68,7 @@ mreview --stdout json paper.tex | jq .
 Navigation
 
 ```
-j / k              next / prev outer sibling
+j / k (↓ / ↑)      next / prev outer sibling
 J / K              next / prev inner block (proof-step, display, …)
 { / }              previous / next section
 gg / G             first / last visible block
@@ -74,7 +76,7 @@ gg / G             first / last visible block
 go                 jump to first resolved ref in current block
 gu                 list blocks referring to current label
 gd                 show bib entry for first \cite in current block
-Ctrl-O / Ctrl-I    jump back / forward (bounded stack of 50)
+Ctrl-O / Ctrl-I    jump back / forward (bounded stack of 50; Tab also jumps forward)
 ```
 
 Annotation
@@ -95,7 +97,7 @@ UI
 f                  cycle filter (all / unreviewed / annotated / issues)
 ?                  toggle help overlay
 q                  quit (saves sidecar, emits to stdout)
-Ctrl-C             force quit
+Ctrl-C             quit (same as q)
 ```
 
 ## Sidecar format
@@ -120,16 +122,12 @@ TOML at `~/.config/mreview/config.toml` (user) and `./.mreview.toml` (project; w
 overrides the configured theme.
 
 ```toml
-theorem_envs = ["theorem", "proposition", "lemma", "corollary"]
-figure_envs  = ["figure", "figure*"]
-build_cmd    = "latexmk -pdf -synctex=1 -interaction=nonstopmode -halt-on-error"
-theme        = "dark"
+theme     = "dark"
+build_cmd = "latexmk -pdf -synctex=1 -interaction=nonstopmode -halt-on-error"
 
-[colors]
-# optional palette overrides
-
-[keybinds]
-# optional key rebindings
+# theorem_envs, figure_envs, [colors], and [keybinds] are parsed but not yet
+# applied (reserved for a future release). Only `theme` and `build_cmd` are
+# honored today.
 ```
 
 ## Development

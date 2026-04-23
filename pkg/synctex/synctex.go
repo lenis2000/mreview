@@ -147,7 +147,11 @@ func (idx *Index) handleHeader(line string) bool {
 		if err != nil {
 			return true
 		}
-		idx.Files[tag] = filepath.Clean(rest[colon+1:])
+		path := strings.TrimSpace(rest[colon+1:])
+		if path == "" {
+			return true
+		}
+		idx.Files[tag] = filepath.Clean(path)
 		return true
 	}
 	if v, ok := strings.CutPrefix(line, "Unit:"); ok {

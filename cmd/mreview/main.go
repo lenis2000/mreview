@@ -6,17 +6,39 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
 
+	"mreview/pkg/build"
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
 	"mreview/pkg/synctex"
 	"mreview/pkg/ui"
 )
+
+// populatePDFRegions fills Block.PDFRegion for every block whose SyncTeX entry
+// can be located. Skips the synthetic root and blocks without line ranges.
+func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
+	if doc == nil || idx == nil {
+		return
+	}
+	for _, b := range doc.Blocks {
+		if b == doc.Root || b.StartLine == 0 {
+			continue
+		}
+		file := b.File
+		if file == "" {
+			file = doc.File
+		}
+		r := idx.RegionForLines(file, b.StartLine, b.EndLine)
+		if r == nil {
+			continue
+		}
+		b.PDFRegion = &parser.Region{Page: r.Page, X: r.X, Y: r.Y, W: r.W, H: r.H}
+	}
+}
 
 // runTUI is overridable by tests to bypass tea.NewProgram (which requires a
 // real TTY). It returns the final model (so the caller can read the sidecar
@@ -96,6 +118,45 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	doc.File = o.File
 
+	// Load config early so the build step can use cfg.BuildCmd.
+	cfg, cfgErr := ui.LoadConfig(o.Config)
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
+		return 1
+	}
+	cfg = ui.ApplyThemeEnv(cfg)
+
+	// Resolve build artefact paths and optionally run latexmk. --no-build
+	// just resolves the conventional paths next to <paper>.tex.
+	buildRes := build.ResolveBuildOutputs(o.File)
+	if !o.NoBuild {
+		buildCmd := o.BuildCmd
+		if buildCmd == "" {
+			buildCmd = cfg.BuildCmd
+		}
+		res, berr := build.RunWith(build.Options{
+			TexPath:  o.File,
+			BuildCmd: buildCmd,
+			Stderr:   stderr,
+		})
+		if berr != nil {
+			fmt.Fprintf(stderr, "mreview: %v\n", berr)
+			return 1
+		}
+		buildRes = res
+	}
+
+	// Enrich the document with .aux (block numbers) and .bbl (bib entries +
+	// cite resolution). Missing files are non-fatal — LoadAux/LoadBBL return
+	// empty maps/slices so fresh sources that have never been compiled still
+	// open cleanly.
+	if auxEntries, auxErr := parser.LoadAux(buildRes.AuxPath); auxErr == nil {
+		parser.ApplyAux(doc, auxEntries)
+	}
+	if bibEntries, bibErr := parser.LoadBBL(buildRes.BBLPath); bibErr == nil {
+		parser.ApplyBBL(doc, bibEntries)
+	}
+
 	sidecarPath := o.Sidecar
 	if sidecarPath == "" {
 		sidecarPath = o.File + ".mreview.md"
@@ -118,30 +179,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	cfg, cfgErr := ui.LoadConfig(o.Config)
-	if cfgErr != nil {
-		fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
-		return 1
-	}
-	cfg = ui.ApplyThemeEnv(cfg)
-
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
 	model.Styles = ui.StylesForTheme(cfg.Theme)
 
 	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
-	// either file is missing (e.g. latexmk hasn't run yet) the pane falls
-	// back to a placeholder rather than aborting the session.
-	stem := strings.TrimSuffix(o.File, ".tex")
-	pdfPath := stem + ".pdf"
-	synctexPath := stem + ".synctex.gz"
-	if pdfDoc, pdfErr := pdf.Open(pdfPath); pdfErr == nil {
+	// either file is missing (e.g. --no-build on a never-built paper) the
+	// pane falls back to a placeholder rather than aborting the session.
+	if pdfDoc, pdfErr := pdf.Open(buildRes.PDFPath); pdfErr == nil {
 		defer pdfDoc.Close()
 		model.PDF = pdfDoc
 	}
-	if idx, idxErr := synctex.Open(synctexPath); idxErr == nil {
+	if idx, idxErr := synctex.Open(buildRes.SyncTeXPath); idxErr == nil {
 		model.Synctex = idx
+		// Fill in Block.PDFRegion so the outline's ⊘ marker only shows up on
+		// blocks that SyncTeX genuinely could not locate.
+		populatePDFRegions(doc, idx)
 	}
 
 	final, err := runTUI(model, stdout, stderr)
