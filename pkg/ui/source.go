@@ -363,15 +363,18 @@ func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles) [
 // AND ends on a word boundary when possible. A word boundary is a run of
 // spaces or tabs; if the line has no boundary inside the budget (e.g. a long
 // URL or unspaced math), we fall back to a hard cell cut so we still make
-// forward progress.
+// forward progress. When the whole string fits within width, the whole
+// string is returned — no spurious wrap at an interior whitespace.
 func takeCells(s string, width int) string {
 	w := 0
-	hardEnd := 0      // longest prefix ending at a rune boundary that fits
-	softEnd := 0      // longest prefix ending at the last whitespace within budget
+	hardEnd := 0    // longest prefix ending at a rune boundary that fits
+	softEnd := 0    // longest prefix ending at the last interior whitespace
 	sawNonSpace := false
+	overflowed := false
 	for i, r := range s {
 		rw := runewidth.RuneWidth(r)
 		if w+rw > width {
+			overflowed = true
 			break
 		}
 		w += rw
@@ -384,6 +387,11 @@ func takeCells(s string, width int) string {
 			sawNonSpace = true
 		}
 	}
+	// The whole string fits — take all of it; softEnd is only a wrap hint,
+	// useful once we've actually exceeded the budget.
+	if !overflowed {
+		return s
+	}
 	end := softEnd
 	if end == 0 {
 		end = hardEnd
@@ -394,10 +402,7 @@ func takeCells(s string, width int) string {
 		_, sz := runeAt(s)
 		end = sz
 	}
-	// Skip the trailing whitespace we used as the break point so the next
-	// row doesn't begin with leading spaces.
-	out := s[:end]
-	return out
+	return s[:end]
 }
 
 func runeAt(s string) (rune, int) {
