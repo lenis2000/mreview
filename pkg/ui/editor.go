@@ -31,11 +31,16 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 		m.Status = "E: no editor found (set $EDITOR)"
 		return m, nil
 	}
+	line, ok := absoluteCursorLine(m)
+	if !ok {
+		m.Status = "E: cursor has no resolvable source line"
+		return m, nil
+	}
 	if err := m.saveSidecar(); err != nil {
 		m.Status = "E: save sidecar: " + err.Error()
 		return m, nil
 	}
-	lineArgs := buildEditorLineArgs(head, m.Doc.File, absoluteCursorLine(m))
+	lineArgs := buildEditorLineArgs(head, m.Doc.File, line)
 	argv := append(append([]string{}, userArgs...), lineArgs...)
 	cmd := exec.Command(head, argv...)
 	// Route the editor's IO through /dev/tty to mirror what runTUI does
@@ -187,20 +192,23 @@ func buildEditorLineArgs(editor, path string, line int) []string {
 }
 
 // absoluteCursorLine resolves the current (CursorBlockID, SourceLineCursor)
-// pair to a 1-based absolute source line number for the jump-to-line flag.
-func absoluteCursorLine(m Model) int {
+// pair to a 1-based absolute source line number. Returns ok=false when
+// the cursor doesn't anchor to a real line (no doc, missing block, or
+// block has no source range) — callers must refuse the action instead
+// of falling open to line 1, which is rarely what the user meant.
+func absoluteCursorLine(m Model) (int, bool) {
 	if m.Doc == nil || m.CursorBlockID == "" {
-		return 1
+		return 0, false
 	}
 	b := m.Doc.ByID[m.CursorBlockID]
 	if b == nil || b.StartLine == 0 {
-		return 1
+		return 0, false
 	}
 	line := b.StartLine + m.SourceLineCursor - 1
 	if line < 1 {
-		line = 1
+		return 0, false
 	}
-	return line
+	return line, true
 }
 
 // --- Inline single-line edit ------------------------------------------------
@@ -225,8 +233,9 @@ func (m Model) StartLineEdit() (tea.Model, tea.Cmd) {
 	if m.Doc == nil || m.Doc.File == "" {
 		return m, nil
 	}
-	line := absoluteCursorLine(m)
-	if line < 1 {
+	line, ok := absoluteCursorLine(m)
+	if !ok {
+		m.Status = "ctrl+e: cursor has no resolvable source line"
 		return m, nil
 	}
 	lines := strings.Split(string(m.Doc.Source), "\n")

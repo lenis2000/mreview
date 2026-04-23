@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
 	"mreview/pkg/synctex"
@@ -473,4 +476,133 @@ func TestOCRReport_BlockedWhenBuildStale(t *testing.T) {
 	nm, cmd := m.startOCRReport()
 	assert.Nil(t, cmd)
 	assert.Contains(t, nm.Status, "build is stale")
+}
+
+// TestUpdate_MouseIgnoredWhilePopupOpen is the deep-review #4
+// regression guard. Background mouse events must not move the cursor
+// or source-line state while an annotation popup is open — doing so
+// would detach the live editor from the popup's TargetID and cause
+// submit to land on a different block from the one the user sees.
+func TestUpdate_MouseIgnoredWhilePopupOpen(t *testing.T) {
+	doc := parsedSample(t)
+	require.GreaterOrEqual(t, len(doc.Blocks), 2)
+
+	m := New(doc, nil)
+	m.Width, m.Height = 120, 40
+	beforeCursor := m.CursorBlockID
+	beforeLine := m.SourceLineCursor
+
+	// Open an annotation popup (block-level — `A`).
+	res, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	m = res.(Model)
+	require.NotNil(t, m.Popup, "A must open the annotation popup")
+
+	// Now simulate a mouse click somewhere in the source pane that
+	// would normally move the cursor.
+	out, _ := m.Update(tea.MouseMsg{
+		Type:   tea.MouseLeft,
+		Action: tea.MouseActionPress,
+		X:      80,
+		Y:      10,
+	})
+	nm := out.(Model)
+
+	assert.Equal(t, beforeCursor, nm.CursorBlockID,
+		"mouse must not change cursor block while popup is open")
+	assert.Equal(t, beforeLine, nm.SourceLineCursor,
+		"mouse must not change source line while popup is open")
+	assert.NotNil(t, nm.Popup, "popup must remain open after background mouse")
+}
+
+// TestSourceLineAt_WrapAware is the deep-review #5 regression guard.
+// Under soft-wrap, a click on a continuation row must resolve to the
+// source line whose wrapped fragment occupies that row — not
+// `startLine + row` as if every source line were one row.
+func TestSourceLineAt_WrapAware(t *testing.T) {
+	// Build a doc whose first block is a single very long line that
+	// wraps to multiple physical rows. Click on row 0 (first wrapped
+	// segment) and a deeper row (second segment) — both must resolve
+	// to the SAME source line, not to consecutive source lines.
+	src := "\\documentclass{article}\n\\begin{document}\n" +
+		strings.Repeat("word ", 200) + "\n" + // long line that wraps
+		"second line\n" +
+		"\\end{document}\n"
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+	doc.File = "fake.tex"
+
+	// Find the first non-root block with a real source range.
+	var blockID string
+	for _, b := range doc.Blocks {
+		if b.StartLine > 0 {
+			blockID = b.ID
+			break
+		}
+	}
+	require.NotEmpty(t, blockID)
+
+	// Narrow terminal so the long line wraps several times.
+	const termW, termH = 60, 30
+
+	id0, line0 := sourceLineAt(doc, blockID, termW, termH, LayoutThreeCol, true, 0)
+	id1, line1 := sourceLineAt(doc, blockID, termW, termH, LayoutThreeCol, true, 1)
+
+	require.Equal(t, blockID, id0, "row 0 must land in the cursor block")
+	require.Equal(t, blockID, id1, "row 1 must also land in the cursor block (still wrapped)")
+	assert.Equal(t, line0, line1,
+		"row 0 and row 1 must resolve to the same source line under soft-wrap (the long line wraps)")
+}
+
+// TestSourceLineAt_SoftWrapOffStaysOneToOne ensures the hit-tester
+// keeps the simple "one row per source line" mapping when soft-wrap is
+// disabled — toggling `w` off restores click-positions-cursor exactly
+// as before the wrap-aware refactor.
+func TestSourceLineAt_SoftWrapOffStaysOneToOne(t *testing.T) {
+	doc := parsedSample(t)
+	// Use the proof block as cursor: it's multi-line so consecutive
+	// rows fall inside the block range and resolve to consecutive
+	// LineOffsets, which is the property we want to assert.
+	var proof *parser.Block
+	for _, b := range doc.Blocks {
+		if b.Kind == parser.KindProof && b.EndLine > b.StartLine+1 {
+			proof = b
+			break
+		}
+	}
+	require.NotNil(t, proof, "fixture must have a multi-line proof block")
+
+	const termW, termH = 120, 40
+	// With termH=40, sourcePaneInnerH = 36 and startLine clamps to 1,
+	// so row N maps to source line (N+1) under soft-wrap=false.
+	rowAtStart := proof.StartLine - 1 // row that lands on proof.StartLine
+
+	id0, line0 := sourceLineAt(doc, proof.ID, termW, termH, LayoutThreeCol, false, rowAtStart)
+	id1, line1 := sourceLineAt(doc, proof.ID, termW, termH, LayoutThreeCol, false, rowAtStart+1)
+	require.Equal(t, proof.ID, id0)
+	require.Equal(t, proof.ID, id1)
+	assert.Equal(t, line0+1, line1,
+		"with soft-wrap off, row+1 must map to source line +1 within the cursor block")
+}
+
+// TestEditFallback_RefusesWhenCursorHasNoLine is the deep-review #6
+// regression guard. When the cursor has no resolvable source line,
+// edit commands must refuse with a clear status instead of silently
+// opening at line 1.
+func TestEditFallback_RefusesWhenCursorHasNoLine(t *testing.T) {
+	m := New(parsedSample(t), nil)
+	m.Doc.File = "/tmp/fake.tex"
+	// Force the unresolvable case: a cursor pointing at a non-existent
+	// block ID. absoluteCursorLine should return ok=false.
+	m.CursorBlockID = "no-such-block"
+
+	nm, cmd := m.StartLineEdit()
+	assert.Nil(t, cmd)
+	updated := nm.(Model)
+	assert.Nil(t, updated.Popup, "ctrl+e must not open a popup when cursor has no line")
+	assert.Contains(t, updated.Status, "no resolvable source line")
+
+	nm2, cmd2 := m.editInExternalEditor()
+	assert.Nil(t, cmd2)
+	updated2 := nm2.(Model)
+	assert.Contains(t, updated2.Status, "no resolvable source line")
 }

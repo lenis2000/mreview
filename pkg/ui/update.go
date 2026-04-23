@@ -50,7 +50,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			next, cmd = m.updateKey(msg)
 		}
 	case tea.MouseMsg:
-		next = m.handleMouse(msg)
+		// Mouse is modal to popups, mirroring KeyMsg above. Without this
+		// guard, a click or wheel during an open annotation popup would
+		// move m.CursorBlockID / m.SourceLineCursor; the inline editor
+		// (which renders against the live cursor) would disappear from
+		// view while the popup textarea kept receiving keystrokes, and
+		// submit would write to Popup.TargetID — a different block from
+		// the one the user is now looking at.
+		if m.Popup != nil {
+			next = m
+		} else {
+			next = m.handleMouse(msg)
+		}
 	default:
 		return m, nil
 	}

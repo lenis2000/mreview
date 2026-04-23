@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/parser"
@@ -37,7 +39,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 				}
 			}
 		case PaneSource:
-			blockID, lineOff := sourceLineAt(m.Doc, m.CursorBlockID, m.Width, m.Height, m.Layout, innerY)
+			blockID, lineOff := sourceLineAt(m.Doc, m.CursorBlockID, m.Width, m.Height, m.Layout, m.SoftWrap, innerY)
 			if blockID != "" {
 				if blockID != m.CursorBlockID {
 					m.CursorBlockID = blockID
@@ -211,12 +213,18 @@ func outlinePaneInnerH(termH int, layout LayoutMode) int {
 }
 
 // sourceLineAt maps a click in the source pane body to (blockID, lineOffset).
-// The mapping mirrors RenderSource: the rendered window starts at
-// block.StartLine - topCtx and extends for at most bodyH rows, so a click at
-// inner-y N corresponds to the (startLine + N)-th source line. Soft-wrap
-// makes this approximate; we accept the imprecision rather than re-deriving
-// the exact wrap layout.
-func sourceLineAt(doc *parser.Document, cursor string, termW, termH int, layout LayoutMode, row int) (string, int) {
+// The mapping mirrors renderSourceWithEditor: the renderer walks source
+// lines from `startLine`, expands each through wrapOrClip, and emits one
+// or more rendered rows per source line. To produce the same row→line
+// inverse, we replay the per-line wrap row count and stop when the
+// click row falls inside the current line's row span.
+//
+// Inline annotation/editor rows are not yet accounted for — they
+// generally appear next to the cursor block and account for at most a
+// handful of rows; the soft-wrap mismatch was the dominant source of
+// mis-clicks. If a click lands on an annotation row the resolved line
+// will be the next source line below, which is acceptable.
+func sourceLineAt(doc *parser.Document, cursor string, termW, termH int, layout LayoutMode, softWrap bool, row int) (string, int) {
 	if row < 0 || doc == nil || cursor == "" {
 		return "", 0
 	}
@@ -228,32 +236,89 @@ func sourceLineAt(doc *parser.Document, cursor string, termW, termH int, layout 
 	if bodyH <= 0 {
 		return "", 0
 	}
-	blockH := b.EndLine - b.StartLine + 1
-	if blockH < 1 {
-		blockH = 1
+	innerW := sourcePaneInnerW(termW, layout)
+	if innerW <= 0 {
+		return "", 0
 	}
-	ctxBudget := bodyH - blockH
-	if ctxBudget < 0 {
-		ctxBudget = 0
+	src := strings.Split(string(doc.Source), "\n")
+	total := len(src)
+	if total == 0 {
+		return "", 0
 	}
-	topCtx := ctxBudget / 2
-	startLine := b.StartLine - topCtx
+
+	// Mirror renderSourceWithEditor's window: render up to `bodyH` rows
+	// on each side of the cursor block so the post-render scroll has
+	// candidates around the centred block.
+	startLine := b.StartLine - bodyH
 	if startLine < 1 {
 		startLine = 1
 	}
-	absLine := startLine + row
-	if absLine < 1 {
+	endLine := b.EndLine + bodyH
+	if endLine > total {
+		endLine = total
+	}
+
+	gutterW := lineNumWidth(endLine)
+	bodyWidth := innerW - gutterW - 1
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+
+	// Walk lines, accumulating wrap row counts; stop when row falls in
+	// the current line's row span.
+	rowsUsed := 0
+	hitLine := 0
+	for ln := startLine; ln <= endLine; ln++ {
+		if ln-1 >= total {
+			break
+		}
+		n := 1
+		if softWrap {
+			// wrapOrClip's row count doesn't depend on styles or the
+			// inBlock flag — pass zero values.
+			n = len(wrapOrClip(src[ln-1], bodyWidth, true, true, Styles{}))
+			if n < 1 {
+				n = 1
+			}
+		}
+		if row < rowsUsed+n {
+			hitLine = ln
+			break
+		}
+		rowsUsed += n
+	}
+	if hitLine == 0 {
 		return "", 0
 	}
-	// Find the block containing absLine. If it's the cursor block, return a
-	// LineOffset; if it's a different block, the caller jumps to that block.
-	if absLine >= b.StartLine && absLine <= b.EndLine {
-		return cursor, absLine - b.StartLine + 1
+
+	if hitLine >= b.StartLine && hitLine <= b.EndLine {
+		return cursor, hitLine - b.StartLine + 1
 	}
-	if other := blockContainingLine(doc, absLine); other != nil {
-		return other.ID, absLine - other.StartLine + 1
+	if other := blockContainingLine(doc, hitLine); other != nil {
+		return other.ID, hitLine - other.StartLine + 1
 	}
 	return cursor, 0
+}
+
+// sourcePaneInnerW mirrors view.go's source pane width math: the source
+// column width less 2 cells of border. Used by sourceLineAt to compute
+// the same body width the renderer wraps against.
+func sourcePaneInnerW(termW int, layout LayoutMode) int {
+	if termW <= 0 {
+		return 0
+	}
+	var paneW int
+	switch layout {
+	case LayoutStacked:
+		_, paneW = stackedWidths(termW)
+	default:
+		_, paneW, _ = paneWidths(termW)
+	}
+	innerW := paneW - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	return innerW
 }
 
 // sourcePaneInnerH replicates the inner body height computation that view.go
