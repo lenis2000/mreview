@@ -55,10 +55,22 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 	annRows := 0
 	for _, a := range annotations {
 		if a.BlockID == b.ID {
+			// Suppress the saved version of the annotation that's
+			// currently being edited — the live editor replaces it, so
+			// counting both double-books the row budget.
+			if editor != nil && editor.TargetID == b.ID && a.LineOffset == editor.LineOffset {
+				continue
+			}
 			annRows++
 		}
 	}
-	ctxBudget := height - blockH - annRows
+	editorH := 0
+	if editor != nil && editor.TargetID == b.ID {
+		// Textarea rows + the trailing "[Ctrl-S submit · Ctrl-C cancel]"
+		// hint row that editorRows appends.
+		editorH = editor.TA.Height() + 1
+	}
+	ctxBudget := height - blockH - annRows - editorH
 	if ctxBudget < 0 {
 		ctxBudget = 0
 	}
