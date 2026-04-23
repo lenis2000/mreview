@@ -35,15 +35,61 @@ func (m Model) View() string {
 		paneHeight = 1
 	}
 
-	outlineW, sourceW, pdfW := paneWidths(m.Width)
-
-	outline := m.renderOutlinePane(outlineW, paneHeight)
-	source := m.renderSourcePane(sourceW, paneHeight)
-	pdf := m.renderPane("PDF", m.pdfPaneBody(), pdfW, paneHeight, m.Focus == PanePDF)
-
-	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+	var main string
+	switch m.Layout {
+	case LayoutStacked:
+		outlineW, rightW := stackedWidths(m.Width)
+		topH, botH := stackedHeights(paneHeight)
+		outline := m.renderOutlinePane(outlineW, paneHeight)
+		source := m.renderSourcePane(rightW, topH)
+		pdf := m.renderPane("PDF", m.pdfPaneBody(), rightW, botH, m.Focus == PanePDF)
+		right := lipgloss.JoinVertical(lipgloss.Left, source, pdf)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, right)
+	default:
+		outlineW, sourceW, pdfW := paneWidths(m.Width)
+		outline := m.renderOutlinePane(outlineW, paneHeight)
+		source := m.renderSourcePane(sourceW, paneHeight)
+		pdf := m.renderPane("PDF", m.pdfPaneBody(), pdfW, paneHeight, m.Focus == PanePDF)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+	}
 	status := m.Styles.StatusBar.Width(m.Width).Render(m.statusText())
 	return lipgloss.JoinVertical(lipgloss.Left, main, status)
+}
+
+// stackedWidths splits total width between the outline (left) and the
+// source/pdf stack (right) for LayoutStacked. Outline gets the same fraction
+// it has in the 3-col layout so the user's eye doesn't have to retrain.
+func stackedWidths(width int) (outline, right int) {
+	if width <= 0 {
+		return 0, 0
+	}
+	outline = int(float64(width) * outlineFrac)
+	if outline < 1 {
+		outline = 1
+	}
+	right = width - outline
+	if right < 1 {
+		right = 1
+	}
+	return outline, right
+}
+
+// stackedHeights splits the right column's height between source (top) and
+// pdf (bottom). Source gets a slight majority so prose stays readable; the
+// PDF pane scales down with cell-aware aspect-fit anyway.
+func stackedHeights(height int) (top, bot int) {
+	if height <= 0 {
+		return 0, 0
+	}
+	top = height / 2
+	if top < 1 {
+		top = 1
+	}
+	bot = height - top
+	if bot < 1 {
+		bot = 1
+	}
+	return top, bot
 }
 
 // paneWidths splits a total width into outline/source/pdf widths. Any rounding
@@ -157,7 +203,7 @@ func (m Model) renderSourcePane(width, height int) string {
 		body = RenderHelpBody(innerW)
 		_ = p
 	default:
-		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
+		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap)
 	}
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)

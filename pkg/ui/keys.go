@@ -41,6 +41,11 @@ type Keymap struct {
 
 	// Help overlay (Task 16).
 	OpenHelp []string // ? — keybinding table overlay
+
+	// Layout (\) cycles between 3-column and outline+stacked layouts.
+	// Wrap (w) toggles soft-wrap for the source pane.
+	ToggleLayout []string
+	ToggleWrap   []string
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -70,6 +75,9 @@ func DefaultKeymap() Keymap {
 		OpenAnnotList: []string{"@"},
 
 		OpenHelp: []string{"?"},
+
+		ToggleLayout: []string{"\\"},
+		ToggleWrap:   []string{"w"},
 	}
 }
 

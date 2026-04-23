@@ -82,7 +82,29 @@ func TestRun_MissingFile(t *testing.T) {
 func TestRun_ExistingFileLaunchesTUI(t *testing.T) {
 	dir := t.TempDir()
 	paper := filepath.Join(dir, "paper.tex")
-	if err := os.WriteFile(paper, []byte("\\documentclass{amsart}\n\\begin{document}hi\\end{document}\n"), 0o600); err != nil {
+	if err := os.WriteFile(paper, []byte("\\documentclass{amsart}\n\\begin{document}\n\\section{Intro}\nhi\n\\end{document}\n"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	captured := withStubTUI(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--no-build", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	if *captured == nil {
+		t.Fatalf("expected runTUI to be invoked")
+	}
+}
+
+func TestRun_ProseOnlyPaperLaunchesTUI(t *testing.T) {
+	// Pure prose (e.g. an opinion letter) should still open: the parser
+	// segments the body into paragraph blocks so the TUI has something to
+	// attach annotations to.
+	dir := t.TempDir()
+	paper := filepath.Join(dir, "paper.tex")
+	if err := os.WriteFile(paper, []byte("\\documentclass{amsart}\n\\begin{document}\nFirst paragraph.\n\nSecond paragraph.\n\\end{document}\n"), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 

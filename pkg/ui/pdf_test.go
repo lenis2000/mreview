@@ -206,7 +206,7 @@ func TestRenderPDFForBlock_CachesResult(t *testing.T) {
 }
 
 func TestPDFPaneCells_Inset(t *testing.T) {
-	w, h := pdfPaneCells(120, 40)
+	w, h := pdfPaneCells(120, 40, LayoutThreeCol)
 	assert.Greater(t, w, 0)
 	assert.Greater(t, h, 0)
 	// Inner width should be a bit less than 35% of 120 minus border cells.
@@ -216,10 +216,10 @@ func TestPDFPaneCells_Inset(t *testing.T) {
 }
 
 func TestPDFPaneCells_Degenerate(t *testing.T) {
-	w, h := pdfPaneCells(0, 0)
+	w, h := pdfPaneCells(0, 0, LayoutThreeCol)
 	assert.Equal(t, 0, w)
 	assert.Equal(t, 0, h)
-	w, h = pdfPaneCells(2, 2)
+	w, h = pdfPaneCells(2, 2, LayoutThreeCol)
 	assert.GreaterOrEqual(t, w, 1)
 	assert.GreaterOrEqual(t, h, 1)
 }

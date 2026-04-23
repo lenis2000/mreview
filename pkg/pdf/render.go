@@ -77,6 +77,63 @@ func CropAtDPI(d *Doc, r synctex.Region, pad, dpi float64) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// CropWithContext renders the page containing r and returns PNG bytes for a
+// slice that spans the full page width and a vpad-points context window
+// above and below r. Use this when the consumer wants the SyncTeX target
+// shown in the visual flow of surrounding content (paragraphs, equations,
+// figures) rather than as an isolated tight crop.
+func CropWithContext(d *Doc, r synctex.Region, vpad float64) ([]byte, error) {
+	return CropWithContextAtDPI(d, r, vpad, DefaultCropDPI)
+}
+
+// CropWithContextAtDPI is CropWithContext with an explicit render DPI.
+func CropWithContextAtDPI(d *Doc, r synctex.Region, vpad, dpi float64) ([]byte, error) {
+	if d == nil {
+		return nil, fmt.Errorf("pdf: nil doc")
+	}
+	if !HasExtent(r) {
+		return nil, fmt.Errorf("pdf: region has zero extent")
+	}
+	if dpi <= 0 {
+		dpi = DefaultCropDPI
+	}
+	pageIdx := r.Page - 1
+	img, err := d.Page(pageIdx, dpi)
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	scale := dpi / 72.0
+	y0 := int((r.Y - vpad) * scale)
+	y1 := int((r.Y + r.H + vpad) * scale)
+	if y0 < bounds.Min.Y {
+		y0 = bounds.Min.Y
+	}
+	if y1 > bounds.Max.Y {
+		y1 = bounds.Max.Y
+	}
+	if y1 <= y0 {
+		return nil, fmt.Errorf("pdf: context crop degenerate after clamp")
+	}
+	rect := image.Rect(bounds.Min.X, y0, bounds.Max.X, y1)
+	var cropped image.Image
+	type subImager interface {
+		SubImage(image.Rectangle) image.Image
+	}
+	if si, ok := any(img).(subImager); ok {
+		cropped = si.SubImage(rect)
+	} else {
+		dst := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+		draw.Draw(dst, dst.Bounds(), img, rect.Min, draw.Src)
+		cropped = dst
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, cropped); err != nil {
+		return nil, fmt.Errorf("pdf: encode png: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
 // HasExtent reports whether r has a non-zero width and height. SyncTeX
 // records without dimensions (glue, kern) only set X/Y; those are unusable
 // for cropping so callers filter on HasExtent before rendering.

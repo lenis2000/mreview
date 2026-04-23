@@ -46,6 +46,16 @@ const (
 	PanePDF
 )
 
+// LayoutMode picks how the three panes are arranged.
+//   - LayoutThreeCol: outline | source | pdf (the default).
+//   - LayoutStacked:  outline | (source on top, pdf on bottom).
+type LayoutMode int
+
+const (
+	LayoutThreeCol LayoutMode = iota
+	LayoutStacked
+)
+
 // Popup is a placeholder for the modal overlays Task 11+ introduce
 // (annotation textarea, search, ref list). The skeleton stores none, but
 // reserving the field keeps the Update signature stable.
@@ -114,6 +124,12 @@ type Model struct {
 	// Config holds the merged TOML configuration. nil-safe: DefaultConfig()
 	// populates it when New is called.
 	Config *Config
+
+	// Layout selects between the 3-column and outline+stacked variants.
+	Layout LayoutMode
+	// SoftWrap controls whether long source lines wrap to additional rows
+	// (the default) or get truncated with an ellipsis.
+	SoftWrap bool
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -136,6 +152,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),
 		pdfCache:      newPDFCropCache(pdfCropCacheMax),
+		SoftWrap:      true,
 	}
 	m.Config = DefaultConfig()
 	if n := len(side.Detached); n > 0 {

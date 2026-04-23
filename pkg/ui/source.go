@@ -9,13 +9,13 @@ import (
 )
 
 // RenderSource returns the rendered body of the source pane for the current
-// cursor block. It wraps lines at pane width and applies lightweight LaTeX
-// coloring: `\commands`, math delimiters, and line-leading `%` comments.
+// cursor block. It pulls a window of lines from the full document so the
+// cursor block has visible context above and below (dimmed); the block
+// itself is colorised normally.
 //
-// width is the inner pane width; height is the inner pane height. The block
-// source is sliced from its StartLine so that visible rows carry the right
-// absolute line numbers even when the cursor is on an inner block.
-func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles) string {
+// width is the inner pane width; height is the inner pane height. softWrap
+// controls whether long lines wrap to additional rows or get truncated.
+func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool) string {
 	if doc == nil || cursor == "" {
 		return styles.OutlineMuted.Render("(no block selected)")
 	}
@@ -23,31 +23,169 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 	if b == nil {
 		return styles.OutlineMuted.Render("(unknown block)")
 	}
-	if strings.TrimSpace(b.Source) == "" {
-		return styles.OutlineMuted.Render("(" + b.Kind.String() + " — empty source)")
+	if b.StartLine == 0 || b.EndLine == 0 {
+		return styles.OutlineMuted.Render("(" + b.Kind.String() + " — no source)")
 	}
-	lines := strings.Split(b.Source, "\n")
 	if height < 1 {
 		height = 1
 	}
-	if len(lines) > height {
-		lines = lines[:height]
+	allLines := strings.Split(string(doc.Source), "\n")
+	total := len(allLines)
+	if total == 0 {
+		return styles.OutlineMuted.Render("(no source)")
 	}
-	gutterW := lineNumWidth(b.EndLine)
+
+	blockH := b.EndLine - b.StartLine + 1
+	if blockH < 1 {
+		blockH = 1
+	}
+	// Split remaining vertical budget between context above and below the
+	// block, biased slightly to the top so the block sits a touch lower than
+	// dead-centre — matches the way readers naturally land on a target.
+	ctxBudget := height - blockH
+	if ctxBudget < 0 {
+		ctxBudget = 0
+	}
+	topCtx := ctxBudget / 2
+	botCtx := ctxBudget - topCtx
+	startLine := b.StartLine - topCtx
+	if startLine < 1 {
+		startLine = 1
+	}
+	endLine := b.EndLine + botCtx
+	if endLine > total {
+		endLine = total
+	}
+
+	gutterW := lineNumWidth(endLine)
+	bodyWidth := width - gutterW - 1
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+
 	var out strings.Builder
-	for i, line := range lines {
-		lineNo := b.StartLine + i
-		gutter := padLeft(itoa(lineNo), gutterW)
-		gutterStyled := styles.SourceGutter.Render(gutter)
-		body := clipToWidth(colorizeLaTeXLine(line, styles), width-gutterW-1)
-		out.WriteString(gutterStyled)
-		out.WriteByte(' ')
-		out.WriteString(body)
-		if i < len(lines)-1 {
-			out.WriteByte('\n')
+	rows := 0
+	for ln := startLine; ln <= endLine && rows < height; ln++ {
+		if ln-1 >= len(allLines) {
+			break
+		}
+		raw := allLines[ln-1]
+		inBlock := ln >= b.StartLine && ln <= b.EndLine
+		segments := wrapOrClip(raw, bodyWidth, softWrap, inBlock, styles)
+		for i, seg := range segments {
+			if rows >= height {
+				break
+			}
+			var gutter string
+			if i == 0 {
+				gutter = padLeft(itoa(ln), gutterW)
+			} else {
+				gutter = strings.Repeat(" ", gutterW)
+			}
+			out.WriteString(styles.SourceGutter.Render(gutter))
+			out.WriteByte(' ')
+			out.WriteString(seg)
+			rows++
+			if rows < height && (i < len(segments)-1 || ln < endLine) {
+				out.WriteByte('\n')
+			}
 		}
 	}
 	return out.String()
+}
+
+// wrapOrClip turns one source line into one or more visible row strings.
+// When softWrap is false the line is truncated to a single row; otherwise it
+// is split into width-sized pieces along plain-text columns and each piece is
+// re-colorised independently. Context lines (inBlock=false) are dimmed.
+func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles) []string {
+	if width < 1 {
+		width = 1
+	}
+	colorize := func(s string) string {
+		if inBlock {
+			return colorizeLaTeXLine(s, styles)
+		}
+		return styles.OutlineMuted.Render(s)
+	}
+	if !softWrap {
+		return []string{clipToWidth(colorize(line), width)}
+	}
+	if line == "" {
+		return []string{""}
+	}
+	var rows []string
+	remaining := line
+	first := true
+	for runewidth.StringWidth(remaining) > 0 {
+		// Continuation rows should not start with the whitespace we used as
+		// a wrap point. The very first row keeps its indentation.
+		if !first {
+			remaining = strings.TrimLeft(remaining, " \t")
+			if remaining == "" {
+				break
+			}
+		}
+		first = false
+		take := takeCells(remaining, width)
+		if take == "" {
+			break
+		}
+		rows = append(rows, colorize(take))
+		remaining = remaining[len(take):]
+	}
+	if len(rows) == 0 {
+		rows = append(rows, "")
+	}
+	return rows
+}
+
+// takeCells returns the longest prefix of s that fits in width display cells
+// AND ends on a word boundary when possible. A word boundary is a run of
+// spaces or tabs; if the line has no boundary inside the budget (e.g. a long
+// URL or unspaced math), we fall back to a hard cell cut so we still make
+// forward progress.
+func takeCells(s string, width int) string {
+	w := 0
+	hardEnd := 0      // longest prefix ending at a rune boundary that fits
+	softEnd := 0      // longest prefix ending at the last whitespace within budget
+	sawNonSpace := false
+	for i, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if w+rw > width {
+			break
+		}
+		w += rw
+		hardEnd = i + len(string(r))
+		if r == ' ' || r == '\t' {
+			if sawNonSpace {
+				softEnd = hardEnd
+			}
+		} else {
+			sawNonSpace = true
+		}
+	}
+	end := softEnd
+	if end == 0 {
+		end = hardEnd
+	}
+	if end == 0 && len(s) > 0 {
+		// Width too small to fit even one rune — advance by one byte so the
+		// caller's loop still terminates.
+		_, sz := runeAt(s)
+		end = sz
+	}
+	// Skip the trailing whitespace we used as the break point so the next
+	// row doesn't begin with leading spaces.
+	out := s[:end]
+	return out
+}
+
+func runeAt(s string) (rune, int) {
+	for _, r := range s {
+		return r, len(string(r))
+	}
+	return 0, 1
 }
 
 func lineNumWidth(n int) int {

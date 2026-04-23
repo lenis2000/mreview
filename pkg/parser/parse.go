@@ -34,6 +34,7 @@ func Parse(src []byte) (*Document, error) {
 	p := newParser(src)
 	p.collectTheoremEnvs()
 	p.buildTree()
+	p.segmentRootProse()
 	p.segmentProofs()
 	p.assignStableIDs()
 	p.resolveRefs()
@@ -326,6 +327,60 @@ func (p *parser) attachLabel(target string) {
 		b.Label = target
 	}
 	p.doc.ByLabel[target] = b
+}
+
+// segmentRootProse handles documents whose body is just running prose with no
+// sections, theorems, or display math — typically short opinion letters or
+// referee reports. It splits the body (between \begin{document} and
+// \end{document}) into KindParagraph blocks at blank-line boundaries so the
+// review TUI has something to attach annotations to. Skipped when the doc
+// already has top-level structural children, to avoid noisy paragraphs around
+// \title/\maketitle in normal papers.
+func (p *parser) segmentRootProse() {
+	if len(p.doc.Root.ChildIDs) > 0 {
+		return
+	}
+	var docStart, docEnd int
+	for _, tk := range p.tokens {
+		if tk.Kind == TokBeginEnv && tk.EnvName == "document" && docStart == 0 {
+			docStart = tk.Line + 1
+		}
+		if tk.Kind == TokEndEnv && tk.EnvName == "document" {
+			docEnd = tk.Line - 1
+		}
+	}
+	if docStart == 0 {
+		docStart = 1
+	}
+	if docEnd == 0 {
+		docEnd = p.totalLines
+	}
+	if docEnd < docStart {
+		return
+	}
+	i := docStart
+	for i <= docEnd {
+		for i <= docEnd && p.lineIsBlank(i) {
+			i++
+		}
+		if i > docEnd {
+			break
+		}
+		s := i
+		for i <= docEnd && !p.lineIsBlank(i) {
+			i++
+		}
+		e := i - 1
+		b := &Block{
+			ID:        p.newID(),
+			Kind:      KindParagraph,
+			StartLine: s,
+			EndLine:   e,
+		}
+		b.Source = p.extractSource(s, e)
+		p.pushBlock(b)
+		p.popBlock(e)
+	}
 }
 
 // segmentProofs turns each KindProof block's flat child list into a tree of

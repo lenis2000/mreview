@@ -52,7 +52,7 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 	}
 	m.pdfGen++
 	gen := m.pdfGen
-	w, h := pdfPaneCells(m.Width, m.Height)
+	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
 	inputs := pdfRenderInputs{
 		Doc:         m.Doc,
 		BlockID:     m.CursorBlockID,
@@ -71,16 +71,28 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 // pdfPaneCells returns the inner (width, height) in terminal cells for the
 // PDF pane at the given terminal dimensions. Mirrors renderPane's inset math:
 // border eats 2 cells each axis, title eats one row, status bar one row.
-func pdfPaneCells(termW, termH int) (int, int) {
+func pdfPaneCells(termW, termH int, layout LayoutMode) (int, int) {
 	if termW <= 0 || termH <= 0 {
 		return 0, 0
 	}
-	_, _, pdfW := paneWidths(termW)
-	innerW := pdfW - 2
+	paneH := termH - statusBarHeight
+	if paneH < 1 {
+		paneH = 1
+	}
+	var paneW, paneRows int
+	switch layout {
+	case LayoutStacked:
+		_, paneW = stackedWidths(termW)
+		_, paneRows = stackedHeights(paneH)
+	default:
+		_, _, paneW = paneWidths(termW)
+		paneRows = paneH
+	}
+	innerW := paneW - 2
 	if innerW < 1 {
 		innerW = 1
 	}
-	innerH := termH - statusBarHeight - 2 - 1 // status + border top/bottom + title
+	innerH := paneRows - 2 - 1 // border top/bottom + title
 	if innerH < 1 {
 		innerH = 1
 	}
@@ -117,7 +129,11 @@ func renderPDFForBlock(in pdfRenderInputs, cache *pdfCropCache) (string, string)
 			return esc, ""
 		}
 	}
-	png, err := pdf.Crop(in.PDF, *region, 4)
+	// Render the SyncTeX target in the flow of its surroundings instead of a
+	// tight box. 80 PDF points is roughly an inch — about a paragraph above
+	// and below for typical 11pt body text — which gives the reviewer enough
+	// surrounding context to recognise the spot at a glance.
+	png, err := pdf.CropWithContext(in.PDF, *region, 80)
 	if err != nil {
 		return "", fmt.Sprintf("pdf: %v", err)
 	}

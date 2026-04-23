@@ -106,6 +106,24 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
+	if matches(key, m.Keymap.ToggleLayout) {
+		if m.Layout == LayoutThreeCol {
+			m.Layout = LayoutStacked
+		} else {
+			m.Layout = LayoutThreeCol
+		}
+		m.CountBuf = ""
+		// Geometry of the PDF pane changes — invalidate the cached crop and
+		// schedule a re-render at the new size.
+		m.PDFImage = ""
+		m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+		return m, m.schedulePDFRender()
+	}
+	if matches(key, m.Keymap.ToggleWrap) {
+		m.SoftWrap = !m.SoftWrap
+		m.CountBuf = ""
+		return m, nil
+	}
 
 	// Motion-count digit buffering. Bare "0" with an empty buffer resets
 	// (cancels any pending count); other digits accumulate.
