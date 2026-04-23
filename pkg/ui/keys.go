@@ -53,15 +53,13 @@ type Keymap struct {
 	ToggleWrap   []string
 	// Manual PDF mode (V). These bindings are *only* consulted when
 	// m.PDFManual is true, so they're free to overload keys that do
-	// something else in normal mode (e.g. `f` = filter normally,
-	// `f` = fit mode cycle in manual). That keeps the manual UX close to
+	// something else in normal mode. That keeps the manual UX close to
 	// LP's docviewer CLI without adding clashes outside manual mode.
 	PDFManual    []string
 	PDFNextPage  []string // n / j / space
 	PDFPrevPage  []string // p / k
 	PDFZoomIn    []string // + / =
 	PDFZoomOut   []string // -
-	PDFFitCycle  []string // f — height / width / auto
 	PDFDualPage  []string // 2 — off / vertical / horizontal
 	PDFDarkMode  []string // i
 	PDFGotoStart []string // 0 — first page / reset zoom
@@ -116,7 +114,6 @@ func DefaultKeymap() Keymap {
 		PDFPrevPage:  []string{"p", "k", "up", "left", ","},
 		PDFZoomIn:    []string{"+", "="},
 		PDFZoomOut:   []string{"-", "_"},
-		PDFFitCycle:  []string{"f"},
 		PDFDualPage:  []string{"2"},
 		PDFDarkMode:  []string{"i"},
 		PDFGotoStart: []string{"0"},

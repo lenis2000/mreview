@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -25,8 +26,8 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 		m.Status = "E: no source file"
 		return m, nil
 	}
-	editor := resolveEditor()
-	if editor == "" {
+	head, userArgs, ok := resolveEditor()
+	if !ok {
 		m.Status = "E: no editor found (set $EDITOR)"
 		return m, nil
 	}
@@ -34,8 +35,9 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 		m.Status = "E: save sidecar: " + err.Error()
 		return m, nil
 	}
-	args := buildEditorArgs(editor, m.Doc.File, absoluteCursorLine(m))
-	cmd := exec.Command(editor, args...)
+	lineArgs := buildEditorLineArgs(head, m.Doc.File, absoluteCursorLine(m))
+	argv := append(append([]string{}, userArgs...), lineArgs...)
+	cmd := exec.Command(head, argv...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -44,38 +46,50 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 	})
 }
 
-// resolveEditor picks an editor binary. $EDITOR wins when its first word
-// resolves to an executable on $PATH; otherwise we fall back to the
-// editorCandidates list in order.
-func resolveEditor() string {
-	if v := os.Getenv("EDITOR"); v != "" {
-		head := strings.Fields(v)
-		if len(head) > 0 {
-			if _, err := exec.LookPath(head[0]); err == nil {
-				return head[0]
+// resolveEditor picks an editor invocation from $EDITOR or the fallback
+// candidates. Returns (binary, userArgs, true) where userArgs are any
+// flags the user set in $EDITOR ("code --wait" → head="code",
+// userArgs=["--wait"]). Flag preservation matters: a blocking wrapper
+// like --wait is how tea.ExecProcess knows to wait for the edit to
+// finish before reloading.
+//
+// $EDITOR is split on whitespace via strings.Fields — adequate for the
+// common cases (`code --wait`, `emacsclient -c`, `nvim -u NONE`). Shell
+// quoting (spaces inside a path) is not parsed; users with such setups
+// should point $EDITOR at a wrapper script instead.
+func resolveEditor() (string, []string, bool) {
+	if v := strings.TrimSpace(os.Getenv("EDITOR")); v != "" {
+		tokens := strings.Fields(v)
+		if len(tokens) > 0 {
+			if _, err := exec.LookPath(tokens[0]); err == nil {
+				return tokens[0], tokens[1:], true
 			}
 		}
 	}
 	for _, c := range editorCandidates {
 		if _, err := exec.LookPath(c); err == nil {
-			return c
+			return c, nil, true
 		}
 	}
-	return ""
+	return "", nil, false
 }
 
-// buildEditorArgs assembles editor arguments. Vim-family editors accept
-// `+N` to jump to line N; VS Code / emacs-client use other forms which
-// we don't try to auto-detect — $EDITOR can always include its own flags
-// and we append the filename last.
-func buildEditorArgs(editor, path string, line int) []string {
+// buildEditorLineArgs produces the final argv tail: a jump-to-line flag
+// (when the editor family supports one) plus the file path. The head
+// binary name is matched loosely so `vim`, `nvim`, `nvim.appimage`, and
+// `/opt/vim/bin/vim` all pick up the `+N` flag. VS Code / emacs-client
+// accept their own line syntaxes which the user can express via
+// $EDITOR flags; we don't try to auto-detect those.
+func buildEditorLineArgs(editor, path string, line int) []string {
 	if line < 1 {
 		line = 1
 	}
+	name := strings.ToLower(filepath.Base(editor))
 	switch {
-	case strings.Contains(editor, "vim"), strings.Contains(editor, "vi"), strings.Contains(editor, "nano"):
-		return []string{fmt.Sprintf("+%d", line), path}
-	case strings.Contains(editor, "emacs"):
+	case strings.Contains(name, "vim"),
+		strings.Contains(name, "vi"),
+		strings.Contains(name, "nano"),
+		strings.Contains(name, "emacs"):
 		return []string{fmt.Sprintf("+%d", line), path}
 	default:
 		return []string{path}
@@ -173,8 +187,10 @@ func (m Model) CancelLineEdit() (tea.Model, tea.Cmd) {
 
 // writeSourceLine rewrites line N (1-based) of path with newContent,
 // preserving every other line exactly and keeping the file's trailing
-// newline if the original had one. Writes atomically via a temp file +
-// rename so a crash mid-write can't leave a truncated .tex.
+// newline if the original had one. Writes atomically via os.CreateTemp
+// + rename so a crash mid-write can't leave a truncated .tex, and
+// preserves the original file's mode bits so a `0600` paper doesn't
+// get widened to `0644` by the edit.
 func writeSourceLine(path string, n int, newContent string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -195,9 +211,34 @@ func writeSourceLine(path string, n int, newContent string) error {
 	if hadTrailingNL {
 		out += "\n"
 	}
-	tmp := path + ".mreview-edit.tmp"
-	if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
+
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	f, err := os.CreateTemp(dir, base+".mreview-edit.*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	if _, err := f.Write([]byte(out)); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

@@ -144,7 +144,6 @@ type Model struct {
 	PDFManual     bool
 	ManualPDFPage int    // 0-based page index
 	ManualPDFZoom int    // 0 = fit, +N = zoom in one step per N
-	ManualPDFFit  string // "auto" | "width" | "height" — fit policy
 	ManualPDFDual string // "" | "vertical" | "horizontal" — side-by-side/stacked
 	ManualPDFDark bool   // simple-invert dark mode
 	ManualPDFCropT float64
@@ -154,15 +153,17 @@ type Model struct {
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
-// CursorBlockID defaults to the first non-root block when the sidecar does
-// not pin a cursor or pins one that no longer exists.
+// CursorBlockID defaults to the first unreviewed block when the sidecar does
+// not pin a cursor or pins one that no longer exists, so resuming a partial
+// review opens where there's still work to do. Falls back to the first
+// content block if everything is already reviewed.
 func New(doc *parser.Document, side *persist.Sidecar) Model {
 	if side == nil {
 		side = &persist.Sidecar{}
 	}
 	cursor := side.Cursor
 	if cursor == "" || doc == nil || doc.ByID[cursor] == nil {
-		cursor = firstContentBlockID(doc)
+		cursor = firstUnreviewedOrAny(doc, side)
 	}
 	m := Model{
 		Doc:           doc,
@@ -193,6 +194,18 @@ func firstContentBlockID(doc *parser.Document) string {
 		return id
 	}
 	return ""
+}
+
+// firstUnreviewedOrAny picks the cursor block for a fresh session: the
+// first block not yet in side.Reviewed, falling back to any first block
+// when everything is already reviewed (or the doc has no reviewable
+// content). Used when the sidecar didn't pin a cursor — matches the
+// remap.go docstring that says the UI defaults to "first unreviewed".
+func firstUnreviewedOrAny(doc *parser.Document, side *persist.Sidecar) string {
+	if id := FirstVisible(doc, side, FilterUnreviewed); id != "" {
+		return id
+	}
+	return firstContentBlockID(doc)
 }
 
 // Init returns the initial command. The first cursor-following PDF render is

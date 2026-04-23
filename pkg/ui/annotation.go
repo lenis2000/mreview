@@ -120,6 +120,33 @@ func (m Model) EditAnnotation() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// RefreshRemappedAnnotations walks side.Annotations and rewrites the
+// Breadcrumb and SourceQuote fields from the current document state.
+// persist.Remap only updates structural pointers (BlockID, file, line
+// range); breadcrumb and quote are UI-derived and would otherwise stay
+// frozen at whatever the block looked like when the sidecar was
+// written. Call this right after persist.Remap so the `@` list, the
+// round-tripped sidecar headings, and any similarity matching all see
+// fresh text.
+func RefreshRemappedAnnotations(doc *parser.Document, side *persist.Sidecar) {
+	if doc == nil || side == nil {
+		return
+	}
+	for i := range side.Annotations {
+		a := &side.Annotations[i]
+		b := doc.ByID[a.BlockID]
+		if b == nil {
+			continue
+		}
+		a.Breadcrumb = AnnotationBreadcrumb(doc, b.ID)
+		if a.LineOffset > 0 {
+			a.SourceQuote = nthBlockLine(doc, b, a.LineOffset)
+		} else {
+			a.SourceQuote = b.Source
+		}
+	}
+}
+
 // SubmitAnnotation persists the popup's textarea contents on the target block
 // and closes the popup. An empty note is treated as a cancel, not a wipe.
 func (m Model) SubmitAnnotation() (tea.Model, tea.Cmd) {

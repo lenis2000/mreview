@@ -43,12 +43,25 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 // runTUI is overridable by tests to bypass tea.NewProgram (which requires a
 // real TTY). It returns the final model (so the caller can read the sidecar
 // state back out) plus any runtime error.
+//
+// The TUI draws to /dev/tty rather than the inherited stdout so that
+// `mreview paper.tex > review.md` works: TUI escape sequences land on
+// the terminal while stdout stays a clean channel for the final
+// markdown/JSON emit. stdout is used only when /dev/tty cannot be opened
+// (e.g. a pipe without a controlling terminal), in which case the old
+// mixed-output behaviour is at least no worse than before.
 var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
-	prog := tea.NewProgram(model,
+	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
-		tea.WithOutput(stdout),
-	)
+	}
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		defer tty.Close()
+		opts = append(opts, tea.WithInput(tty), tea.WithOutput(tty))
+	} else {
+		opts = append(opts, tea.WithOutput(stdout))
+	}
+	prog := tea.NewProgram(model, opts...)
 	return prog.Run()
 }
 
@@ -95,7 +108,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	if len(rest) > 0 {
+	if len(rest) > 1 {
+		fmt.Fprintf(stderr, "mreview: unexpected extra argument %q\n", rest[1])
+		fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
+		return 2
+	}
+	if len(rest) == 1 {
 		o.File = rest[0]
 	}
 
@@ -176,6 +194,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	side, detached := persist.Remap(loaded, doc)
 	side.Detached = append(side.Detached, loaded.Detached...)
 	side.Detached = append(side.Detached, detached...)
+	// Refresh UI-derived fields (breadcrumb, quote) against the current
+	// document so renamed sections or edited blocks no longer carry stale
+	// text through the next save.
+	ui.RefreshRemappedAnnotations(doc, side)
 
 	stdoutFmt, fmtErr := persist.ParseStdoutFormat(o.Stdout)
 	if fmtErr != nil {

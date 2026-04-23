@@ -47,10 +47,16 @@ type OutlineRow struct {
 // only *visible* ancestors are not considered — depth is the structural
 // depth in the parse tree, so that a filtered-in child keeps its indent
 // even when its parent is filtered out.
+//
+// The ⊘ per-block "no SyncTeX region" marker is suppressed when *no*
+// block in the document has a region — in that case SyncTeX is
+// unavailable session-wide (e.g. no .synctex.gz), and decorating every
+// non-section row would be noise rather than signal.
 func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter) []OutlineRow {
 	if doc == nil || doc.Root == nil {
 		return nil
 	}
+	syncAvailable := anyBlockHasRegion(doc)
 	rows := make([]OutlineRow, 0, len(doc.Blocks))
 	var walk func(id string, depth int)
 	walk = func(id string, depth int) {
@@ -64,7 +70,7 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter) []
 				Depth:   depth,
 				Icon:    iconFor(b.Kind),
 				Title:   titleFor(b),
-				Markers: markersFor(b, side),
+				Markers: markersFor(b, side, syncAvailable),
 			})
 		}
 		for _, c := range b.ChildIDs {
@@ -75,6 +81,22 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter) []
 		walk(id, 0)
 	}
 	return rows
+}
+
+// anyBlockHasRegion reports whether at least one non-root block has a
+// SyncTeX-populated PDFRegion. Used as a cheap session-level proxy for
+// "SyncTeX is loaded"; if no regions exist, we don't flag individual
+// blocks as missing regions.
+func anyBlockHasRegion(doc *parser.Document) bool {
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if b.PDFRegion != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // iconFor picks the outline icon for a Kind.
@@ -231,7 +253,11 @@ func truncateToWidth(s string, width int) string {
 }
 
 // markersFor builds the space-separated marker string for a block.
-func markersFor(b *parser.Block, side *persist.Sidecar) string {
+// syncAvailable gates the ⊘ marker: when SyncTeX is entirely absent the
+// marker is noise (every non-section block would carry it), so we only
+// emit it when SyncTeX *did* load but this particular block couldn't be
+// located.
+func markersFor(b *parser.Block, side *persist.Sidecar, syncAvailable bool) string {
 	var parts []string
 	if hasAnnotation(side, b.ID) {
 		parts = append(parts, MarkerAnnotated)
@@ -242,7 +268,7 @@ func markersFor(b *parser.Block, side *persist.Sidecar) string {
 	if blockHasUnresolved(b) {
 		parts = append(parts, MarkerUnresolved)
 	}
-	if b.PDFRegion == nil && b.Kind != parser.KindSection && b.ID != "root" {
+	if syncAvailable && b.PDFRegion == nil && b.Kind != parser.KindSection && b.ID != "root" {
 		parts = append(parts, MarkerNoRegion)
 	}
 	return strings.Join(parts, "")

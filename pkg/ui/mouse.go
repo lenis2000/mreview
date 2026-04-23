@@ -29,7 +29,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 		m.Focus = pane
 		switch pane {
 		case PaneOutline:
-			if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, innerY); id != "" {
+			bodyH := outlinePaneInnerH(m.Height, m.Layout)
+			if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, bodyH, innerY); id != "" {
 				if id != m.CursorBlockID {
 					m.CursorBlockID = id
 					m.SourceLineCursor = 1
@@ -163,21 +164,50 @@ func paneInnerY(y, paneH int) int {
 	return innerY
 }
 
-// outlineRowAt resolves a body-row index to the BlockID at that row. We
-// don't have the same scroll-offset state RenderOutline computes from body
-// height, so we treat the click position as an index into the unscrolled
-// row list — accurate when the outline fits without scrolling and a
-// reasonable approximation otherwise. Refining this would mean threading
-// the body height through the click handler.
-func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, row int) string {
+// outlineRowAt resolves a body-row index to the BlockID at that row,
+// accounting for the same scroll offset RenderOutline applies when the
+// cursor would otherwise fall off the bottom of the visible window.
+// Clicks on a scrolled-out-of-view row therefore land on the right
+// block instead of the unscrolled first row.
+func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, cursor string, bodyH, row int) string {
 	if row < 0 {
 		return ""
 	}
 	rows := BuildOutline(doc, side, filter)
-	if row >= len(rows) {
+	offset := outlineScrollOffset(rows, cursor, bodyH)
+	idx := offset + row
+	if idx < 0 || idx >= len(rows) {
 		return ""
 	}
-	return rows[row].BlockID
+	return rows[idx].BlockID
+}
+
+// outlineScrollOffset mirrors the scroll-to-keep-cursor-visible math in
+// RenderOutline so click-hit-testing and render see the same first row.
+func outlineScrollOffset(rows []OutlineRow, cursor string, bodyH int) int {
+	if bodyH < 1 {
+		return 0
+	}
+	cur := cursorOutlineIndex(rows, cursor)
+	if cur >= 0 && cur >= bodyH {
+		return cur - bodyH + 1
+	}
+	return 0
+}
+
+// outlinePaneInnerH replicates the inner body height computation that
+// view.go applies for the outline pane (border top/bottom + title row).
+func outlinePaneInnerH(termH int, layout LayoutMode) int {
+	_ = layout // outline spans the full height in both layouts
+	paneH := termH - statusBarHeight
+	if paneH < 1 {
+		paneH = 1
+	}
+	bodyH := paneH - 2 - 1
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	return bodyH
 }
 
 // sourceLineAt maps a click in the source pane body to (blockID, lineOffset).

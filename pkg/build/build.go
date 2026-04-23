@@ -8,6 +8,7 @@ package build
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -133,7 +134,23 @@ func scanLogForErrors(logPath string) string {
 		return ""
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
+	return scanLogReader(f)
+}
+
+// ScanLogBytes runs the same error/warning heuristics as the per-path
+// scanner against an in-memory log buffer. Exported so the lmkf reload
+// path (which has already read the log to check for the completion
+// marker) can reuse the same policy without re-reading the file or
+// duplicating the rule set.
+func ScanLogBytes(data []byte) string {
+	return scanLogReader(bytes.NewReader(data))
+}
+
+// scanLogReader is the shared scan loop for both the path-based and
+// byte-based entry points. Its rules are the contract: any change to
+// what counts as a build failure happens here.
+func scanLogReader(r io.Reader) string {
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Text()

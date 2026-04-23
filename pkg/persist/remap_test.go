@@ -131,11 +131,12 @@ func TestRemapReviewedFilteredToExisting(t *testing.T) {
 		Reviewed: []string{b.ID, "thm:main", "gone-id"},
 	}
 	out, _ := Remap(old, doc)
-	// b.ID direct hit + "thm:main" label hit → both equal b.ID; "gone-id" dropped.
-	require.Len(t, out.Reviewed, 2)
-	for _, id := range out.Reviewed {
-		assert.Equal(t, b.ID, id)
-	}
+	// Direct ID hit + label rescue collapse to one entry; "gone-id" is
+	// dropped. Deduping matters because ToggleReviewed removes only the
+	// first matching ID, so a legacy label + stable ID pair would leave
+	// a block reviewed after one toggle.
+	require.Len(t, out.Reviewed, 1)
+	assert.Equal(t, b.ID, out.Reviewed[0])
 }
 
 func TestRemapCursorRescueAndDrop(t *testing.T) {

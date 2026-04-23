@@ -28,7 +28,6 @@ type manualRenderInputs struct {
 	Zoom        int
 	WidthCells  int
 	HeightCells int
-	Fit         string // "auto" | "width" | "height"
 	Dual        string // "" | "horizontal" | "vertical"
 	Dark        bool
 	CropT       float64

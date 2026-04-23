@@ -61,14 +61,22 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 	// Keep only reviewed IDs that still exist — old IDs pointing at blocks
 	// that have vanished are dropped, and any labels are rewritten to the
 	// current block's ID so downstream code can look them up uniformly.
+	// Dedupe as we go: a sidecar that holds both a legacy label and the
+	// stable ID for the same block would otherwise produce two entries and
+	// break the space-to-toggle path (which removes only the first match).
+	seen := map[string]bool{}
 	for _, r := range old.Reviewed {
+		id := ""
 		if _, ok := doc.ByID[r]; ok {
-			out.Reviewed = append(out.Reviewed, r)
+			id = r
+		} else if b, ok := doc.ByLabel[r]; ok {
+			id = b.ID
+		}
+		if id == "" || seen[id] {
 			continue
 		}
-		if b, ok := doc.ByLabel[r]; ok {
-			out.Reviewed = append(out.Reviewed, b.ID)
-		}
+		seen[id] = true
+		out.Reviewed = append(out.Reviewed, id)
 	}
 
 	// If the saved cursor no longer exists, clear it so the UI falls back

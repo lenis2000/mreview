@@ -18,7 +18,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if rlm, ok := msg.(reloadMsg); ok {
 		if rlm.err != nil {
+			// $EDITOR failed — preserve the error text and skip the reload.
+			// The source file either wasn't changed or was saved before the
+			// crash; the next successful edit will pick up any stray changes.
 			m.Status = "editor: " + rlm.err.Error()
+			return m, nil
 		}
 		nm, cmd := m.startReload()
 		return nm, cmd
@@ -184,18 +188,6 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.CountBuf = ""
 			m.Status = manualPDFStatusHint(m)
 			return m, m.schedulePDFRender()
-		case matches(key, m.Keymap.PDFFitCycle):
-			switch m.ManualPDFFit {
-			case "", "auto":
-				m.ManualPDFFit = "width"
-			case "width":
-				m.ManualPDFFit = "height"
-			default:
-				m.ManualPDFFit = "auto"
-			}
-			m.CountBuf = ""
-			m.Status = manualPDFStatusHint(m)
-			return m, m.schedulePDFRender()
 		case matches(key, m.Keymap.PDFDualPage):
 			switch m.ManualPDFDual {
 			case "":
@@ -356,16 +348,12 @@ func manualPDFStatusHint(m Model) string {
 	if m.ManualPDFDual != "" {
 		dual = m.ManualPDFDual
 	}
-	fit := "auto"
-	if m.ManualPDFFit != "" {
-		fit = m.ManualPDFFit
-	}
 	dark := "off"
 	if m.ManualPDFDark {
 		dark = "on"
 	}
-	return fmt.Sprintf("PDF manual · pg %s%s · zoom %d · fit:%s · dual:%s · dark:%s · n/p +/- f 2 i V",
-		page, total, m.ManualPDFZoom, fit, dual, dark)
+	return fmt.Sprintf("PDF manual · pg %s%s · zoom %d · dual:%s · dark:%s · n/p +/- 2 i V",
+		page, total, m.ManualPDFZoom, dual, dark)
 }
 
 // blockLineCount returns the number of lines spanned by the cursor block,
@@ -527,9 +515,9 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch p := m.Popup.(type) {
 	case *AnnotationPopup:
 		switch msg.Type {
-		case tea.KeyEsc, tea.KeyCtrlS:
+		case tea.KeyCtrlS:
 			return m.SubmitAnnotation()
-		case tea.KeyCtrlC:
+		case tea.KeyEsc, tea.KeyCtrlC:
 			return m.CancelAnnotation()
 		}
 		var cmd tea.Cmd

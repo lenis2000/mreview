@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"sort"
 )
 
 // TheoremEnv describes a theorem-like environment — either discovered via
@@ -39,9 +40,32 @@ func Parse(src []byte) (*Document, error) {
 	p.segmentItemEnvs()
 	p.segmentLeafProse()
 	p.segmentLongParagraphs()
+	p.sortBlocksByLine()
 	p.assignStableIDs()
 	p.resolveRefs()
 	return p.doc, nil
+}
+
+// sortBlocksByLine reorders doc.Blocks so the slice reads in document
+// order. The segmentation passes (proof, list, paragraph) append derived
+// blocks to the end, which leaves doc.Blocks out of source order and
+// causes consumers that treat slice position as document position
+// (search index, annotation list, advanceAfterReview) to misorder
+// derived blocks. The sort is stable on StartLine so a parent block
+// and its sub-blocks that share the same starting line retain their
+// parent-before-child relationship. The synthetic root stays at [0].
+func (p *parser) sortBlocksByLine() {
+	blocks := p.doc.Blocks
+	if len(blocks) < 2 {
+		return
+	}
+	// Root is pinned at index 0 by newParser; keep it there and sort the
+	// remainder so we don't accidentally displace it by StartLine (it has
+	// StartLine == 0).
+	rest := blocks[1:]
+	sort.SliceStable(rest, func(i, j int) bool {
+		return rest[i].StartLine < rest[j].StartLine
+	})
 }
 
 // builtinTheoremEnvs is merged with \newtheorem declarations so callers can

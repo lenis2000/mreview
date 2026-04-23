@@ -83,8 +83,10 @@ type frontmatter struct {
 //
 // The separator between the breadcrumb and the block-ID is an em-dash (U+2014)
 // surrounded by ASCII spaces — note that the em-dash is multi-byte so we use
-// a character class in the regex.
-var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]*):L(\d+)-L(\d+)\)(?: \[line (\d+)\])?\s*$`)
+// a character class in the regex. The file portion is a greedy `.+`; the
+// trailing `:L\d+-L\d+\)` anchor pins the end, so paths containing `(` or `)`
+// (e.g. `paper (rev2)/main.tex`) still round-trip.
+var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \((.+):L(\d+)-L(\d+)\)(?: \[line (\d+)\])?\s*$`)
 
 // detachedEscapeRe matches any backslash-escaped variant of the DetachedMarker
 // line (zero or more leading backslashes). It is used both when writing notes

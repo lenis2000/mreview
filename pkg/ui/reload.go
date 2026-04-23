@@ -167,15 +167,18 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		newSidecar.Detached = append(newSidecar.Detached, oldSidecar.Detached...)
 	}
 	newSidecar.Detached = append(newSidecar.Detached, detached...)
+	RefreshRemappedAnnotations(newDoc, newSidecar)
 
+	// Open the new PDF first; only close the old handle on success so a
+	// reopen failure (e.g. PDF transiently deleted) doesn't leave the
+	// model holding a closed *pdf.Doc. When reopen fails, applyReloadResult
+	// keeps the existing handle.
 	var newPDF *pdf.Doc
 	if pdfDoc, err := pdf.Open(buildRes.PDFPath); err == nil {
 		newPDF = pdfDoc
-	}
-	// Close the old handle *after* opening the new one so a failure to
-	// reopen (e.g. PDF was deleted) doesn't leave us with no pane.
-	if oldPDF != nil && oldPDF != newPDF {
-		oldPDF.Close()
+		if oldPDF != nil && oldPDF != newPDF {
+			oldPDF.Close()
+		}
 	}
 
 	var newSyncTeX *synctex.Index
@@ -323,16 +326,14 @@ func logContainsMarker(data []byte) bool {
 	return strings.Contains(string(data), latexmkCompleteMarker)
 }
 
-// firstLogError returns the first `^! ` line from the log, empty if
-// none. Used to surface a specific error message on lmkf rebuild
-// failure instead of a generic "something went wrong".
+// firstLogError surfaces the first TeX error or undefined-ref/citation
+// warning from the log, delegating to build.ScanLogBytes so the lmkf
+// path applies the same error policy as a direct build.RunWith call.
+// Keeping the two scanners in sync matters because a "lmkf rebuild ok"
+// message should never be shown for a state a manual rebuild would
+// have rejected.
 func firstLogError(data []byte) string {
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "! ") {
-			return strings.TrimPrefix(line, "! ")
-		}
-	}
-	return ""
+	return build.ScanLogBytes(data)
 }
 
 // populateRegions mirrors cmd/mreview/main.go's populatePDFRegions but

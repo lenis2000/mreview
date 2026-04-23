@@ -61,7 +61,6 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 			Zoom:        m.ManualPDFZoom,
 			WidthCells:  w,
 			HeightCells: h,
-			Fit:         m.ManualPDFFit,
 			Dual:        m.ManualPDFDual,
 			Dark:        m.ManualPDFDark,
 			CropT:       m.ManualPDFCropT,
