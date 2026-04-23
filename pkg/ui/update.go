@@ -142,6 +142,29 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// When the source pane has focus, hijack the standard sibling-nav
+	// keys (j/k/down/up) to walk source lines instead of blocks. Crossing
+	// the first/last line steps to the prev/next block in DFS order so
+	// the motion feels continuous.
+	if m.Focus == PaneSource {
+		if matches(key, m.Keymap.NavNextOuter) {
+			n := parseCount(m.CountBuf)
+			m.CountBuf = ""
+			for i := 0; i < n; i++ {
+				m = m.scrollSource(+1)
+			}
+			return m, nil
+		}
+		if matches(key, m.Keymap.NavPrevOuter) {
+			n := parseCount(m.CountBuf)
+			m.CountBuf = ""
+			for i := 0; i < n; i++ {
+				m = m.scrollSource(-1)
+			}
+			return m, nil
+		}
+	}
+
 	// Motion-count digit buffering. Bare "0" with an empty buffer resets
 	// (cancels any pending count); other digits accumulate.
 	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
