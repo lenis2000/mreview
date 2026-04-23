@@ -10,12 +10,14 @@ import (
 	"mreview/pkg/persist"
 )
 
-// Pane width ratios — outline 25%, source 40%, PDF 35%. The percentages are
-// fixed for the MVP; resizing is delegated to terminal-width changes only.
+// Pane width ratios — outline 22%, source 50%, PDF 28%. Source gets the
+// lion's share because long prose lines in the .tex (full paragraphs on
+// one physical line) wrap badly at narrower widths; the PDF pane only
+// needs enough room to show the cursor-block crop legibly.
 const (
-	outlineFrac = 0.25
-	sourceFrac  = 0.40
-	pdfFrac     = 0.35
+	outlineFrac = 0.22
+	sourceFrac  = 0.50
+	pdfFrac     = 0.28
 )
 
 // statusBarHeight is the number of rows reserved for the bottom status row.

@@ -147,9 +147,9 @@ func TestPaneWidths_Splits(t *testing.T) {
 		assert.Greater(t, o, 0)
 		assert.Greater(t, s, 0)
 		assert.Greater(t, p, 0)
-		// outline ~25%, pdf ~35%, source ~40% — confirm rough proportions.
-		assert.InDelta(t, float64(tc.width)*0.25, float64(o), 1.5)
-		assert.InDelta(t, float64(tc.width)*0.35, float64(p), 1.5)
+		// outline ~22%, source ~50%, pdf ~28% — confirm rough proportions.
+		assert.InDelta(t, float64(tc.width)*0.22, float64(o), 1.5)
+		assert.InDelta(t, float64(tc.width)*0.28, float64(p), 1.5)
 	}
 }
 
