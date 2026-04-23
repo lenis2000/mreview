@@ -208,7 +208,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	finalSide := side
 	if fm, ok := final.(ui.Model); ok && fm.Sidecar != nil {
 		finalSide = fm.Sidecar
+		finalSide.Cursor = fm.CursorBlockID
 	}
+	finalSide.Paper = o.File
+	finalSide.PDF = buildRes.PDFPath
 	if saveErr := persist.Save(sidecarPath, finalSide); saveErr != nil {
 		fmt.Fprintf(stderr, "mreview: save sidecar %q: %v\n", sidecarPath, saveErr)
 		return 1

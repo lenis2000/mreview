@@ -67,9 +67,15 @@ func (m Model) handlePDFRender(msg pdfRenderMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// A pending delete-confirmation intercepts every key: y/Y confirms,
-	// anything else cancels. The [y/N] prompt lives in the status bar.
+	// A pending delete-confirmation intercepts most keys: y/Y confirms,
+	// anything else cancels. Ctrl+C still force-quits so the user is never
+	// trapped. The [y/N] prompt lives in the status bar.
 	if m.Pending != nil {
+		if msg.Type == tea.KeyCtrlC {
+			m.Pending = nil
+			m.quitting = true
+			return m, tea.Quit
+		}
 		yes := key == "y" || key == "Y"
 		return m.ConfirmDelete(yes), nil
 	}

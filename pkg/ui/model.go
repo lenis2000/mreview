@@ -156,12 +156,10 @@ func firstContentBlockID(doc *parser.Document) string {
 	return ""
 }
 
-// Init returns the initial command. When a PDF and SyncTeX index are wired,
-// we schedule the first cursor-following render so the pane is populated
-// before the user presses anything.
+// Init returns the initial command. The first cursor-following PDF render is
+// deferred to the initial WindowSizeMsg in Update so the render runs with
+// real terminal dimensions — scheduling it here would render at 0×0 cells
+// and (because Init has a value receiver) mutate pdfGen on a discarded copy.
 func (m Model) Init() tea.Cmd {
-	if m.PDF == nil || m.Synctex == nil {
-		return nil
-	}
-	return m.schedulePDFRender()
+	return nil
 }

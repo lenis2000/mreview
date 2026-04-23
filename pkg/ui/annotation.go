@@ -287,6 +287,9 @@ func fileOrDoc(doc *parser.Document, b *parser.Block) string {
 // SidecarPath + persist.Save. An empty path is treated as "no persistence
 // configured" so model-only tests can run without disk I/O.
 func (m Model) saveSidecar() error {
+	if m.Sidecar != nil {
+		m.Sidecar.Cursor = m.CursorBlockID
+	}
 	if m.SaveFn != nil {
 		return m.SaveFn(m.Sidecar)
 	}
