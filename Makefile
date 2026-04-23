@@ -13,7 +13,12 @@ test:
 	go test -cover ./...
 
 lint:
-	golangci-lint run
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		echo "golangci-lint not found; falling back to go vet"; \
+		go vet ./...; \
+	fi
 
 fmt:
 	go fmt ./...

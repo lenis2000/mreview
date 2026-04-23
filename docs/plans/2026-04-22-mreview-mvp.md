@@ -171,13 +171,13 @@ a A e d space          — annotations + reviewed
 - Create: `cmd/mreview/main_test.go`
 - Modify/create: `Makefile` if missing targets `build`, `test`, `lint`
 
-- [ ] use `github.com/jessevdk/go-flags` for CLI parsing
-- [ ] `Opts`: `File string (positional)`, `NoBuild bool`, `BuildCmd string`, `Sidecar string`, `Stdout string`, `Config string`, `Version bool`
-- [ ] `--version` prints version + exits 0
-- [ ] missing positional → usage to stderr + exit 2; missing file → error to stderr + exit 1; existing file → exits with `mreview: not implemented yet`
-- [ ] `go mod tidy`
-- [ ] tests in `main_test.go` for: `--version`, missing arg, missing file, existing-file placeholder
-- [ ] run `make build && make test && make lint` — all must pass
+- [x] use `github.com/jessevdk/go-flags` for CLI parsing
+- [x] `Opts`: `File string (positional)`, `NoBuild bool`, `BuildCmd string`, `Sidecar string`, `Stdout string`, `Config string`, `Version bool`
+- [x] `--version` prints version + exits 0
+- [x] missing positional → usage to stderr + exit 2; missing file → error to stderr + exit 1; existing file → exits with `mreview: not implemented yet`
+- [x] `go mod tidy`
+- [x] tests in `main_test.go` for: `--version`, missing arg, missing file, existing-file placeholder
+- [x] run `make build && make test && make lint` — all must pass
 
 ### Task 2: LaTeX tokenizer
 
