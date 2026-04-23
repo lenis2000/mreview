@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -475,4 +476,77 @@ func TestRun_UnknownStdoutFormatRejected(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("expected exit 2 for invalid --stdout, got %d (stderr=%q)", code, stderr.String())
 	}
+}
+
+// TestStartupArtefactsStale covers the four mtime cases the --draft
+// startup decision depends on. The function returns true (suppress
+// rendering) when the .tex is newer than either artefact OR when both
+// artefacts are missing; false only when artefacts exist and are at
+// least as new as the .tex.
+func TestStartupArtefactsStale(t *testing.T) {
+	dir := t.TempDir()
+	tex := filepath.Join(dir, "paper.tex")
+	pdf := filepath.Join(dir, "paper.pdf")
+	syn := filepath.Join(dir, "paper.synctex.gz")
+
+	if err := os.WriteFile(tex, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	texMtime := time.Now()
+
+	t.Run("artefacts-missing reports stale", func(t *testing.T) {
+		if !startupArtefactsStale(tex, pdf, syn) {
+			t.Errorf("missing artefacts should report stale")
+		}
+	})
+
+	// Create artefacts NEWER than tex — should be coherent.
+	if err := os.WriteFile(pdf, []byte("p"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(syn, []byte("s"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newer := texMtime.Add(2 * time.Second)
+	if err := os.Chtimes(pdf, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(syn, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("artefacts newer than tex are coherent", func(t *testing.T) {
+		if startupArtefactsStale(tex, pdf, syn) {
+			t.Errorf("newer artefacts should not report stale")
+		}
+	})
+
+	// Bump tex mtime so it's now newer than the PDF — should report stale.
+	older := newer.Add(-3 * time.Second)
+	if err := os.Chtimes(pdf, older, older); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("tex newer than PDF reports stale", func(t *testing.T) {
+		if !startupArtefactsStale(tex, pdf, syn) {
+			t.Errorf("PDF older than tex should report stale")
+		}
+	})
+
+	// Restore PDF, age the synctex instead.
+	if err := os.Chtimes(pdf, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(syn, older, older); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("tex newer than synctex reports stale", func(t *testing.T) {
+		if !startupArtefactsStale(tex, pdf, syn) {
+			t.Errorf("synctex older than tex should report stale")
+		}
+	})
+
+	t.Run("missing tex reports stale", func(t *testing.T) {
+		if !startupArtefactsStale(filepath.Join(dir, "nope.tex"), pdf, syn) {
+			t.Errorf("missing tex should report stale (defensive)")
+		}
+	})
 }

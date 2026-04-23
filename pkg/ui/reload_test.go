@@ -459,3 +459,18 @@ func TestOCRReport_BlockedInManualMode(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.Contains(t, nm.Status, "not available in manual PDF mode")
 }
+
+// TestOCRReport_BlockedWhenBuildStale is the deep-review #3 regression
+// guard: pressing B while BuildStale is true must short-circuit with
+// a "rebuild first" status, mirroring the render scheduler's contract.
+// Without this guard, startOCRReport would feed the new doc's line
+// numbers into the old SyncTeX index and write a report for the wrong
+// region.
+func TestOCRReport_BlockedWhenBuildStale(t *testing.T) {
+	m := New(parsedSample(t), nil)
+	m.BuildStale = true
+
+	nm, cmd := m.startOCRReport()
+	assert.Nil(t, cmd)
+	assert.Contains(t, nm.Status, "build is stale")
+}

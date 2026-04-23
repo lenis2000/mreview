@@ -231,8 +231,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model.Styles = ui.StylesForTheme(cfg.Theme)
 	model.KittyAvailable = ui.KittyGraphicsAvailable()
 	if buildWarning != "" {
-		model.BuildStale = true
 		model.Status = "build: " + buildWarning
+		// Only suppress rendering when the on-disk artefacts predate
+		// the .tex source — that's the case where SyncTeX line numbers
+		// don't map to the freshly-parsed doc and rendering would
+		// produce wrong crops. Common --draft scenario (undefined ref
+		// warning, latexmk completed and wrote artefacts) leaves them
+		// matching the source, so the user sees correct crops with a
+		// build warning in the status bar instead of a permanent
+		// placeholder.
+		if startupArtefactsStale(o.File, buildRes.PDFPath, buildRes.SyncTeXPath) {
+			model.BuildStale = true
+		}
 	}
 
 	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
@@ -272,6 +282,40 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// startupArtefactsStale reports whether the on-disk PDF / SyncTeX
+// artefacts predate the .tex source. Used by --draft startup to decide
+// whether stale-but-coherent artefacts (build failed but the previous
+// pass left up-to-date PDF/SyncTeX on disk — e.g. undefined-ref warning
+// only) can be safely rendered, or whether rendering must be suppressed
+// because the .tex was edited after the last successful build (SyncTeX
+// line numbers no longer map to the freshly-parsed doc).
+//
+// Returns true on missing/unreadable files: the conservative choice is
+// to suppress rendering rather than paint a wrong region next to a
+// build-warning status. The pdfPaneBody fallback ("(no PDF loaded)")
+// makes that case explicit to the user.
+func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
+	ti, err := os.Stat(texPath)
+	if err != nil {
+		return true
+	}
+	pi, perr := os.Stat(pdfPath)
+	si, serr := os.Stat(synctexPath)
+	if perr != nil && serr != nil {
+		// Neither artefact exists — there's nothing to render either
+		// way; report stale so the BuildStale contract stays consistent
+		// (no auto renders attempted while in this state).
+		return true
+	}
+	if perr == nil && pi.ModTime().Before(ti.ModTime()) {
+		return true
+	}
+	if serr == nil && si.ModTime().Before(ti.ModTime()) {
+		return true
+	}
+	return false
 }
 
 // shortBuildWarning extracts a one-line summary from a build error for
