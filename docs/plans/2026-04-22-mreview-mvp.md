@@ -185,13 +185,13 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/parser/tokenizer.go`, `pkg/parser/tokenizer_test.go`
 - Create: `testdata/sample.tex`
 
-- [ ] `Tokenize(src []byte) []Token`: `BeginEnv`, `EndEnv`, `Section{level, title, starred}`, `Label`, `Ref{kind, target}` (kind ∈ ref/cref/Cref/eqref/cite), `DisplayOpen`/`DisplayClose`, `NewTheorem{env, chain, label, starred}`, `TheoremStyle`, `BlankLine`, `CommentLine`
-- [ ] balanced `{}` for ref arguments (multi-key cite → multiple `Ref` tokens)
-- [ ] ignore content inside `verbatim` / `lstlisting` / `comment` envs
-- [ ] strip `%` comments but preserve positions
-- [ ] create `testdata/sample.tex` (~60 lines) covering: `\documentclass{amsart}`, 3 `\newtheorem` (incl. starred + chained), `\theoremstyle`, 1 section, 1 theorem w/ `\label`, 1 proof (3 paragraphs, 1 align, 1 `\ref`, 1 `\cref`), 1 figure w/ tikzpicture, 1 `\cite`, 1 unresolved ref
-- [ ] table-driven tests: token sequence counts + kinds + key fields; edge cases (nested envs, `$$…$$`, multi-key cite, starred section, `\newtheorem*`)
-- [ ] `make test && make lint`
+- [x] `Tokenize(src []byte) []Token`: `BeginEnv`, `EndEnv`, `Section{level, title, starred}`, `Label`, `Ref{kind, target}` (kind ∈ ref/cref/Cref/eqref/cite), `DisplayOpen`/`DisplayClose`, `NewTheorem{env, chain, label, starred}`, `TheoremStyle`, `BlankLine`, `CommentLine`
+- [x] balanced `{}` for ref arguments (multi-key cite → multiple `Ref` tokens)
+- [x] ignore content inside `verbatim` / `lstlisting` / `comment` envs
+- [x] strip `%` comments but preserve positions
+- [x] create `testdata/sample.tex` (~60 lines) covering: `\documentclass{amsart}`, 3 `\newtheorem` (incl. starred + chained), `\theoremstyle`, 1 section, 1 theorem w/ `\label`, 1 proof (3 paragraphs, 1 align, 1 `\ref`, 1 `\cref`), 1 figure w/ tikzpicture, 1 `\cite`, 1 unresolved ref
+- [x] table-driven tests: token sequence counts + kinds + key fields; edge cases (nested envs, `$$…$$`, multi-key cite, starred section, `\newtheorem*`)
+- [x] `make test && make lint`
 
 ### Task 3: Block parser — hierarchy, kinds, auto-discovery, inner-level
 
