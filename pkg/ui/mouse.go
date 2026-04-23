@@ -100,24 +100,27 @@ func (m Model) scrollSource(delta int) Model {
 	if total > 0 && newAbs > total {
 		newAbs = total
 	}
-	// Prefer a leaf block covering newAbs — a neighbouring paragraph,
-	// figure, theorem, or display. This is the only kind of transition
-	// the outline cursor should reflect; snapping to an enclosing
-	// section on every step would drag the outline up to the heading.
-	// Checked before the "inside current block" case so that stepping
-	// from a section heading into one of its child paragraphs snaps
-	// correctly instead of lingering on the section.
+	// Prefer the tightest leaf block covering newAbs — a neighbouring
+	// paragraph, figure, theorem, or display. Snapping to a leaf sibling
+	// is what the user expects in the common case (scrolling out of one
+	// paragraph into the next).
 	if leaf := leafContainingLine(m.Doc, newAbs); leaf != nil {
 		m.CursorBlockID = leaf.ID
 		m.SourceLineCursor = newAbs - leaf.StartLine + 1
 		return m
 	}
-	// No leaf covers — either the current block itself is a leaf and
-	// newAbs is inside it, or newAbs is a gap line uncovered by any
-	// leaf. In both cases stay in the current block and let
-	// SourceLineCursor fall outside [1, N] if needed. The source
-	// renderer walks a height-sized margin on both sides of the block,
-	// so an out-of-range row is still drawn and highlighted.
+	// Gap line covered only by an ancestor (e.g. a blank between a
+	// paragraph and a figure both inside a section). Snap to the
+	// tightest containing block so the outline reflects where we are.
+	// The line cursor remains at the correct absolute line — Update's
+	// "reset to 1 on block change" is guarded by a beforeLine==afterLine
+	// check, so the offset we set here survives.
+	if other := blockContainingLine(m.Doc, newAbs); other != nil {
+		m.CursorBlockID = other.ID
+		m.SourceLineCursor = newAbs - other.StartLine + 1
+		return m
+	}
+	// Unreachable for well-formed docs (root covers everything).
 	m.SourceLineCursor = newAbs - b.StartLine + 1
 	return m
 }
