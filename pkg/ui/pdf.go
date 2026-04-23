@@ -3,6 +3,7 @@ package ui
 import (
 	"container/list"
 	"fmt"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -147,8 +148,11 @@ type pdfCropKey struct {
 	Height  int
 }
 
-// pdfCropCache is a bounded LRU of rendered kitty escape strings.
+// pdfCropCache is a bounded LRU of rendered kitty escape strings. Concurrent
+// tick goroutines (scheduled from rapid cursor moves) may read/write this
+// cache in parallel, so the mutex is load-bearing — not just defensive.
 type pdfCropCache struct {
+	mu    sync.Mutex
 	max   int
 	ll    *list.List
 	index map[pdfCropKey]*list.Element
@@ -171,6 +175,8 @@ func (c *pdfCropCache) get(k pdfCropKey) (string, bool) {
 	if c == nil {
 		return "", false
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if e, ok := c.index[k]; ok {
 		c.ll.MoveToFront(e)
 		return e.Value.(pdfCropEntry).esc, true
@@ -182,6 +188,8 @@ func (c *pdfCropCache) put(k pdfCropKey, esc string) {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if e, ok := c.index[k]; ok {
 		e.Value = pdfCropEntry{key: k, esc: esc}
 		c.ll.MoveToFront(e)

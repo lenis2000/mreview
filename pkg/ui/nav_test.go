@@ -203,6 +203,32 @@ func TestFirstResolvedRef_NoneWhenBlockEmpty(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// A resolved cite is not a valid `go` target (cite keys live in BibEntries,
+// not ByLabel). When a cite precedes a label ref in the same block, the label
+// must still be picked.
+func TestFirstResolvedRef_SkipsCiteInFavorOfLabel(t *testing.T) {
+	b := &parser.Block{
+		RefsOut: []parser.Ref{
+			{Kind: "cite", Target: "Knuth1984", Resolved: true},
+			{Kind: "ref", Target: "thm:main", Resolved: true},
+		},
+	}
+	target, ok := FirstResolvedRef(b)
+	require.True(t, ok)
+	assert.Equal(t, "thm:main", target)
+}
+
+// A block whose only resolved refs are cites returns no target.
+func TestFirstResolvedRef_NoneWhenOnlyCites(t *testing.T) {
+	b := &parser.Block{
+		RefsOut: []parser.Ref{
+			{Kind: "cite", Target: "Knuth1984", Resolved: true},
+		},
+	}
+	_, ok := FirstResolvedRef(b)
+	assert.False(t, ok)
+}
+
 func TestBlocksReferencing_ReturnsBothReferrers(t *testing.T) {
 	doc := navDoc(t)
 	ids := BlocksReferencing(doc, "thm:a")

@@ -290,13 +290,18 @@ func LastVisible(doc *parser.Document, side *persist.Sidecar, f Filter) string {
 	return order[len(order)-1]
 }
 
-// FirstResolvedRef returns (target, true) for the first resolved outgoing ref
-// on b, across all ref kinds (ref/cref/Cref/eqref/cite).
+// FirstResolvedRef returns (target, true) for the first resolved outgoing
+// label-style ref on b (ref/cref/Cref/eqref). Cite refs are skipped — their
+// targets are bib keys that do not appear in doc.ByLabel, so they are not a
+// valid `go` target; the `gd` command handles cites separately.
 func FirstResolvedRef(b *parser.Block) (string, bool) {
 	if b == nil {
 		return "", false
 	}
 	for _, r := range b.RefsOut {
+		if r.Kind == "cite" {
+			continue
+		}
 		if r.Resolved && r.Target != "" {
 			return r.Target, true
 		}

@@ -113,7 +113,9 @@ func TestUpdate_CursorMoveSchedulesRender(t *testing.T) {
 	require.NotNil(t, cmd, "cursor change must schedule a PDF render")
 
 	// Run the tick to completion and confirm we receive a pdfRenderMsg.
-	got := waitForCmd(t, cmd, 500*time.Millisecond)
+	// The debounce is short (30ms) but fitz + the race detector can easily
+	// blow past a 500ms budget; give it plenty of headroom.
+	got := waitForCmd(t, cmd, 5*time.Second)
 	require.NotNil(t, got)
 	rm, ok := got.(pdfRenderMsg)
 	require.True(t, ok, "expected pdfRenderMsg, got %T", got)
