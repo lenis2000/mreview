@@ -151,6 +151,117 @@ func TestLoadRejectsUnterminatedFrontmatter(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRoundTripPreservesMarkdownSubheadingInNote(t *testing.T) {
+	in := &Sidecar{
+		Paper: "paper.tex",
+		PDF:   "paper.pdf",
+		Annotations: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem 1",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "src",
+			Note:        "initial line\n\n## Follow-up\nmore detail here\n\n## Next step\nfinal",
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "paper.mreview.md")
+	require.NoError(t, Save(path, in))
+	out, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, out.Annotations, 1)
+	assert.Equal(t, in.Annotations[0].Note, out.Annotations[0].Note)
+}
+
+func TestRoundTripPreservesLiteralDetachedHeadingInNote(t *testing.T) {
+	in := &Sidecar{
+		Paper: "paper.tex",
+		PDF:   "paper.pdf",
+		Annotations: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem 1",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "src",
+			Note:        "before\n## Detached\nafter",
+		}},
+		Detached: []Annotation{{
+			BlockID:     "lem:old",
+			Breadcrumb:  "Old Lemma",
+			File:        "paper.tex",
+			StartLine:   5,
+			EndLine:     6,
+			SourceQuote: "old",
+			Note:        "stale",
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "paper.mreview.md")
+	require.NoError(t, Save(path, in))
+	out, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, out.Annotations, 1)
+	assert.Equal(t, in.Annotations[0].Note, out.Annotations[0].Note)
+	require.Len(t, out.Detached, 1)
+	assert.Equal(t, in.Detached[0].BlockID, out.Detached[0].BlockID)
+}
+
+func TestRoundTripPreservesEscapedDetachedLineInNote(t *testing.T) {
+	in := &Sidecar{
+		Paper: "paper.tex",
+		Annotations: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem 1",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "src",
+			Note:        "before\n\\## Detached\nafter",
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "paper.mreview.md")
+	require.NoError(t, Save(path, in))
+	out, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, out.Annotations, 1)
+	assert.Equal(t, in.Annotations[0].Note, out.Annotations[0].Note)
+}
+
+func TestRoundTripPreservesWhitespacePaddedDetachedLineInNote(t *testing.T) {
+	in := &Sidecar{
+		Paper: "paper.tex",
+		Annotations: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem 1",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "src",
+			Note:        "before\n  ## Detached\n## Detached   \nafter",
+		}},
+	}
+	path := filepath.Join(t.TempDir(), "paper.mreview.md")
+	require.NoError(t, Save(path, in))
+	out, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, out.Annotations, 1)
+	assert.Empty(t, out.Detached)
+	assert.Equal(t, in.Annotations[0].Note, out.Annotations[0].Note)
+}
+
+func TestSavePreservesExistingFileMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "paper.mreview.md")
+	// Seed a sidecar file with a restrictive 0600 mode (private notes).
+	require.NoError(t, os.WriteFile(path, []byte("---\npaper: x.tex\npdf: x.pdf\n---\n"), 0o600))
+	require.NoError(t, os.Chmod(path, 0o600))
+	s := &Sidecar{Paper: "x.tex", PDF: "x.pdf"}
+	require.NoError(t, Save(path, s))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
+		"Save must not widen an existing sidecar's permission bits")
+}
+
 func TestLoadPreservesMultilineNote(t *testing.T) {
 	body := "---\npaper: a.tex\n---\n\n## Sec — `b1` (a.tex:L1-L3)\n\n> src\n\nline1\nline2\n\nline4\n"
 	path := filepath.Join(t.TempDir(), "x.mreview.md")

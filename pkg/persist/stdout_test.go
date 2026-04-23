@@ -136,6 +136,27 @@ func TestEmitDispatches(t *testing.T) {
 	assert.True(t, strings.HasPrefix(strings.TrimSpace(js.String()), "["))
 }
 
+func TestEmitMarkdownDoesNotEscapeDetachedLineInNote(t *testing.T) {
+	s := &Sidecar{
+		Annotations: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem 1",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "src",
+			Note:        "before\n## Detached\nafter",
+		}},
+	}
+	var buf bytes.Buffer
+	require.NoError(t, EmitMarkdown(&buf, s))
+	out := buf.String()
+	assert.Contains(t, out, "\n## Detached\n",
+		"stdout markdown must preserve the note text verbatim for the LLM")
+	assert.NotContains(t, out, `\## Detached`,
+		"stdout markdown must not apply the sidecar-only backslash escape")
+}
+
 func TestRoundTripPreservesDetached(t *testing.T) {
 	in := sampleForStdout()
 	out, err := Marshal(in)

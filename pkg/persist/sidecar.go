@@ -15,6 +15,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -74,6 +75,12 @@ type frontmatter struct {
 // a character class in the regex.
 var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]*):L(\d+)-L(\d+)\)\s*$`)
 
+// detachedEscapeRe matches any backslash-escaped variant of the DetachedMarker
+// line (zero or more leading backslashes). It is used both when writing notes
+// (to add one more backslash so the literal does not collide with the
+// structural marker) and when reading them (to strip exactly one backslash).
+var detachedEscapeRe = regexp.MustCompile(`^\\*## Detached$`)
+
 // Load reads a sidecar file from disk. A missing file is not an error: a
 // zero-value *Sidecar with empty fields is returned instead so callers can
 // proceed with a fresh review session.
@@ -97,11 +104,41 @@ func Save(path string, s *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+	// Use os.CreateTemp for a per-process unique temp name so concurrent
+	// mreview instances writing to the same sidecar don't clobber each
+	// other's tmp file before the final Rename.
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	f, err := os.CreateTemp(dir, base+".tmp.*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	if _, err := f.Write(out); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	// Preserve the existing sidecar's permission bits when overwriting so a
+	// user who chmod'd private notes to 0600 does not get them widened to
+	// 0644 on the next save. Fresh files fall back to 0644.
+	mode := os.FileMode(0o644)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Marshal serialises a *Sidecar into its markdown representation.
@@ -122,7 +159,7 @@ func Marshal(s *Sidecar) ([]byte, error) {
 	buf.WriteString("---\n")
 	for _, a := range s.Annotations {
 		buf.WriteString("\n")
-		buf.WriteString(formatAnnotation(a))
+		buf.WriteString(formatAnnotation(a, true))
 	}
 	if len(s.Detached) > 0 {
 		buf.WriteString("\n")
@@ -130,13 +167,17 @@ func Marshal(s *Sidecar) ([]byte, error) {
 		buf.WriteString("\n")
 		for _, a := range s.Detached {
 			buf.WriteString("\n")
-			buf.WriteString(formatAnnotation(a))
+			buf.WriteString(formatAnnotation(a, true))
 		}
 	}
 	return []byte(buf.String()), nil
 }
 
-func formatAnnotation(a Annotation) string {
+// formatAnnotation renders one annotation section. When escape is true, note
+// lines that collide with the structural `## Detached` marker are backslash-
+// prefixed so they survive the sidecar round-trip; the stdout-markdown path
+// passes false so the LLM receives the user's original text verbatim.
+func formatAnnotation(a Annotation, escape bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## %s — `%s` (%s:L%d-L%d)\n\n",
 		a.Breadcrumb, a.BlockID, a.File, a.StartLine, a.EndLine)
@@ -152,10 +193,36 @@ func formatAnnotation(a Annotation) string {
 	b.WriteString("\n")
 	note := strings.TrimRight(a.Note, "\n")
 	if note != "" {
+		if escape {
+			note = escapeNote(note)
+		}
 		b.WriteString(note)
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// escapeNote prefixes any line matching the DetachedMarker (with zero or more
+// leading backslashes) with one extra backslash so it does not collide with
+// the structural `## Detached` marker on reload. `\## Detached` is rendered
+// by markdown as the literal text `## Detached`.
+func escapeNote(note string) string {
+	lines := strings.Split(note, "\n")
+	for i, line := range lines {
+		if detachedEscapeRe.MatchString(line) {
+			lines[i] = `\` + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// unescapeNoteLine is the inverse of escapeNote applied per-line. Any line of
+// the form `\+## Detached` has one leading backslash stripped.
+func unescapeNoteLine(line string) string {
+	if strings.HasPrefix(line, `\`) && detachedEscapeRe.MatchString(line) {
+		return line[1:]
+	}
+	return line
 }
 
 // truncateQuote returns the lines to render in the blockquote. At most
@@ -228,7 +295,7 @@ func parse(data []byte) (*Sidecar, error) {
 			idx++
 			continue
 		}
-		if strings.TrimSpace(line) == DetachedMarker {
+		if line == DetachedMarker {
 			detached = true
 			idx++
 			continue
@@ -267,10 +334,20 @@ func parse(data []byte) (*Sidecar, error) {
 		for idx < len(lines) && strings.TrimSpace(lines[idx]) == "" {
 			idx++
 		}
-		// Note body: everything up to the next `## ` heading or EOF.
+		// Note body: everything up to the next annotation heading, the
+		// `## Detached` marker, or EOF. Other `## `-prefixed lines (e.g.
+		// a user-typed markdown subheading inside the free-text note) are
+		// preserved verbatim so round-tripping does not lose content.
 		var note []string
-		for idx < len(lines) && !strings.HasPrefix(lines[idx], "## ") {
-			note = append(note, lines[idx])
+		for idx < len(lines) {
+			ln := lines[idx]
+			if ln == DetachedMarker {
+				break
+			}
+			if headingRe.MatchString(ln) {
+				break
+			}
+			note = append(note, unescapeNoteLine(ln))
 			idx++
 		}
 		a.Note = strings.TrimRight(strings.Join(note, "\n"), "\n")

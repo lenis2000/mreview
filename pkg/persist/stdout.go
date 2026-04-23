@@ -62,7 +62,7 @@ func EmitMarkdown(w io.Writer, s *Sidecar) error {
 		if i > 0 {
 			buf.WriteString("\n")
 		}
-		buf.WriteString(formatAnnotation(a))
+		buf.WriteString(formatAnnotation(a, false))
 	}
 	if len(s.Detached) > 0 {
 		if len(s.Annotations) > 0 {
@@ -72,7 +72,7 @@ func EmitMarkdown(w io.Writer, s *Sidecar) error {
 		buf.WriteString("\n")
 		for _, a := range s.Detached {
 			buf.WriteString("\n")
-			buf.WriteString(formatAnnotation(a))
+			buf.WriteString(formatAnnotation(a, false))
 		}
 	}
 	_, err := io.WriteString(w, buf.String())
