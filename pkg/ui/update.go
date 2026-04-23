@@ -20,8 +20,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if rlm.err != nil {
 			m.Status = "editor: " + rlm.err.Error()
 		}
-		nm, cmd := m.reloadFromDisk()
+		nm, cmd := m.startReload()
 		return nm, cmd
+	}
+	if rr, ok := msg.(reloadResultMsg); ok {
+		return m.applyReloadResult(rr)
 	}
 	before := m.CursorBlockID
 	beforeW, beforeH := m.Width, m.Height

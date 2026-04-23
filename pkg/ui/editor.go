@@ -161,8 +161,8 @@ func (m Model) SubmitLineEdit() (tea.Model, tea.Cmd) {
 		m.Status = "line edit: " + err.Error()
 		return m, nil
 	}
-	m.Status = fmt.Sprintf("line %d updated", p.AbsoluteLine)
-	return m.reloadFromDisk()
+	m.Status = fmt.Sprintf("line %d updated · rebuilding…", p.AbsoluteLine)
+	return m.startReload()
 }
 
 // CancelLineEdit dismisses the inline editor without writing anything.

@@ -21,6 +21,21 @@ type reloadMsg struct {
 	err error
 }
 
+// reloadResultMsg carries the outcome of an asynchronous reload: the
+// reparsed document, freshly opened PDF / SyncTeX handles, remapped
+// sidecar, restored cursor, and any status line the build step emitted.
+// Running the heavy work off the Update goroutine keeps the UI
+// responsive — the user sees a "rebuilding…" status instead of a frozen
+// pane while latexmk churns.
+type reloadResultMsg struct {
+	newDoc     *parser.Document
+	newSidecar *persist.Sidecar
+	newPDF     *pdf.Doc
+	newSyncTeX *synctex.Index
+	newCursor  string
+	status     string
+}
+
 // requestReload returns a tea.Cmd that posts a reloadMsg. Used by edit
 // paths that don't go through tea.ExecProcess — they still want the same
 // post-edit pipeline (reparse + rebuild + remap + cursor restore).
@@ -28,54 +43,92 @@ func requestReload(err error) tea.Cmd {
 	return func() tea.Msg { return reloadMsg{err: err} }
 }
 
-// reloadFromDisk runs the full post-edit pipeline:
-//  1. Re-read the .tex from disk.
-//  2. Parse — the parser's segmentation passes run automatically.
-//  3. Rebuild (latexmk) only when the .tex is newer than the .pdf, so
-//     editing prose without touching anything that changes layout doesn't
-//     pay the rebuild cost unnecessarily. Build failures post a status
-//     line but don't block the reload — we can still render the stale
-//     PDF and the new source.
-//  4. Re-load .aux + .bbl, reopen PDF + SyncTeX, re-populate block
-//     regions so cursor-following PDF crops follow the new line
-//     numbers.
-//  5. Remap the in-memory sidecar by block ID so annotations track the
-//     edit (falling back to block-level when a line-pinned offset no
-//     longer fits).
-//  6. Restore the cursor to the same block ID when it still exists in
-//     the reparsed doc; otherwise fall back to the first content block.
-func (m Model) reloadFromDisk() (Model, tea.Cmd) {
+// startReload sets a "rebuilding…" status and returns a tea.Cmd that
+// performs the heavy work (parse, latexmk, PDF+SyncTeX reopen, sidecar
+// remap) off the Update goroutine. When done it emits a reloadResultMsg
+// that the Update handler applies to the model. Keeping the work off
+// the main loop is important: latexmk on a real paper takes seconds and
+// freezing the TUI that long makes it look like the edit had no effect.
+func (m Model) startReload() (Model, tea.Cmd) {
 	if m.Doc == nil || m.Doc.File == "" {
 		m.Status = "reload: no source file"
 		return m, nil
 	}
-	src, err := os.ReadFile(m.Doc.File)
+	path := m.Doc.File
+	oldSidecar := cloneSidecar(m.Sidecar)
+	oldCursor := m.CursorBlockID
+	oldPDF := m.PDF
+	buildCmd := ""
+	if m.Config != nil {
+		buildCmd = m.Config.BuildCmd
+	}
+	m.Status = "rebuilding…"
+
+	cmd := func() tea.Msg {
+		return performReload(path, oldSidecar, oldCursor, oldPDF, buildCmd)
+	}
+	return m, cmd
+}
+
+// applyReloadResult installs the outcome of startReload on the model.
+// Old PDF handle closure happens inside performReload (well before this
+// point) so there's no chance of closing a handle that's about to be
+// used by a lingering PDF render goroutine.
+func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
+	if r.newDoc != nil {
+		m.Doc = r.newDoc
+	}
+	if r.newSidecar != nil {
+		m.Sidecar = r.newSidecar
+	}
+	if r.newPDF != nil {
+		m.PDF = r.newPDF
+	}
+	m.Synctex = r.newSyncTeX
+	if r.newCursor != "" {
+		m.CursorBlockID = r.newCursor
+	}
+	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
+	m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+	m.PDFImage = ""
+	if r.status != "" {
+		m.Status = r.status
+	} else if m.Doc != nil {
+		m.Status = fmt.Sprintf("reloaded · %d blocks", len(m.Doc.Blocks))
+	}
+	return m, m.schedulePDFRender()
+}
+
+// performReload is the goroutine body launched by startReload. Doing
+// the full pipeline here (parse → build → reopen PDF+SyncTeX → remap)
+// keeps the Update loop responsive; we only touch the model through
+// the reloadResultMsg it returns.
+func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, oldPDF *pdf.Doc, buildCmd string) reloadResultMsg {
+	src, err := os.ReadFile(path)
 	if err != nil {
-		m.Status = "reload: " + err.Error()
-		return m, nil
+		return reloadResultMsg{status: "reload: " + err.Error()}
 	}
 	newDoc, err := parser.Parse(src)
 	if err != nil {
-		m.Status = "reload: parse: " + err.Error()
-		return m, nil
+		return reloadResultMsg{status: "reload: parse: " + err.Error()}
 	}
-	newDoc.File = m.Doc.File
+	newDoc.File = path
 
-	buildRes := build.ResolveBuildOutputs(m.Doc.File)
-	if shouldRebuild(m.Doc.File, buildRes.PDFPath) {
-		buildCmd := ""
-		if m.Config != nil {
-			buildCmd = m.Config.BuildCmd
-		}
+	buildRes := build.ResolveBuildOutputs(path)
+	status := ""
+	if shouldRebuild(path, buildRes.PDFPath) {
 		res, berr := build.RunWith(build.Options{
-			TexPath:  m.Doc.File,
+			TexPath:  path,
 			BuildCmd: buildCmd,
 		})
 		if berr != nil {
-			m.Status = "reload: build failed — " + shortBuildErr(berr)
+			status = "rebuild failed — " + shortBuildErr(berr)
 		} else {
 			buildRes = res
+			status = fmt.Sprintf("rebuilt + reloaded · %d blocks", len(newDoc.Blocks))
 		}
+	} else {
+		status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
 	}
 
 	if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
@@ -85,45 +138,60 @@ func (m Model) reloadFromDisk() (Model, tea.Cmd) {
 		parser.ApplyBBL(newDoc, bibEntries)
 	}
 
-	// Remap sidecar against the new document. Detached annotations
-	// accumulate across reloads so the user can recover anything that
-	// drifted off-anchor.
-	newSidecar, detached := persist.Remap(m.Sidecar, newDoc)
-	newSidecar.Detached = append(newSidecar.Detached, m.Sidecar.Detached...)
+	newSidecar, detached := persist.Remap(oldSidecar, newDoc)
+	if oldSidecar != nil {
+		newSidecar.Detached = append(newSidecar.Detached, oldSidecar.Detached...)
+	}
 	newSidecar.Detached = append(newSidecar.Detached, detached...)
 
-	if m.PDF != nil {
-		m.PDF.Close()
-		m.PDF = nil
-	}
+	var newPDF *pdf.Doc
 	if pdfDoc, err := pdf.Open(buildRes.PDFPath); err == nil {
-		m.PDF = pdfDoc
+		newPDF = pdfDoc
 	}
-	if idx, err := synctex.Open(buildRes.SyncTeXPath); err == nil {
-		m.Synctex = idx
-		populateRegions(newDoc, idx)
-	} else {
-		m.Synctex = nil
+	// Close the old handle *after* opening the new one so a failure to
+	// reopen (e.g. PDF was deleted) doesn't leave us with no pane.
+	if oldPDF != nil && oldPDF != newPDF {
+		oldPDF.Close()
 	}
 
-	oldCursor := m.CursorBlockID
+	var newSyncTeX *synctex.Index
+	if idx, err := synctex.Open(buildRes.SyncTeXPath); err == nil {
+		newSyncTeX = idx
+		populateRegions(newDoc, idx)
+	}
+
+	newCursor := oldCursor
 	if _, ok := newDoc.ByID[oldCursor]; !ok {
 		if b, ok := newDoc.ByLabel[oldCursor]; ok {
-			m.CursorBlockID = b.ID
+			newCursor = b.ID
 		} else {
-			m.CursorBlockID = firstContentBlockID(newDoc)
+			newCursor = firstContentBlockID(newDoc)
 		}
 	}
 
-	m.Doc = newDoc
-	m.Sidecar = newSidecar
-	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
-	m.pdfCache = newPDFCropCache(pdfCropCacheMax)
-	m.PDFImage = ""
-	if m.Status == "" {
-		m.Status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
+	return reloadResultMsg{
+		newDoc:     newDoc,
+		newSidecar: newSidecar,
+		newPDF:     newPDF,
+		newSyncTeX: newSyncTeX,
+		newCursor:  newCursor,
+		status:     status,
 	}
-	return m, m.schedulePDFRender()
+}
+
+// cloneSidecar returns a shallow copy so the reload goroutine can
+// operate on a snapshot while the user keeps typing notes in the live
+// model. The slices still share backing storage, but we never mutate
+// them in performReload.
+func cloneSidecar(s *persist.Sidecar) *persist.Sidecar {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	out.Annotations = append([]persist.Annotation(nil), s.Annotations...)
+	out.Detached = append([]persist.Annotation(nil), s.Detached...)
+	out.Reviewed = append([]string(nil), s.Reviewed...)
+	return &out
 }
 
 // shouldRebuild reports whether tex mtime is newer than pdf mtime. A
