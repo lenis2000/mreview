@@ -662,23 +662,37 @@ func (p *parser) paragraphSpans(startLine, endLine int) [][2]int {
 // fit comfortably in the source pane without scrolling.
 const longParagraphLineThreshold = 6
 
-// segmentLongParagraphs walks every leaf KindParagraph block and, when the
-// paragraph's line count exceeds longParagraphLineThreshold, splits it on
-// sentence boundaries (`. `, `? `, `! ` followed by whitespace or EOL).
-// Sub-blocks are also KindParagraph so the outline shows them uniformly.
+// segmentLongParagraphs walks every leaf prose-y block and, when its line
+// count exceeds longParagraphLineThreshold, splits it on sentence
+// boundaries. Acts on KindParagraph (the post-blank-line slices) as well
+// as the original prose kinds (KindAbstract, KindOther) so that a
+// single-paragraph abstract — which segmentLeafProse leaves alone because
+// it has no blank-line breaks — still becomes navigable. Sub-blocks are
+// always KindParagraph so the outline renders them uniformly.
 func (p *parser) segmentLongParagraphs() {
 	blocks := append([]*Block(nil), p.doc.Blocks...)
 	for _, b := range blocks {
 		if b == p.doc.Root || len(b.ChildIDs) > 0 {
 			continue
 		}
-		if b.Kind != KindParagraph {
+		if b.Kind != KindParagraph && !proseSplittableKinds[b.Kind] {
 			continue
 		}
-		if b.EndLine-b.StartLine+1 <= longParagraphLineThreshold {
+		if b.EnvName != "" && listEnvs[b.EnvName] {
 			continue
 		}
-		spans := p.sentenceSpans(b.StartLine, b.EndLine)
+		startLine := b.StartLine
+		endLine := b.EndLine
+		// Strip the env's `\begin{...}` and `\end{...}` framing lines so
+		// the sentence walker doesn't try to split across them.
+		if b.EnvName != "" {
+			startLine++
+			endLine--
+		}
+		if endLine-startLine+1 <= longParagraphLineThreshold {
+			continue
+		}
+		spans := p.sentenceSpans(startLine, endLine)
 		if len(spans) <= 1 {
 			continue
 		}
