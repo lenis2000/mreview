@@ -227,11 +227,11 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/parser/aux.go`, `pkg/parser/aux_test.go`, `pkg/parser/bib.go`, `pkg/parser/bib_test.go`
 - Create: `testdata/sample.aux`, `testdata/sample.bbl`
 
-- [ ] parse `\newlabel{X}{{num}{page}…}` → populate `Block.Number`
-- [ ] simple `\bibitem[key]{key} authors, title…` bbl parser → bib-entry block fields
-- [ ] missing `.aux`/`.bbl` → empty fields, not an error
-- [ ] tests with synthetic fixtures
-- [ ] `make test && make lint`
+- [x] parse `\newlabel{X}{{num}{page}…}` → populate `Block.Number`
+- [x] simple `\bibitem[key]{key} authors, title…` bbl parser → bib-entry block fields
+- [x] missing `.aux`/`.bbl` → empty fields, not an error
+- [x] tests with synthetic fixtures
+- [x] `make test && make lint`
 
 ### Task 6: latexmk runner (strict)
 

@@ -24,6 +24,7 @@ type Document struct {
 	ByLabel     map[string]*Block
 	Root        *Block
 	TheoremEnvs map[string]TheoremEnv
+	BibEntries  map[string]*BibEntry
 }
 
 // Parse tokenizes src and builds the block tree.
@@ -115,6 +116,7 @@ func newParser(src []byte) *parser {
 		ByLabel:     map[string]*Block{},
 		Root:        root,
 		TheoremEnvs: copyTheoremEnvs(builtinTheoremEnvs),
+		BibEntries:  map[string]*BibEntry{},
 	}
 	return &parser{
 		src:           src,

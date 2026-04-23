@@ -19,3 +19,8 @@ coverage.html
 
 # ralphex progress logs
 .ralphex/progress/
+
+# Testdata fixtures must be checked in even though their extensions
+# match the global LaTeX-output ignores above.
+!testdata/**
+
