@@ -214,12 +214,12 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/parser/refs.go`, `pkg/parser/id.go`, `pkg/parser/refs_test.go`, `pkg/parser/id_test.go`
 - Modify: `pkg/parser/parse.go`
 
-- [ ] two-pass: (1) collect labels → `Document.ByLabel`; (2) walk each block's source, extract refs, resolve, set `Resolved`
-- [ ] `Ref{Kind, Target, LineOffset, ColOffset, Resolved}`
-- [ ] stable ID: label if present, else `sha1(kind || parent-label || source[:40])[:8]` with sibling index + title slug prefix
-- [ ] proof-steps under labeled proof → dotted IDs (`thm:main.proof.step.1`)
-- [ ] tests: resolved/unresolved/multi-key cite/forward refs; ID stability under line shifts
-- [ ] `make test && make lint`
+- [x] two-pass: (1) collect labels → `Document.ByLabel`; (2) walk each block's source, extract refs, resolve, set `Resolved`
+- [x] `Ref{Kind, Target, LineOffset, ColOffset, Resolved}`
+- [x] stable ID: label if present, else `sha1(kind || parent-label || source[:40])[:8]` with sibling index + title slug prefix
+- [x] proof-steps under labeled proof → dotted IDs (`thm:main.proof.step.1`)
+- [x] tests: resolved/unresolved/multi-key cite/forward refs; ID stability under line shifts
+- [x] `make test && make lint`
 
 ### Task 5: .aux parser + bibliography enrichment
 

@@ -34,6 +34,8 @@ func Parse(src []byte) (*Document, error) {
 	p.collectTheoremEnvs()
 	p.buildTree()
 	p.segmentProofs()
+	p.assignStableIDs()
+	p.resolveRefs()
 	return p.doc, nil
 }
 

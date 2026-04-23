@@ -55,13 +55,14 @@ type Region struct {
 }
 
 // Ref records an outgoing reference from a block's source.
-// Resolution (setting Resolved) happens in a later task.
+// LineOffset / ColOffset are measured from the block's start: LineOffset 0
+// means the ref is on the same line as StartLine; ColOffset is 0-based.
 type Ref struct {
-	Kind     string // "ref", "cref", "Cref", "eqref", "cite"
-	Target   string
-	Line     int
-	Col      int
-	Resolved bool
+	Kind       string // "ref", "cref", "Cref", "eqref", "cite"
+	Target     string
+	LineOffset int
+	ColOffset  int
+	Resolved   bool
 }
 
 // Block is a node in the semantic tree produced by Parse.
