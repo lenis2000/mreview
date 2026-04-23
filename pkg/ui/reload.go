@@ -153,8 +153,13 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		// reload can flush it cleanly.
 		return m, nil
 	}
+	// Healthy reload: flush the crop cache because mtime / block IDs
+	// may have shifted, but keep m.PDFImage on screen through the
+	// render debounce so the pane doesn't blink. handlePDFRender
+	// atomically replaces it once the new crop is ready; if the new
+	// render produces a status instead of an image, pdfPaneBody's
+	// kitty-delete prefix retires the stale bitmap.
 	m.pdfCache = newPDFCropCache(pdfCropCacheMax)
-	m.PDFImage = ""
 	return m, m.schedulePDFRender()
 }
 

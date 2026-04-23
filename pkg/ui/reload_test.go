@@ -246,17 +246,16 @@ func TestApplyReloadResult_BuildStalePreservesImageAndSuppressesRender(t *testin
 
 // TestApplyReloadResult_FreshBuildClearsStaleFlag covers the happy
 // path that unfreezes the PDF pane: a subsequent successful reload
-// clears BuildStale, flushes PDFImage, and returns a non-nil render
-// command so the user sees a fresh crop against the new artefacts.
-// (PDF is nil in this synthetic test, so schedulePDFRender itself
-// returns nil — the assertion is on the flag/PDFImage transitions,
-// which are the actionable part of the contract.)
+// clears BuildStale and the prior PDFImage stays on screen through
+// the render debounce so the pane doesn't blink. handlePDFRender
+// replaces it atomically once the new crop is ready.
 func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
 	doc := parsedSample(t)
 	m := New(doc, &persist.Sidecar{})
 	m.Width, m.Height = 120, 40
 	m.BuildStale = true
-	m.PDFImage = "leftover-from-stale-session"
+	const priorImage = "leftover-from-stale-session"
+	m.PDFImage = priorImage
 
 	nm, _ := m.applyReloadResult(reloadResultMsg{
 		gen:        m.reloadGen,
@@ -265,7 +264,8 @@ func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
 		buildStale: false,
 	})
 	assert.False(t, nm.BuildStale, "successful reload must clear the stale flag")
-	assert.Empty(t, nm.PDFImage, "successful reload must flush the prior image so a fresh render replaces it")
+	assert.Equal(t, priorImage, nm.PDFImage,
+		"healthy reload keeps the prior image through the render debounce so the pane doesn't flicker")
 }
 
 // TestSchedulePDFRender_SuppressedWhenBuildStale covers the render-

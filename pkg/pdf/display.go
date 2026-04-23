@@ -16,6 +16,14 @@ import (
 // chars is the standard safe ceiling that all kitty implementations accept.
 const kittyChunkSize = 4096
 
+// KittyDeleteAll is the APC sequence that removes every kitty graphics image
+// from the terminal. It's idempotent (safe to emit when no image exists) and
+// is exported so UI transitions away from an image (to status text, to a
+// placeholder, to quit) can explicitly retire the bitmap — without this, the
+// previous crop stays painted because the kitty plane is independent of
+// Bubble Tea's text buffer.
+const KittyDeleteAll = "\x1b_Ga=d\x1b\\"
+
 // RenderKitty converts PNG bytes into a kitty-graphics escape sequence sized
 // to fit inside a (widthCells × heightCells) terminal cell region.
 //
@@ -80,7 +88,7 @@ func RenderKitty(pngBytes []byte, widthCells, heightCells int) (string, error) {
 	// previous block's crop stays painted on top of the cells when the new
 	// image is smaller (aspect-fit can shrink a wide-and-short crop down to
 	// just a few rows, leaving the old image's lower portion visible).
-	sb.WriteString("\x1b_Ga=d\x1b\\")
+	sb.WriteString(KittyDeleteAll)
 	for i := 0; i < len(encoded); i += kittyChunkSize {
 		end := i + kittyChunkSize
 		if end > len(encoded) {

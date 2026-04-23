@@ -132,14 +132,12 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if matches(key, m.Keymap.PDFManual) {
 		m.PDFManual = !m.PDFManual
 		m.CountBuf = ""
-		// While BuildStale is true, schedulePDFRender returns nil —
-		// clearing PDFImage here would blank the pane instead of
-		// preserving the last known-good crop the way the stale-build
-		// contract promises. Only clear when a fresh render will
-		// actually replace it.
-		if !m.BuildStale {
-			m.PDFImage = ""
-		}
+		// Leave m.PDFImage alone: pane geometry is unchanged by the
+		// mode flip, so keeping the previous crop visible through the
+		// render debounce (~30ms) avoids an avoidable blank window.
+		// handlePDFRender replaces it atomically when the new render
+		// lands. BuildStale doesn't need a special case anymore
+		// because nothing is being cleared.
 		if m.PDFManual {
 			m.Status = manualPDFStatusHint(m)
 		} else {

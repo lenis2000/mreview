@@ -38,10 +38,29 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 	lineArgs := buildEditorLineArgs(head, m.Doc.File, absoluteCursorLine(m))
 	argv := append(append([]string{}, userArgs...), lineArgs...)
 	cmd := exec.Command(head, argv...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// Route the editor's IO through /dev/tty to mirror what runTUI does
+	// for the main program. Without this, `mreview paper.tex > review.md`
+	// would give $EDITOR an os.Stdout pointed at review.md — full-screen
+	// control sequences would land in the redirected file and the editor
+	// would have no interactive terminal to paint on. The tty handle
+	// must outlive the exec (which happens inside tea.ExecProcess, not
+	// inside this function), so the close is deferred into the
+	// completion callback.
+	var ttyFile *os.File
+	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		ttyFile = tty
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+	} else {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if ttyFile != nil {
+			ttyFile.Close()
+		}
 		return reloadMsg{err: err}
 	})
 }

@@ -50,19 +50,30 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 // markdown/JSON emit. stdout is used only when /dev/tty cannot be opened
 // (e.g. a pipe without a controlling terminal), in which case the old
 // mixed-output behaviour is at least no worse than before.
+//
+// On exit we emit a kitty-delete APC to the TTY (when we have one and the
+// terminal supports kitty) so any lingering PDF image is retired before
+// control returns to the user's shell. Without this, kitty keeps painting
+// the last crop under the shell prompt until the next TIOCGWINSZ clear.
 var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	}
+	var ttyFile *os.File
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
 		defer tty.Close()
+		ttyFile = tty
 		opts = append(opts, tea.WithInput(tty), tea.WithOutput(tty))
 	} else {
 		opts = append(opts, tea.WithOutput(stdout))
 	}
 	prog := tea.NewProgram(model, opts...)
-	return prog.Run()
+	final, runErr := prog.Run()
+	if ttyFile != nil && ui.KittyGraphicsAvailable() {
+		fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
+	}
+	return final, runErr
 }
 
 // version is the mreview release version. Overridable at build time via -ldflags.
@@ -211,6 +222,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
 	model.Styles = ui.StylesForTheme(cfg.Theme)
+	model.KittyAvailable = ui.KittyGraphicsAvailable()
 
 	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
 	// either file is missing (e.g. --no-build on a never-built paper) the

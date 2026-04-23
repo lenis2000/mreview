@@ -48,6 +48,12 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 	if m.PDF == nil {
 		return nil
 	}
+	if !m.KittyAvailable {
+		// Terminal can't render kitty graphics — emitting the APC
+		// sequences anyway would paint raw escape garbage on screen.
+		// The pane shows a placeholder via pdfPaneBody instead.
+		return nil
+	}
 	if m.BuildStale {
 		// The current m.Doc was parsed from a freshly-edited .tex but
 		// the rebuild that should have produced matching PDF + SyncTeX
@@ -262,18 +268,26 @@ func (c *pdfCropCache) put(k pdfCropKey, esc string) {
 // pdfPaneBody picks what to draw inside the PDF pane: a live kitty escape
 // when one is available, a status string when the render produced no image,
 // or the fallback placeholder when neither is set yet.
+//
+// Transitions from image to text prepend a kitty-delete APC so any lingering
+// bitmap is retired before the status paints. Without this the kitty plane
+// (which is independent of Bubble Tea's text buffer) keeps showing the last
+// image even though the rest of the pane now says "(no PDF region)".
 func (m Model) pdfPaneBody() string {
+	if !m.KittyAvailable {
+		return "(PDF pane requires kitty or ghostty terminal)"
+	}
 	if m.PDFImage != "" {
 		return m.PDFImage
 	}
 	if m.PDFStatus != "" {
-		return m.PDFStatus
+		return pdf.KittyDeleteAll + m.PDFStatus
 	}
 	if m.Doc == nil || m.CursorBlockID == "" {
-		return "(no PDF region)"
+		return pdf.KittyDeleteAll + "(no PDF region)"
 	}
 	if m.PDF == nil && m.Synctex == nil {
-		return "(no PDF loaded)"
+		return pdf.KittyDeleteAll + "(no PDF loaded)"
 	}
-	return pdf.NoRegionPlaceholder
+	return pdf.KittyDeleteAll + pdf.NoRegionPlaceholder
 }

@@ -167,6 +167,14 @@ type Model struct {
 	// race where the slower-finishing one would otherwise apply last
 	// and roll the model back to older state.
 	reloadGen int
+
+	// KittyAvailable reports whether the terminal is believed to
+	// support the kitty graphics protocol. When false, schedulePDFRender
+	// skips rendering and pdfPaneBody shows a text placeholder instead
+	// of unconditionally spraying APC escape sequences into a terminal
+	// that might render them as literal garbage. Set by main.go from
+	// KittyGraphicsAvailable() during startup.
+	KittyAvailable bool
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -204,6 +212,11 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		pdfCache:         newPDFCropCache(pdfCropCacheMax),
 		SoftWrap:         true,
 		SourceLineCursor: 1,
+		// Default optimistic — the real capability check runs in
+		// main.go and overrides this. Tests that don't set up the
+		// env get the rendering path enabled, matching the behaviour
+		// before the capability gate was added.
+		KittyAvailable: true,
 	}
 	m.Config = DefaultConfig()
 	if n := len(side.Detached); n > 0 {

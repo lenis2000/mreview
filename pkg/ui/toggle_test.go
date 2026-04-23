@@ -31,21 +31,24 @@ func TestToggleManualPDF_PreservesImageWhenBuildStale(t *testing.T) {
 		"toggling V while BuildStale must not blank the PDF pane")
 }
 
-// TestToggleManualPDF_ClearsImageWhenBuildFresh guards the
-// non-stale path so the preservation doesn't accidentally apply
-// when a fresh render *would* replace the image.
-func TestToggleManualPDF_ClearsImageWhenBuildFresh(t *testing.T) {
+// TestToggleManualPDF_KeepsImageWhenBuildFresh covers the flicker
+// fix: V flips rendering mode but pane geometry is unchanged, so
+// the prior crop stays on screen through the render debounce
+// (~30ms) instead of blanking. handlePDFRender replaces it
+// atomically once the new render arrives.
+func TestToggleManualPDF_KeepsImageWhenBuildFresh(t *testing.T) {
 	doc := parsedSample(t)
 	m := New(doc, &persist.Sidecar{})
 	m.Width, m.Height = 120, 40
 	m.BuildStale = false
-	m.PDFImage = "about-to-be-replaced"
+	const priorImage = "about-to-be-replaced"
+	m.PDFImage = priorImage
 
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'V'}})
 	nm := out.(Model)
 	assert.True(t, nm.PDFManual)
-	assert.Empty(t, nm.PDFImage,
-		"fresh-build V toggle should clear so the new render replaces cleanly")
+	assert.Equal(t, priorImage, nm.PDFImage,
+		"fresh-build V toggle keeps the prior image through the render debounce (anti-flicker)")
 }
 
 // TestToggleLayout_PreservesImageWhenBuildStale is the \ equivalent.

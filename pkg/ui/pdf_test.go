@@ -45,16 +45,18 @@ func TestPDFPaneBody_NoPDFLoaded(t *testing.T) {
 	m.Width = 120
 	m.Height = 30
 	body := m.pdfPaneBody()
-	assert.Equal(t, "(no PDF loaded)", body)
+	assert.Equal(t, pdf.KittyDeleteAll+"(no PDF loaded)", body,
+		"transitions away from an image must emit the kitty-delete APC first")
 }
 
 func TestPDFPaneBody_ShowsImageAndStatus(t *testing.T) {
 	m := New(parsedSample(t), nil)
 	m.PDFImage = "ESCAPE"
-	assert.Equal(t, "ESCAPE", m.pdfPaneBody())
+	assert.Equal(t, "ESCAPE", m.pdfPaneBody(), "image path passes through unchanged")
 	m.PDFImage = ""
 	m.PDFStatus = "(no region — block outside PDF)"
-	assert.Equal(t, "(no region — block outside PDF)", m.pdfPaneBody())
+	assert.Equal(t, pdf.KittyDeleteAll+"(no region — block outside PDF)", m.pdfPaneBody(),
+		"status paths must prepend the kitty-delete APC so the prior bitmap is retired")
 }
 
 func TestSchedulePDFRender_NilWithoutPDF(t *testing.T) {
