@@ -187,17 +187,7 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		populateRegions(newDoc, idx)
 	}
 
-	newCursor := oldCursor
-	if _, ok := newDoc.ByID[oldCursor]; !ok {
-		if b, ok := newDoc.ByLabel[oldCursor]; ok {
-			newCursor = b.ID
-		} else {
-			// Mirror ui.New's fallback: after the cursor vanished (edits
-			// deleted or split the block), prefer the next unreviewed
-			// block over jumping back to the start of the document.
-			newCursor = firstUnreviewedOrAny(newDoc, newSidecar)
-		}
-	}
+	newCursor := resolveReloadCursor(oldCursor, newDoc, newSidecar)
 
 	return reloadResultMsg{
 		newDoc:     newDoc,
@@ -207,6 +197,26 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		newCursor:  newCursor,
 		status:     status,
 	}
+}
+
+// resolveReloadCursor picks the cursor block for the post-reload model.
+// Preference order:
+//  1. The previous cursor if its ID still resolves in newDoc.
+//  2. The previous cursor treated as a LaTeX label (remap rescue).
+//  3. firstUnreviewedOrAny — mirrors ui.New's fallback so an edit that
+//     deletes or splits the cursor block reopens on outstanding work
+//     instead of bouncing back to the start of the document.
+func resolveReloadCursor(oldCursor string, newDoc *parser.Document, newSidecar *persist.Sidecar) string {
+	if newDoc == nil {
+		return ""
+	}
+	if _, ok := newDoc.ByID[oldCursor]; ok {
+		return oldCursor
+	}
+	if b, ok := newDoc.ByLabel[oldCursor]; ok {
+		return b.ID
+	}
+	return firstUnreviewedOrAny(newDoc, newSidecar)
 }
 
 // cloneSidecar returns a shallow copy so the reload goroutine can
