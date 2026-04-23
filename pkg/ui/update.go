@@ -35,6 +35,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	before := m.CursorBlockID
+	beforeLine := m.SourceLineCursor
 	beforeW, beforeH := m.Width, m.Height
 	var next tea.Model
 	var cmd tea.Cmd
@@ -72,9 +73,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	geometryChanged := nm.Width != beforeW || nm.Height != beforeH
 	cursorChanged := nm.CursorBlockID != before
-	if cursorChanged {
-		// Block changed — re-anchor the source line cursor at the top of the
-		// new block so it always points at a real line of the visible source.
+	if cursorChanged && nm.SourceLineCursor == beforeLine {
+		// Block changed but the handler didn't set a line explicitly —
+		// re-anchor at the top of the new block so it always points at a
+		// real line of the visible source. The equality guard lets handlers
+		// like scrollSource (which crosses block boundaries at a specific
+		// absolute line) keep the line offset they just computed.
 		nm.SourceLineCursor = 1
 	}
 	if (cursorChanged || geometryChanged) && !nm.quitting {

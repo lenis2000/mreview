@@ -61,12 +61,17 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		bodyWidth = 1
 	}
 
-	cursorLine := 0
-	if lineCursor > 0 {
-		cursorLine = b.StartLine + lineCursor - 1
-		if cursorLine > b.EndLine {
-			cursorLine = b.EndLine
-		}
+	// Absolute line for the highlighted row. lineCursor is an offset from
+	// b.StartLine; values outside [1, blockLineCount] are legitimate when
+	// the user has scrolled the source pane into a gap between leaf blocks
+	// (scrollSource deliberately keeps CursorBlockID steady so the outline
+	// cursor doesn't pop up to an ancestor section). No clamp to b.EndLine
+	// — the row-walk below already includes a height-sized margin on each
+	// side of the block, and a cursorLine outside [1, totalLines] simply
+	// never matches any ln.
+	cursorLine := b.StartLine + lineCursor - 1
+	if cursorLine < 1 {
+		cursorLine = 0
 	}
 
 	// Editor anchor line — where the textarea should splice in. For a

@@ -77,11 +77,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 }
 
 // scrollSource shifts the source line cursor by delta *absolute* source
-// lines. The previous implementation stepped between blocks via PrevInner /
-// NextInner, which skipped lines in any gap that didn't belong to a leaf
-// block (whitespace, uncovered prose). This walks the raw line numbers
-// instead, then re-homes the cursor on whichever block tightly contains
-// the new absolute line — so every keystroke moves by exactly one line.
+// lines. Walks the raw line numbers so no source line is ever skipped,
+// but re-homes CursorBlockID only when the new line lands inside a leaf
+// block (paragraph, figure, display, proof, …). Promoting to an
+// ancestor section on gap lines would make the outline cursor jump up
+// to the section heading, which feels like a huge vertical skip even
+// though the source pane scrolled by one line.
 func (m Model) scrollSource(delta int) Model {
 	if m.Doc == nil || m.CursorBlockID == "" {
 		return m
@@ -99,16 +100,55 @@ func (m Model) scrollSource(delta int) Model {
 	if total > 0 && newAbs > total {
 		newAbs = total
 	}
-	// Prefer the most-specific non-root block covering the new line.
-	// Fall back to the current block when there's a gap no block covers,
-	// clamping the offset so SourceLineCursor stays in [1, blockLineCount].
-	if other := blockContainingLine(m.Doc, newAbs); other != nil {
-		m.CursorBlockID = other.ID
-		m.SourceLineCursor = newAbs - other.StartLine + 1
+	// Prefer a leaf block covering newAbs — a neighbouring paragraph,
+	// figure, theorem, or display. This is the only kind of transition
+	// the outline cursor should reflect; snapping to an enclosing
+	// section on every step would drag the outline up to the heading.
+	// Checked before the "inside current block" case so that stepping
+	// from a section heading into one of its child paragraphs snaps
+	// correctly instead of lingering on the section.
+	if leaf := leafContainingLine(m.Doc, newAbs); leaf != nil {
+		m.CursorBlockID = leaf.ID
+		m.SourceLineCursor = newAbs - leaf.StartLine + 1
 		return m
 	}
-	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, newAbs-b.StartLine+1)
+	// No leaf covers — either the current block itself is a leaf and
+	// newAbs is inside it, or newAbs is a gap line uncovered by any
+	// leaf. In both cases stay in the current block and let
+	// SourceLineCursor fall outside [1, N] if needed. The source
+	// renderer walks a height-sized margin on both sides of the block,
+	// so an out-of-range row is still drawn and highlighted.
+	m.SourceLineCursor = newAbs - b.StartLine + 1
 	return m
+}
+
+// leafContainingLine returns the tightest block with no children whose
+// [StartLine, EndLine] range contains `line`. Used by scrollSource so a
+// line cursor never snaps to an ancestor section block — that change
+// would shove the outline cursor way up to the section heading.
+func leafContainingLine(doc *parser.Document, line int) *parser.Block {
+	if doc == nil {
+		return nil
+	}
+	var best *parser.Block
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if len(b.ChildIDs) > 0 {
+			continue
+		}
+		if b.StartLine == 0 || b.EndLine == 0 {
+			continue
+		}
+		if line < b.StartLine || line > b.EndLine {
+			continue
+		}
+		if best == nil || (b.EndLine-b.StartLine) < (best.EndLine-best.StartLine) {
+			best = b
+		}
+	}
+	return best
 }
 
 // sourceLineTotal returns the number of source lines in the document, or 0
