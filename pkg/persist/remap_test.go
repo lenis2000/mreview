@@ -139,6 +139,50 @@ func TestRemapReviewedFilteredToExisting(t *testing.T) {
 	assert.Equal(t, b.ID, out.Reviewed[0])
 }
 
+func TestRemapReattachesDetachedWhenBlockReturns(t *testing.T) {
+	doc := makeDoc(t, sampleTex)
+	b := doc.ByLabel["thm:main"]
+
+	// Simulate a prior session where thm:main had temporarily vanished
+	// (e.g. the user was on a branch without that theorem) and the note
+	// landed in Detached. Now the block is back — Remap must try the
+	// same resolver against Detached entries, not just Annotations.
+	old := &Sidecar{
+		Detached: []Annotation{{
+			BlockID:     "thm:main",
+			Breadcrumb:  "Theorem",
+			File:        "paper.tex",
+			StartLine:   99,
+			EndLine:     100,
+			SourceQuote: "old quote",
+			Note:        "note",
+		}},
+	}
+	out, detached := Remap(old, doc)
+	assert.Empty(t, detached, "matching block should pull the note out of detached")
+	require.Len(t, out.Annotations, 1)
+	assert.Equal(t, b.ID, out.Annotations[0].BlockID)
+}
+
+func TestRemapDetachedStaysDetachedWhenBlockAbsent(t *testing.T) {
+	doc := makeDoc(t, sampleTex)
+	old := &Sidecar{
+		Detached: []Annotation{{
+			BlockID:     "long-gone",
+			Breadcrumb:  "Gone",
+			File:        "paper.tex",
+			StartLine:   1,
+			EndLine:     2,
+			SourceQuote: "nothing resembling current doc",
+			Note:        "note",
+		}},
+	}
+	out, detached := Remap(old, doc)
+	assert.Empty(t, out.Annotations)
+	require.Len(t, detached, 1)
+	assert.Equal(t, "long-gone", detached[0].BlockID)
+}
+
 func TestRemapCursorRescueAndDrop(t *testing.T) {
 	doc := makeDoc(t, sampleTex)
 	b := doc.ByLabel["thm:main"]

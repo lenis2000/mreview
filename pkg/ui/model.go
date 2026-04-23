@@ -165,11 +165,23 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 	if cursor == "" || doc == nil || doc.ByID[cursor] == nil {
 		cursor = firstUnreviewedOrAny(doc, side)
 	}
+	filter := DefaultFilter(side)
+	// Edge case: a fully-reviewed paper would otherwise open with
+	// FilterUnreviewed (because side.Reviewed is non-empty) on a cursor
+	// block that's also reviewed — and the outline pane renders empty
+	// while the source pane shows a real block. Downgrade to FilterAll
+	// in that case so the outline matches the cursor; the user can
+	// switch back to `unreviewed` themselves with `f`.
+	if cursor != "" && doc != nil {
+		if b := doc.ByID[cursor]; b != nil && !blockMatchesFilter(b, side, filter) {
+			filter = FilterAll
+		}
+	}
 	m := Model{
 		Doc:           doc,
 		Sidecar:       side,
 		CursorBlockID: cursor,
-		Filter:        DefaultFilter(side),
+		Filter:        filter,
 		Focus:         PaneOutline,
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),

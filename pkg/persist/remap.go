@@ -14,6 +14,12 @@ const SimilarityThreshold = 0.85
 // that could not be matched are returned in the second slice so the caller
 // can render them in a `## Detached` outline section.
 //
+// Both old.Annotations and old.Detached are fed through the same resolver,
+// so a block that comes back (after a temporary deletion, branch switch, or
+// failed merge) automatically reattaches its previously-orphaned note. The
+// caller is therefore expected to *not* append old.Detached separately —
+// anything still unresolvable is included in the returned []Annotation.
+//
 // Matching is attempted in three stages for each old annotation:
 //  1. exact BlockID match against newDoc.ByID;
 //  2. label match when the old BlockID looks like a LaTeX label that appears
@@ -29,33 +35,18 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 	}
 	var detached []Annotation
 
-	for _, a := range old.Annotations {
-		if b, ok := resolveBlock(a, doc); ok {
-			mapped := a
-			mapped.BlockID = b.ID
-			mapped.File = blockFile(b, doc)
-			// Line-pinned annotations retain their offset when the new block
-			// still has enough lines; otherwise they fall back to a whole-
-			// block annotation (LineOffset 0) on the same block so the
-			// reviewer's note is never silently detached.
-			if a.LineOffset > 0 {
-				blockLines := b.EndLine - b.StartLine + 1
-				if blockLines >= a.LineOffset && b.StartLine > 0 {
-					mapped.StartLine = b.StartLine + a.LineOffset - 1
-					mapped.EndLine = mapped.StartLine
-				} else {
-					mapped.LineOffset = 0
-					mapped.StartLine = b.StartLine
-					mapped.EndLine = b.EndLine
-				}
-			} else {
-				mapped.StartLine = b.StartLine
-				mapped.EndLine = b.EndLine
-			}
+	tryReattach := func(a Annotation) {
+		if mapped, ok := remapAnnotation(a, doc); ok {
 			out.Annotations = append(out.Annotations, mapped)
-			continue
+			return
 		}
 		detached = append(detached, a)
+	}
+	for _, a := range old.Annotations {
+		tryReattach(a)
+	}
+	for _, a := range old.Detached {
+		tryReattach(a)
 	}
 
 	// Keep only reviewed IDs that still exist — old IDs pointing at blocks
@@ -92,6 +83,39 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 	}
 
 	return out, detached
+}
+
+// remapAnnotation tries to anchor a single old annotation onto newDoc. On
+// success it returns the annotation with BlockID / File / StartLine /
+// EndLine updated; on failure (no block resolves) it returns ok=false and
+// the caller is expected to keep the original in the detached list.
+func remapAnnotation(a Annotation, doc *parser.Document) (Annotation, bool) {
+	b, ok := resolveBlock(a, doc)
+	if !ok {
+		return Annotation{}, false
+	}
+	mapped := a
+	mapped.BlockID = b.ID
+	mapped.File = blockFile(b, doc)
+	// Line-pinned annotations retain their offset when the new block still
+	// has enough lines; otherwise they fall back to a whole-block annotation
+	// (LineOffset 0) on the same block so the reviewer's note is never
+	// silently detached.
+	if a.LineOffset > 0 {
+		blockLines := b.EndLine - b.StartLine + 1
+		if blockLines >= a.LineOffset && b.StartLine > 0 {
+			mapped.StartLine = b.StartLine + a.LineOffset - 1
+			mapped.EndLine = mapped.StartLine
+		} else {
+			mapped.LineOffset = 0
+			mapped.StartLine = b.StartLine
+			mapped.EndLine = b.EndLine
+		}
+	} else {
+		mapped.StartLine = b.StartLine
+		mapped.EndLine = b.EndLine
+	}
+	return mapped, true
 }
 
 // blockFile returns the block's File when set, else the document-level path.

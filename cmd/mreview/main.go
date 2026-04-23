@@ -191,8 +191,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Remap against the freshly parsed document. Annotations that no longer
 	// resolve to any block are preserved in side.Detached so they surface in
 	// the outline status line and persist into the next sidecar save.
+	// Remap also walks loaded.Detached internally, so blocks that have
+	// returned since the last session reattach automatically — the caller
+	// must *not* re-append loaded.Detached.
 	side, detached := persist.Remap(loaded, doc)
-	side.Detached = append(side.Detached, loaded.Detached...)
 	side.Detached = append(side.Detached, detached...)
 	// Refresh UI-derived fields (breadcrumb, quote) against the current
 	// document so renamed sections or edited blocks no longer carry stale

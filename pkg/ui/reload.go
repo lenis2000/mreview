@@ -77,6 +77,12 @@ func (m Model) startReload() (Model, tea.Cmd) {
 // Old PDF handle closure happens inside performReload (well before this
 // point) so there's no chance of closing a handle that's about to be
 // used by a lingering PDF render goroutine.
+//
+// PDF and SyncTeX are both nil-preserving: a reload that didn't
+// reproduce them (e.g. the rebuild failed) leaves the previous handles
+// in place. The alternative — clearing them — would silently turn the
+// PDF pane blank on every transient build error, which is more
+// confusing than a stale-but-recognisable crop.
 func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	if r.newDoc != nil {
 		m.Doc = r.newDoc
@@ -87,7 +93,9 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	if r.newPDF != nil {
 		m.PDF = r.newPDF
 	}
-	m.Synctex = r.newSyncTeX
+	if r.newSyncTeX != nil {
+		m.Synctex = r.newSyncTeX
+	}
 	if r.newCursor != "" {
 		m.CursorBlockID = r.newCursor
 	}
@@ -119,6 +127,14 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 
 	buildRes := build.ResolveBuildOutputs(path)
 	status := ""
+	// buildOK gates the artefact reload (aux/bbl/PDF/synctex). When the
+	// rebuild reports an error we keep the prior PDF + SyncTeX handles
+	// and skip aux/bbl: those files belong to the *previous* successful
+	// build and pretending they describe newDoc would silently mislead
+	// every other pane (theorem numbers, citation labels, PDF crops,
+	// SyncTeX line→region map) while the source pane is showing the
+	// freshly-broken file.
+	buildOK := true
 	editTime := time.Now()
 	if st, err := os.Stat(path); err == nil {
 		// Use the tex's mtime as the "edit time" yardstick so we don't
@@ -137,8 +153,10 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 			status = fmt.Sprintf("lmkf rebuild ok · %d blocks", len(newDoc.Blocks))
 		case "error":
 			status = "lmkf rebuild error — " + errLine
+			buildOK = false
 		default:
 			status = "lmkf didn't finish in time (edit saved anyway)"
+			buildOK = false
 		}
 	case shouldRebuild(path, buildRes.PDFPath):
 		res, berr := build.RunWith(build.Options{
@@ -147,6 +165,7 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		})
 		if berr != nil {
 			status = "rebuild failed — " + shortBuildErr(berr)
+			buildOK = false
 		} else {
 			buildRes = res
 			status = fmt.Sprintf("rebuilt + reloaded · %d blocks", len(newDoc.Blocks))
@@ -155,36 +174,48 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
 	}
 
-	if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
-		parser.ApplyAux(newDoc, auxEntries)
-	}
-	if bibEntries, err := parser.LoadBBL(buildRes.BBLPath); err == nil {
-		parser.ApplyBBL(newDoc, bibEntries)
-	}
-
-	newSidecar, detached := persist.Remap(oldSidecar, newDoc)
-	if oldSidecar != nil {
-		newSidecar.Detached = append(newSidecar.Detached, oldSidecar.Detached...)
-	}
-	newSidecar.Detached = append(newSidecar.Detached, detached...)
-	RefreshRemappedAnnotations(newDoc, newSidecar)
-
-	// Open the new PDF first; only close the old handle on success so a
-	// reopen failure (e.g. PDF transiently deleted) doesn't leave the
-	// model holding a closed *pdf.Doc. When reopen fails, applyReloadResult
-	// keeps the existing handle.
-	var newPDF *pdf.Doc
-	if pdfDoc, err := pdf.Open(buildRes.PDFPath); err == nil {
-		newPDF = pdfDoc
-		if oldPDF != nil && oldPDF != newPDF {
-			oldPDF.Close()
+	// Aux/bbl enrich newDoc with theorem numbers and citation entries.
+	// They're only safe to apply when the build that produced them
+	// matches newDoc — i.e. when the current rebuild succeeded. On
+	// failure we leave newDoc un-enriched (numbers blank) rather than
+	// pulling stale numbers off disk.
+	if buildOK {
+		if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
+			parser.ApplyAux(newDoc, auxEntries)
+		}
+		if bibEntries, err := parser.LoadBBL(buildRes.BBLPath); err == nil {
+			parser.ApplyBBL(newDoc, bibEntries)
 		}
 	}
 
+	// persist.Remap walks both old.Annotations and old.Detached, so we
+	// must not re-append oldSidecar.Detached here — Remap already gave
+	// previously-orphaned notes a chance to reattach.
+	newSidecar, detached := persist.Remap(oldSidecar, newDoc)
+	newSidecar.Detached = append(newSidecar.Detached, detached...)
+	RefreshRemappedAnnotations(newDoc, newSidecar)
+
+	// PDF + SyncTeX are only reopened on a successful rebuild. The old
+	// handles stay live in the model (applyReloadResult is nil-
+	// preserving for both fields) so a transient build error doesn't
+	// blank the PDF pane; the user sees the previous crop with a
+	// "rebuild failed" status instead of a panel turning blank.
+	var newPDF *pdf.Doc
 	var newSyncTeX *synctex.Index
-	if idx, err := synctex.Open(buildRes.SyncTeXPath); err == nil {
-		newSyncTeX = idx
-		populateRegions(newDoc, idx)
+	if buildOK {
+		if pdfDoc, err := pdf.Open(buildRes.PDFPath); err == nil {
+			newPDF = pdfDoc
+			// Only close the old handle after the new one opens — a
+			// reopen failure must not leave the model with a closed
+			// *pdf.Doc.
+			if oldPDF != nil && oldPDF != newPDF {
+				oldPDF.Close()
+			}
+		}
+		if idx, err := synctex.Open(buildRes.SyncTeXPath); err == nil {
+			newSyncTeX = idx
+			populateRegions(newDoc, idx)
+		}
 	}
 
 	newCursor := resolveReloadCursor(oldCursor, newDoc, newSidecar)

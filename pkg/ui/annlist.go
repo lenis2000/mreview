@@ -13,23 +13,30 @@ import (
 // the first line of the annotation note. LineOffset carries the per-block
 // line anchor (0 = block-level) so e/d/Enter can target the specific
 // annotation the user highlighted, not whichever one shares the block ID.
-// Display format: "<breadcrumb> — <first-line>".
+// Detached marks rows that came from sidecar.Detached (the block has
+// vanished); those rows can be deleted but not jumped to or edited.
+// Display format: "<breadcrumb> — <first-line>" (with a "(detached) "
+// prefix for detached entries).
 type AnnotListItem struct {
 	BlockID    string
 	Breadcrumb string
 	LineOffset int
 	FirstLine  string
+	Detached   bool
 }
 
 // Display is the rendered row text.
 func (it AnnotListItem) Display() string {
-	if it.FirstLine == "" {
-		return it.Breadcrumb
+	body := it.Breadcrumb
+	if body == "" {
+		body = it.FirstLine
+	} else if it.FirstLine != "" {
+		body = it.Breadcrumb + " — " + it.FirstLine
 	}
-	if it.Breadcrumb == "" {
-		return it.FirstLine
+	if it.Detached {
+		return "(detached) " + body
 	}
-	return it.Breadcrumb + " — " + it.FirstLine
+	return body
 }
 
 // AnnotListPopup lists every annotation in the sidecar in document order.
@@ -46,9 +53,12 @@ func (*AnnotListPopup) popup() {}
 // BuildAnnotListItems collects one item per annotation, ordered by the
 // annotation's block position in the document so the list reads top-to-bottom.
 // Annotations whose BlockID has been detached (not present in doc.ByID) are
-// appended at the end so they remain reachable.
+// appended at the end so they remain reachable. Items from side.Detached
+// are *also* appended at the end, marked with Detached=true so the popup
+// surfaces them for deletion (the startup banner already advertises their
+// existence — the popup must not silently hide them).
 func BuildAnnotListItems(doc *parser.Document, side *persist.Sidecar) []AnnotListItem {
-	if side == nil || len(side.Annotations) == 0 {
+	if side == nil || (len(side.Annotations) == 0 && len(side.Detached) == 0) {
 		return nil
 	}
 	present := make([]AnnotListItem, 0, len(side.Annotations))
@@ -65,6 +75,15 @@ func BuildAnnotListItems(doc *parser.Document, side *persist.Sidecar) []AnnotLis
 		} else {
 			detached = append(detached, item)
 		}
+	}
+	for _, a := range side.Detached {
+		detached = append(detached, AnnotListItem{
+			BlockID:    a.BlockID,
+			Breadcrumb: a.Breadcrumb,
+			LineOffset: a.LineOffset,
+			FirstLine:  firstNoteLine(a.Note),
+			Detached:   true,
+		})
 	}
 	// Sort present items by document position.
 	orderOf := func(id string) int {
@@ -158,18 +177,22 @@ func (m Model) OpenAnnotList() (tea.Model, tea.Cmd) {
 // block. Pushes the jump stack. Missing / detached targets are dropped with
 // a status message.
 func (m Model) jumpFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
-	target := p.Selected()
+	it, ok := p.SelectedItem()
 	m.Popup = nil
-	if target == "" {
+	if !ok {
 		return m, nil
 	}
-	if m.Doc == nil || m.Doc.ByID[target] == nil {
+	if it.Detached {
+		m.Status = "@: detached annotation — delete with d (no live block to jump to)"
+		return m, nil
+	}
+	if m.Doc == nil || m.Doc.ByID[it.BlockID] == nil {
 		m.Status = "@: annotation's block no longer in document"
 		return m, nil
 	}
-	if target != m.CursorBlockID {
+	if it.BlockID != m.CursorBlockID {
 		m.JumpStack.Push(m.CursorBlockID)
-		m.CursorBlockID = target
+		m.CursorBlockID = it.BlockID
 	}
 	return m, nil
 }
@@ -181,6 +204,10 @@ func (m Model) editFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 	it, ok := p.SelectedItem()
 	m.Popup = nil
 	if !ok {
+		return m, nil
+	}
+	if it.Detached {
+		m.Status = "@: detached annotations cannot be edited (delete and re-annotate)"
 		return m, nil
 	}
 	if m.Doc == nil || m.Doc.ByID[it.BlockID] == nil {
@@ -202,11 +229,26 @@ func (m Model) editFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 // deleteFromAnnotList closes the popup and begins the [y/N] delete-confirm
 // flow for the highlighted annotation, preserving its line anchor so a
 // line-pinned note doesn't accidentally delete a block-level note on the
-// same block (or vice versa).
+// same block (or vice versa). Detached items take a separate path: they
+// are removed straight from sidecar.Detached without the [y/N] prompt
+// (no live block exists to navigate to; an immediate delete is the only
+// useful action).
 func (m Model) deleteFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 	it, ok := p.SelectedItem()
 	m.Popup = nil
 	if !ok {
+		return m, nil
+	}
+	if it.Detached {
+		if m.Sidecar == nil {
+			return m, nil
+		}
+		m.Sidecar.Detached = removeDetachedAnnotation(m.Sidecar.Detached, it.BlockID, it.LineOffset)
+		if err := m.saveSidecar(); err != nil {
+			m.Status = "save failed: " + err.Error()
+		} else {
+			m.Status = "@: detached annotation removed"
+		}
 		return m, nil
 	}
 	if m.Doc == nil || m.Doc.ByID[it.BlockID] == nil {
@@ -222,4 +264,21 @@ func (m Model) deleteFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 		m.SourceLineCursor = clampLineCursor(m.Doc, it.BlockID, it.LineOffset)
 	}
 	return m.BeginDelete(), nil
+}
+
+// removeDetachedAnnotation drops the first entry matching (blockID,
+// lineOffset) from the detached slice. Used by the `d` action in the @
+// popup so the user can prune ghost annotations without hand-editing
+// the sidecar markdown.
+func removeDetachedAnnotation(xs []persist.Annotation, blockID string, lineOffset int) []persist.Annotation {
+	out := make([]persist.Annotation, 0, len(xs))
+	dropped := false
+	for _, x := range xs {
+		if !dropped && x.BlockID == blockID && x.LineOffset == lineOffset {
+			dropped = true
+			continue
+		}
+		out = append(out, x)
+	}
+	return out
 }
