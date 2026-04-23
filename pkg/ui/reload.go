@@ -98,9 +98,11 @@ func (m Model) startReload() (Model, tea.Cmd) {
 }
 
 // applyReloadResult installs the outcome of startReload on the model.
-// Old PDF handle closure happens inside performReload (well before this
-// point) so there's no chance of closing a handle that's about to be
-// used by a lingering PDF render goroutine.
+// Old PDF handle closure happens here — the goroutine passes oldPDF
+// through the result message so the handle is only closed when the
+// winning reload is actually installed (not earlier, which would
+// leave the model pointing at a closed handle until a newer reload
+// arrives).
 //
 // Sidecar remap and cursor resolution run *here* (not in the
 // goroutine) against m.Sidecar / m.CursorBlockID, so any user edits

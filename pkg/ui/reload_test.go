@@ -410,3 +410,52 @@ func TestNew_PartialReviewWithReviewedCursorKeepsUnreviewedFilter(t *testing.T) 
 	assert.Equal(t, reviewedID, m.CursorBlockID,
 		"cursor stays on the user-saved block even when it falls outside the active filter")
 }
+
+// TestApplyReloadResult_StaleGenClosesNewPDFNotOld is the review.md #3
+// regression guard for overlapping reloads. When two reloads race and
+// the slower one's result is dropped (gen mismatch), its newPDF must
+// be closed (to avoid a handle leak) but the model's live PDF must
+// stay open.
+func TestApplyReloadResult_StaleGenClosesNewPDFNotOld(t *testing.T) {
+	doc := parsedSample(t)
+	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
+	require.NoError(t, err)
+	defer pdfDoc.Close()
+
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 5
+	m.PDF = pdfDoc
+
+	// Open a SECOND handle to act as the stale goroutine's newPDF.
+	stalePDF, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
+	require.NoError(t, err)
+
+	nm, cmd := m.applyReloadResult(reloadResultMsg{
+		gen:    3, // older than m.reloadGen → stale
+		newPDF: stalePDF,
+		oldPDF: pdfDoc,
+		newDoc: doc,
+		status: "stale reload",
+	})
+
+	assert.Nil(t, cmd, "stale result must return nil cmd")
+	// Model keeps the live PDF; it must NOT have been closed.
+	assert.Same(t, pdfDoc, nm.PDF, "stale result must not replace model PDF")
+	assert.Greater(t, pdfDoc.NumPage(), 0,
+		"live PDF must still be usable (not closed by the stale goroutine)")
+	// Stale goroutine's newPDF was closed by applyReloadResult.
+	assert.Equal(t, 0, stalePDF.NumPage(),
+		"stale result's newPDF must be closed so the handle doesn't leak")
+}
+
+// TestOCRReport_BlockedInManualMode is the review.md #2 regression
+// guard: pressing B in manual PDF mode must show a clear status
+// instead of generating a report for a different image.
+func TestOCRReport_BlockedInManualMode(t *testing.T) {
+	m := New(parsedSample(t), nil)
+	m.PDFManual = true
+
+	nm, cmd := m.startOCRReport()
+	assert.Nil(t, cmd)
+	assert.Contains(t, nm.Status, "not available in manual PDF mode")
+}
