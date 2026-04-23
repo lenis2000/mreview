@@ -444,16 +444,28 @@ func itoa(n int) string {
 	return s
 }
 
-// colorizeLaTeXLine tokenises a single source line into styled fragments.
-//
-// Highlighted:
-//   - `% ... (to end of line)` -> comment (muted)
-//   - `\<letters>` -> command
-//   - `$`, `$$`, `\(`, `\)`, `\[`, `\]` -> math delimiter
-//
-// Everything else is rendered with no styling. We use a hand-rolled scanner
-// rather than pulling in chroma — chroma would be the right tool only if we
-// needed full TeX lexing, which we do not for a three-pane MVP.
+// keywordCommands are LaTeX control sequences rendered with the
+// SourceKeyword (bold magenta) style so structural markup stands out from
+// ordinary commands. Kept small — purely the ones readers scan for.
+var keywordCommands = map[string]bool{
+	"begin": true, "end": true,
+	"section": true, "subsection": true, "subsubsection": true,
+	"chapter": true, "part": true, "paragraph": true, "subparagraph": true,
+	"title": true, "author": true, "date": true, "maketitle": true,
+	"newtheorem": true, "theoremstyle": true,
+	"label": true, "ref": true, "cref": true, "Cref": true,
+	"eqref": true, "cite": true,
+	"input": true, "include": true,
+	"usepackage": true, "documentclass": true,
+	"newcommand": true, "renewcommand": true, "providecommand": true,
+	"item": true,
+}
+
+// colorizeLaTeXLine tokenises a single source line into styled fragments
+// with a vim-like LaTeX palette. Tracks inline math state so command
+// tokens inside math pick up SourceMathText context but commands outside
+// math use SourceCommand/SourceKeyword. Also specialises arguments to
+// \begin{} and \end{} to render the environment name in SourceEnvName.
 func colorizeLaTeXLine(line string, styles Styles) string {
 	if line == "" {
 		return ""
@@ -461,55 +473,133 @@ func colorizeLaTeXLine(line string, styles Styles) string {
 	var b strings.Builder
 	runes := []rune(line)
 	i := 0
+	inMath := false
+	expectEnvArg := false
 	for i < len(runes) {
 		r := runes[i]
 		switch {
 		case r == '%':
-			// Comment to end of line.
 			b.WriteString(styles.SourceComment.Render(string(runes[i:])))
 			return b.String()
 		case r == '\\' && i+1 < len(runes):
 			next := runes[i+1]
-			// Math delimiters `\(`, `\)`, `\[`, `\]`.
-			if next == '(' || next == ')' || next == '[' || next == ']' {
+			if next == '(' || next == '[' {
 				b.WriteString(styles.SourceMath.Render(string(runes[i : i+2])))
 				i += 2
+				inMath = true
 				continue
 			}
-			// Command \<letters>+ (or a single non-letter control symbol).
+			if next == ')' || next == ']' {
+				b.WriteString(styles.SourceMath.Render(string(runes[i : i+2])))
+				i += 2
+				inMath = false
+				continue
+			}
 			if isLatexLetter(next) {
 				j := i + 1
 				for j < len(runes) && isLatexLetter(runes[j]) {
 					j++
 				}
-				b.WriteString(styles.SourceCommand.Render(string(runes[i:j])))
+				cmd := string(runes[i+1 : j])
+				style := styles.SourceCommand
+				if keywordCommands[cmd] {
+					style = styles.SourceKeyword
+				}
+				if inMath && !keywordCommands[cmd] {
+					// Inside math, ordinary commands (\alpha, \sum, \cdot…)
+					// should sit in the math palette so the mode is visually
+					// distinct.
+					style = styles.SourceMath
+				}
+				b.WriteString(style.Render(string(runes[i:j])))
+				if cmd == "begin" || cmd == "end" {
+					expectEnvArg = true
+				}
 				i = j
 				continue
 			}
-			// Escaped char — print as-is.
 			b.WriteString(styles.SourceCommand.Render(string(runes[i : i+2])))
 			i += 2
 		case r == '$':
-			// Handle `$$` as one token.
 			if i+1 < len(runes) && runes[i+1] == '$' {
 				b.WriteString(styles.SourceMath.Render("$$"))
 				i += 2
+				inMath = !inMath
 				continue
 			}
 			b.WriteString(styles.SourceMath.Render("$"))
+			i++
+			inMath = !inMath
+		case r == '{' || r == '}':
+			if expectEnvArg && r == '{' {
+				// Consume the env-name argument: everything up to the next '}'.
+				j := i + 1
+				for j < len(runes) && runes[j] != '}' {
+					j++
+				}
+				b.WriteString(styles.SourceBrace.Render("{"))
+				if j > i+1 {
+					b.WriteString(styles.SourceEnvName.Render(string(runes[i+1 : j])))
+				}
+				if j < len(runes) {
+					b.WriteString(styles.SourceBrace.Render("}"))
+					i = j + 1
+				} else {
+					i = j
+				}
+				expectEnvArg = false
+				continue
+			}
+			b.WriteString(styles.SourceBrace.Render(string(r)))
 			i++
 		default:
 			j := i
 			for j < len(runes) {
 				c := runes[j]
-				if c == '\\' || c == '%' || c == '$' {
+				if c == '\\' || c == '%' || c == '$' || c == '{' || c == '}' {
 					break
 				}
 				j++
 			}
-			b.WriteString(string(runes[i:j]))
+			seg := runes[i:j]
+			if inMath {
+				b.WriteString(styles.SourceMathText.Render(string(seg)))
+			} else {
+				b.WriteString(highlightNumbers(string(seg), styles))
+			}
 			i = j
 		}
+	}
+	return b.String()
+}
+
+// highlightNumbers walks s and wraps runs of ASCII digits in the number
+// style, leaving other characters untouched. Used only outside math mode
+// so line numbers, counters, and years stand out without disturbing math
+// subscripts/superscripts (which are already coloured as math content).
+func highlightNumbers(s string, styles Styles) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		if runes[i] >= '0' && runes[i] <= '9' {
+			j := i
+			for j < len(runes) && runes[j] >= '0' && runes[j] <= '9' {
+				j++
+			}
+			b.WriteString(styles.SourceNumber.Render(string(runes[i:j])))
+			i = j
+			continue
+		}
+		j := i
+		for j < len(runes) && !(runes[j] >= '0' && runes[j] <= '9') {
+			j++
+		}
+		b.WriteString(string(runes[i:j]))
+		i = j
 	}
 	return b.String()
 }

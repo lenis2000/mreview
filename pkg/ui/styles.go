@@ -20,11 +20,19 @@ type Styles struct {
 	OutlineActive lipgloss.Style
 	OutlineMuted  lipgloss.Style
 
-	// Source pane.
+	// Source pane — vim-like LaTeX highlighting. Command / keyword /
+	// math / env-name / brace / number / math-content get distinct
+	// colours; comments stay muted italic. SourceAnnotation is the
+	// inline-note style, not a source token.
 	SourceGutter     lipgloss.Style
 	SourceComment    lipgloss.Style
 	SourceCommand    lipgloss.Style
+	SourceKeyword    lipgloss.Style
 	SourceMath       lipgloss.Style
+	SourceMathText   lipgloss.Style
+	SourceEnvName    lipgloss.Style
+	SourceBrace      lipgloss.Style
+	SourceNumber     lipgloss.Style
 	SourceAnnotation lipgloss.Style
 }
 
@@ -51,7 +59,12 @@ func DefaultStyles() Styles {
 		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
 		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
-		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
+		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
+		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color("114")),
+		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color("216")),
 		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("228")).Background(lipgloss.Color("236")).Italic(true),
 	}
 }
@@ -79,7 +92,12 @@ func lightStyles() Styles {
 		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
 		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
 		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color("126")).Bold(true),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Bold(true),
+		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color("94")),
+		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color("22")),
+		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color("166")),
 		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Background(lipgloss.Color("230")).Italic(true),
 	}
 }

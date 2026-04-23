@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/parser"
@@ -108,6 +110,102 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+
+	// Manual PDF mode: intercept its keys before the normal handlers so
+	// `f`, `2`, `j`, `k`, `space`, `0` (which mean filter / digit / nav /
+	// reviewed / digit in normal mode) take their docviewer-style meaning
+	// while the user is driving the PDF pane manually.
+	if matches(key, m.Keymap.PDFManual) {
+		m.PDFManual = !m.PDFManual
+		m.CountBuf = ""
+		m.PDFImage = ""
+		if m.PDFManual {
+			m.Status = manualPDFStatusHint(m)
+		} else {
+			m.Status = ""
+		}
+		return m, m.schedulePDFRender()
+	}
+	if m.PDFManual {
+		switch {
+		case matches(key, m.Keymap.PDFNextPage):
+			if m.PDF != nil {
+				step := 1
+				if m.ManualPDFDual != "" {
+					step = 2
+				}
+				if m.ManualPDFPage+step < m.PDF.NumPage() {
+					m.ManualPDFPage += step
+				} else if m.ManualPDFPage < m.PDF.NumPage()-1 {
+					m.ManualPDFPage = m.PDF.NumPage() - 1
+				}
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFPrevPage):
+			step := 1
+			if m.ManualPDFDual != "" {
+				step = 2
+			}
+			if m.ManualPDFPage >= step {
+				m.ManualPDFPage -= step
+			} else {
+				m.ManualPDFPage = 0
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFZoomIn):
+			m.ManualPDFZoom++
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFZoomOut):
+			if m.ManualPDFZoom > 0 {
+				m.ManualPDFZoom--
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFGotoStart):
+			m.ManualPDFPage = 0
+			m.ManualPDFZoom = 0
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFFitCycle):
+			switch m.ManualPDFFit {
+			case "", "auto":
+				m.ManualPDFFit = "width"
+			case "width":
+				m.ManualPDFFit = "height"
+			default:
+				m.ManualPDFFit = "auto"
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFDualPage):
+			switch m.ManualPDFDual {
+			case "":
+				m.ManualPDFDual = "horizontal"
+			case "horizontal":
+				m.ManualPDFDual = "vertical"
+			default:
+				m.ManualPDFDual = ""
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFDarkMode):
+			m.ManualPDFDark = !m.ManualPDFDark
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		}
+	}
+
 	if m.Keymap.isFilterKey(msg) {
 		m.Filter = CycleFilter(m.Filter)
 		m.CountBuf = ""
@@ -130,47 +228,6 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.SoftWrap = !m.SoftWrap
 		m.CountBuf = ""
 		return m, nil
-	}
-	if matches(key, m.Keymap.PDFManual) {
-		m.PDFManual = !m.PDFManual
-		m.CountBuf = ""
-		m.PDFImage = ""
-		if m.PDFManual {
-			m.Status = "PDF: manual mode (n/p page · +/- zoom · V exit)"
-		} else {
-			m.Status = ""
-		}
-		return m, m.schedulePDFRender()
-	}
-	if m.PDFManual {
-		switch {
-		case matches(key, m.Keymap.PDFNextPage):
-			if m.PDF != nil && m.ManualPDFPage < m.PDF.NumPage()-1 {
-				m.ManualPDFPage++
-			}
-			m.CountBuf = ""
-			return m, m.schedulePDFRender()
-		case matches(key, m.Keymap.PDFPrevPage):
-			if m.ManualPDFPage > 0 {
-				m.ManualPDFPage--
-			}
-			m.CountBuf = ""
-			return m, m.schedulePDFRender()
-		case matches(key, m.Keymap.PDFZoomIn):
-			m.ManualPDFZoom++
-			m.CountBuf = ""
-			return m, m.schedulePDFRender()
-		case matches(key, m.Keymap.PDFZoomOut):
-			if m.ManualPDFZoom > 0 {
-				m.ManualPDFZoom--
-			}
-			m.CountBuf = ""
-			return m, m.schedulePDFRender()
-		case matches(key, m.Keymap.PDFZoomReset):
-			m.ManualPDFZoom = 0
-			m.CountBuf = ""
-			return m, m.schedulePDFRender()
-		}
 	}
 	if matches(key, m.Keymap.SourceLineUp) {
 		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor-1)
@@ -262,6 +319,35 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// from a clean slate.
 	m.CountBuf = ""
 	return m, nil
+}
+
+// manualPDFStatusHint returns the status-bar string shown while PDF
+// manual mode is active. Includes the current page, zoom level, and the
+// active fit / dual / dark settings so the user can see at a glance
+// what's wired up.
+func manualPDFStatusHint(m Model) string {
+	var page, total string
+	if m.PDF != nil {
+		total = fmt.Sprintf("/%d", m.PDF.NumPage())
+		page = fmt.Sprintf("%d", m.ManualPDFPage+1)
+	} else {
+		page = "?"
+		total = ""
+	}
+	dual := "off"
+	if m.ManualPDFDual != "" {
+		dual = m.ManualPDFDual
+	}
+	fit := "auto"
+	if m.ManualPDFFit != "" {
+		fit = m.ManualPDFFit
+	}
+	dark := "off"
+	if m.ManualPDFDark {
+		dark = "on"
+	}
+	return fmt.Sprintf("PDF manual · pg %s%s · zoom %d · fit:%s · dual:%s · dark:%s · n/p +/- f 2 i V",
+		page, total, m.ManualPDFZoom, fit, dual, dark)
 }
 
 // blockLineCount returns the number of lines spanned by the cursor block,

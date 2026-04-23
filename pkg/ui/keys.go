@@ -51,12 +51,20 @@ type Keymap struct {
 	// and a full-page manual mode (n/p = page nav, +/- = zoom).
 	ToggleLayout []string
 	ToggleWrap   []string
+	// Manual PDF mode (V). These bindings are *only* consulted when
+	// m.PDFManual is true, so they're free to overload keys that do
+	// something else in normal mode (e.g. `f` = filter normally,
+	// `f` = fit mode cycle in manual). That keeps the manual UX close to
+	// LP's docviewer CLI without adding clashes outside manual mode.
 	PDFManual    []string
-	PDFNextPage  []string
-	PDFPrevPage  []string
-	PDFZoomIn    []string
-	PDFZoomOut   []string
-	PDFZoomReset []string
+	PDFNextPage  []string // n / j / space
+	PDFPrevPage  []string // p / k
+	PDFZoomIn    []string // + / =
+	PDFZoomOut   []string // -
+	PDFFitCycle  []string // f — height / width / auto
+	PDFDualPage  []string // 2 — off / vertical / horizontal
+	PDFDarkMode  []string // i
+	PDFGotoStart []string // 0 — first page / reset zoom
 
 	// Source-line cursor — moves the per-block 1-based line marker that the
 	// `a` (line annotation) key operates on. Independent of pane focus so
@@ -96,11 +104,14 @@ func DefaultKeymap() Keymap {
 		ToggleLayout: []string{"\\"},
 		ToggleWrap:   []string{"w"},
 		PDFManual:    []string{"V"},
-		PDFNextPage:  []string{"n", "."},
-		PDFPrevPage:  []string{"p", ","},
+		PDFNextPage:  []string{"n", "j", " ", "space", "down", "right", "."},
+		PDFPrevPage:  []string{"p", "k", "up", "left", ","},
 		PDFZoomIn:    []string{"+", "="},
-		PDFZoomOut:   []string{"-"},
-		PDFZoomReset: []string{")"},
+		PDFZoomOut:   []string{"-", "_"},
+		PDFFitCycle:  []string{"f"},
+		PDFDualPage:  []string{"2"},
+		PDFDarkMode:  []string{"i"},
+		PDFGotoStart: []string{"0"},
 
 		SourceLineUp:   []string{"["},
 		SourceLineDown: []string{"]"},

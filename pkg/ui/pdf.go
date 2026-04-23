@@ -55,11 +55,22 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 		// instant feedback.
 		m.pdfGen++
 		gen := m.pdfGen
-		page := m.ManualPDFPage
-		zoom := m.ManualPDFZoom
-		doc := m.PDF
+		inputs := manualRenderInputs{
+			Doc:         m.PDF,
+			Page:        m.ManualPDFPage,
+			Zoom:        m.ManualPDFZoom,
+			WidthCells:  w,
+			HeightCells: h,
+			Fit:         m.ManualPDFFit,
+			Dual:        m.ManualPDFDual,
+			Dark:        m.ManualPDFDark,
+			CropT:       m.ManualPDFCropT,
+			CropB:       m.ManualPDFCropB,
+			CropL:       m.ManualPDFCropL,
+			CropR:       m.ManualPDFCropR,
+		}
 		return func() tea.Msg {
-			img, status := renderManualPDF(doc, page, zoom, w, h)
+			img, status := renderManualPDF(inputs)
 			return pdfRenderMsg{Generation: gen, Image: img, Status: status}
 		}
 	}

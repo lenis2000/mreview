@@ -138,11 +138,19 @@ type Model struct {
 	SourceLineCursor int
 
 	// PDFManual switches the PDF pane from cursor-following crops to a
-	// full-page manual viewer. ManualPDFPage is the 0-based page index;
-	// ManualPDFZoom is a small integer (0 = fit page, +N = zoom in).
+	// full-page manual viewer. The remaining Manual* fields only apply
+	// when PDFManual is true; they emulate the controls of LP's
+	// docviewer CLI so keyboard muscle memory carries over.
 	PDFManual     bool
-	ManualPDFPage int
-	ManualPDFZoom int
+	ManualPDFPage int    // 0-based page index
+	ManualPDFZoom int    // 0 = fit, +N = zoom in one step per N
+	ManualPDFFit  string // "auto" | "width" | "height" — fit policy
+	ManualPDFDual string // "" | "vertical" | "horizontal" — side-by-side/stacked
+	ManualPDFDark bool   // simple-invert dark mode
+	ManualPDFCropT float64
+	ManualPDFCropB float64
+	ManualPDFCropL float64
+	ManualPDFCropR float64
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
