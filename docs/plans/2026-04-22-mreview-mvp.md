@@ -253,12 +253,12 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/synctex/synctex.go`, `pkg/synctex/synctex_test.go`
 - Create: `testdata/sample.synctex.gz`
 
-- [ ] parse gzipped SyncTeX v1 → `Index{Files map[int]string, Lines map[string]map[int][]Region}` where `Region{Page, X, Y, W, H}`
-- [ ] parse only `Input:`, `{<page>`, `}`, `v`/`h`/`x` records
-- [ ] `RegionForLines(file, start, end) *Region` returning union bbox on first containing page
-- [ ] generate fixture via `testdata/gen.sh` (runs `pdflatex -synctex=1 sample.tex`)
-- [ ] tests: known line → plausible region
-- [ ] `make test && make lint`
+- [x] parse gzipped SyncTeX v1 → `Index{Files map[int]string, Lines map[string]map[int][]Region}` where `Region{Page, X, Y, W, H}`
+- [x] parse only `Input:`, `{<page>`, `}`, `v`/`h`/`x` records
+- [x] `RegionForLines(file, start, end) *Region` returning union bbox on first containing page
+- [x] generate fixture via `testdata/gen.sh` (runs `pdflatex -synctex=1 sample.tex`)
+- [x] tests: known line → plausible region
+- [x] `make test && make lint`
 
 ### Task 8: Sidecar persistence + stale remap
 
