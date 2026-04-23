@@ -77,6 +77,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case matches(key, m.Keymap.OpenSearch):
+		return m.OpenSearch()
+	case matches(key, m.Keymap.OpenAnnotList):
+		return m.OpenAnnotList()
 	case matches(key, m.Keymap.Annotate):
 		return m.StartAnnotation(false)
 	case matches(key, m.Keymap.AnnotateEnv):
@@ -266,6 +270,57 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+	case *SearchPopup:
+		return m.updateSearchPopup(p, msg)
+	case *AnnotListPopup:
+		return m.updateAnnotListPopup(p, msg)
+	}
+	return m, nil
+}
+
+// updateSearchPopup routes keys to the fuzzy-search modal. Navigation uses
+// arrow keys and Ctrl-N / Ctrl-P so the textinput can keep normal editing
+// keys (no j/k — those type into the query).
+func (m Model) updateSearchPopup(p *SearchPopup, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.Popup = nil
+		return m, nil
+	case tea.KeyEnter:
+		return m.submitSearch()
+	case tea.KeyDown, tea.KeyCtrlN:
+		p.Move(1)
+		return m, nil
+	case tea.KeyUp, tea.KeyCtrlP:
+		p.Move(-1)
+		return m, nil
+	}
+	var cmd tea.Cmd
+	p.Input, cmd = p.Input.Update(msg)
+	p.refresh()
+	return m, cmd
+}
+
+// updateAnnotListPopup routes keys to the `@` modal. j/k navigate, Enter
+// jumps, e edits, d deletes, Esc / q / Ctrl-C close.
+func (m Model) updateAnnotListPopup(p *AnnotListPopup, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case "esc", "q", "ctrl+c":
+		m.Popup = nil
+		return m, nil
+	case "j", "down":
+		p.Move(1)
+		return m, nil
+	case "k", "up":
+		p.Move(-1)
+		return m, nil
+	case "enter":
+		return m.jumpFromAnnotList(p)
+	case "e":
+		return m.editFromAnnotList(p)
+	case "d":
+		return m.deleteFromAnnotList(p)
 	}
 	return m, nil
 }

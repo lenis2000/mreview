@@ -136,10 +136,20 @@ func (m Model) renderSourcePane(width, height int) string {
 		bodyH = 1
 	}
 	var body string
-	if p, ok := m.Popup.(*AnnotationPopup); ok {
+	switch p := m.Popup.(type) {
+	case *AnnotationPopup:
 		title = m.Styles.PaneTitle.Render(annotationPaneTitle(m.Doc, p))
 		body = renderAnnotationBody(p, innerW, bodyH)
-	} else {
+	case *SearchPopup:
+		title = m.Styles.PaneTitle.Render("Search")
+		body = renderSearchBody(p, innerW, bodyH, m.Styles)
+	case *AnnotListPopup:
+		title = m.Styles.PaneTitle.Render("Annotations")
+		body = renderAnnotListBody(p, innerW, bodyH, m.Styles)
+	case *RefListPopup:
+		title = m.Styles.PaneTitle.Render("Referrers — " + p.Label)
+		body = renderRefListBody(m.Doc, p, innerW, bodyH, m.Styles)
+	default:
 		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
 	}
 	content := title + "\n" + body
@@ -182,6 +192,138 @@ func renderAnnotationBody(p *AnnotationPopup, innerW, innerH int) string {
 		p.TA.SetWidth(w)
 	}
 	return p.TA.View() + "\n" + hint
+}
+
+// renderSearchBody lays out the fuzzy-search popup inside the source pane:
+// a text input on the first line, a blank separator, and up to (bodyH-3)
+// result rows with the cursor highlighted.
+func renderSearchBody(p *SearchPopup, innerW, bodyH int, styles Styles) string {
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	hint := "[Enter jump · Esc cancel · ↑/↓ select]"
+	w := innerW
+	if w > 2 {
+		w -= 2
+	}
+	if p.Input.Width != w {
+		p.Input.Width = w
+	}
+	resultH := bodyH - 3 // input + separator + hint
+	if resultH < 1 {
+		resultH = 1
+	}
+	var b strings.Builder
+	b.WriteString(p.Input.View())
+	b.WriteByte('\n')
+	b.WriteString(renderPopupList(popupRows(p.Results, p.Cursor, innerW), innerW, resultH, styles))
+	b.WriteByte('\n')
+	b.WriteString(styles.OutlineMuted.Render(truncateToWidth(hint, innerW)))
+	return b.String()
+}
+
+// popupRows extracts {label, selected?} pairs from the search results.
+func popupRows(results []SearchEntry, cursor, width int) []popupRow {
+	rows := make([]popupRow, len(results))
+	for i, r := range results {
+		rows[i] = popupRow{Text: r.Display, Selected: i == cursor}
+	}
+	_ = width
+	return rows
+}
+
+// popupRow is a lightweight descriptor for renderPopupList.
+type popupRow struct {
+	Text     string
+	Selected bool
+}
+
+// renderPopupList renders rows within the given (width, height) region,
+// scrolling so the selected row stays visible. Empty result sets display a
+// muted "(no matches)" line.
+func renderPopupList(rows []popupRow, width, height int, styles Styles) string {
+	if height < 1 {
+		height = 1
+	}
+	if width < 1 {
+		width = 1
+	}
+	if len(rows) == 0 {
+		return styles.OutlineMuted.Render("(no matches)")
+	}
+	sel := -1
+	for i, r := range rows {
+		if r.Selected {
+			sel = i
+			break
+		}
+	}
+	offset := 0
+	if sel >= 0 && sel >= height {
+		offset = sel - height + 1
+	}
+	end := offset + height
+	if end > len(rows) {
+		end = len(rows)
+	}
+	var b strings.Builder
+	for i := offset; i < end; i++ {
+		line := truncateToWidth(rows[i].Text, width)
+		if rows[i].Selected {
+			line = styles.OutlineCursor.Width(width).Render(line)
+		}
+		b.WriteString(line)
+		if i < end-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// renderAnnotListBody renders the annotation list. Selected row inverted.
+func renderAnnotListBody(p *AnnotListPopup, innerW, bodyH int, styles Styles) string {
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	hint := "[Enter jump · e edit · d delete · Esc close]"
+	rows := make([]popupRow, len(p.Items))
+	for i, it := range p.Items {
+		rows[i] = popupRow{Text: it.Display(), Selected: i == p.Cursor}
+	}
+	resultH := bodyH - 1
+	if resultH < 1 {
+		resultH = 1
+	}
+	var b strings.Builder
+	b.WriteString(renderPopupList(rows, innerW, resultH, styles))
+	b.WriteByte('\n')
+	b.WriteString(styles.OutlineMuted.Render(truncateToWidth(hint, innerW)))
+	return b.String()
+}
+
+// renderRefListBody renders the referrer popup rows.
+func renderRefListBody(doc *parser.Document, p *RefListPopup, innerW, bodyH int, styles Styles) string {
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	hint := "[Enter jump · Esc close]"
+	rows := make([]popupRow, len(p.BlockIDs))
+	for i, id := range p.BlockIDs {
+		bc := AnnotationBreadcrumb(doc, id)
+		if bc == "" {
+			bc = id
+		}
+		rows[i] = popupRow{Text: bc, Selected: i == p.Index}
+	}
+	resultH := bodyH - 1
+	if resultH < 1 {
+		resultH = 1
+	}
+	var b strings.Builder
+	b.WriteString(renderPopupList(rows, innerW, resultH, styles))
+	b.WriteByte('\n')
+	b.WriteString(styles.OutlineMuted.Render(truncateToWidth(hint, innerW)))
+	return b.String()
 }
 
 func (m Model) pdfPlaceholder() string {

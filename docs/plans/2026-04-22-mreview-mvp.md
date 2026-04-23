@@ -355,11 +355,11 @@ a A e d space          — annotations + reviewed
 **Files:**
 - Create: `pkg/ui/search.go`, `pkg/ui/annlist.go`, `pkg/ui/search_test.go`
 
-- [ ] `/` fuzzy search over title, label, number, first 200 chars of source (`sahilm/fuzzy`); Enter jumps
-- [ ] `@` annotation list (`<breadcrumb> — <first line>`); Enter jumps + focuses; `e`/`d` work in-list
-- [ ] both use `bubbles/list`
-- [ ] tests: fuzzy ranking, list selection jump
-- [ ] `make test && make lint`
+- [x] `/` fuzzy search over title, label, number, first 200 chars of source (`sahilm/fuzzy`); Enter jumps
+- [x] `@` annotation list (`<breadcrumb> — <first line>`); Enter jumps + focuses; `e`/`d` work in-list
+- [x] both use `bubbles/list`
+- [x] tests: fuzzy ranking, list selection jump
+- [x] `make test && make lint`
 
 ### Task 14: Stale-state remap on load + stdout emission on quit
 

@@ -34,6 +34,10 @@ type Keymap struct {
 	EditAnnotation   []string // e — edit existing annotation
 	DeleteAnnotation []string // d — delete with [y/N] confirm
 	ToggleReviewed   []string // space — toggle reviewed state
+
+	// Popups (Task 13).
+	OpenSearch    []string // / — fuzzy search
+	OpenAnnotList []string // @ — annotation list
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -58,6 +62,9 @@ func DefaultKeymap() Keymap {
 		EditAnnotation:   []string{"e"},
 		DeleteAnnotation: []string{"d"},
 		ToggleReviewed:   []string{" ", "space"},
+
+		OpenSearch:    []string{"/"},
+		OpenAnnotList: []string{"@"},
 	}
 }
 
