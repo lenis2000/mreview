@@ -389,16 +389,16 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/pdf/doc.go`, `pkg/pdf/render.go`, `pkg/pdf/display.go`, `pkg/pdf/doc_test.go`
 - Modify: `pkg/ui/view.go`, `pkg/ui/update.go`, `pkg/ui/model.go`, `go.mod`
 
-- [ ] deps: `gen2brain/go-fitz`, `blacktop/go-termimg`
-- [ ] `doc.go`: `Open(pdfPath) (*Doc, error)` wrapping `fitz.Document`; lazy `(pageIdx, dpi)` pixmap LRU cache; `Close()`
-- [ ] `render.go`: `Crop(doc, region, pad) ([]byte pngBytes, error)` — render target page, crop bbox+pad
-- [ ] `display.go`: kitty-only via go-termimg; emit escape that places image at terminal cell rect (mirror CLI-PDF-EPUB-reader's approach)
-- [ ] on cursor move: compute region, debounce 30ms, render, replace image
-- [ ] crop cache keyed by `(block_id, pdf_mtime)`, bound 64
-- [ ] no `PDFRegion` → pane shows `"[no region — block outside PDF]"`
-- [ ] tests: open fixture PDF, render page, crop region → non-empty decodable PNG
-- [ ] manual (kitty): open a real paper, navigate, verify pane follows; note jitter/lag
-- [ ] `make test && make lint`
+- [x] deps: `gen2brain/go-fitz`, `blacktop/go-termimg`
+- [x] `doc.go`: `Open(pdfPath) (*Doc, error)` wrapping `fitz.Document`; lazy `(pageIdx, dpi)` pixmap LRU cache; `Close()`
+- [x] `render.go`: `Crop(doc, region, pad) ([]byte pngBytes, error)` — render target page, crop bbox+pad
+- [x] `display.go`: kitty-only via go-termimg; emit escape that places image at terminal cell rect (mirror CLI-PDF-EPUB-reader's approach)
+- [x] on cursor move: compute region, debounce 30ms, render, replace image
+- [x] crop cache keyed by `(block_id, pdf_mtime)`, bound 64
+- [x] no `PDFRegion` → pane shows `"[no region — block outside PDF]"`
+- [x] tests: open fixture PDF, render page, crop region → non-empty decodable PNG
+- [x] manual (kitty): open a real paper, navigate, verify pane follows; note jitter/lag (skipped — not automatable; requires interactive kitty TTY)
+- [x] `make test && make lint`
 
 ### Task 16: Bibliography popup, help overlay, config file, polish
 

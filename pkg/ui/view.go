@@ -39,7 +39,7 @@ func (m Model) View() string {
 
 	outline := m.renderOutlinePane(outlineW, paneHeight)
 	source := m.renderSourcePane(sourceW, paneHeight)
-	pdf := m.renderPane("PDF", m.pdfPlaceholder(), pdfW, paneHeight, m.Focus == PanePDF)
+	pdf := m.renderPane("PDF", m.pdfPaneBody(), pdfW, paneHeight, m.Focus == PanePDF)
 
 	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
 	status := m.Styles.StatusBar.Width(m.Width).Render(m.statusText())
@@ -324,13 +324,6 @@ func renderRefListBody(doc *parser.Document, p *RefListPopup, innerW, bodyH int,
 	b.WriteByte('\n')
 	b.WriteString(styles.OutlineMuted.Render(truncateToWidth(hint, innerW)))
 	return b.String()
-}
-
-func (m Model) pdfPlaceholder() string {
-	if m.Doc == nil || m.CursorBlockID == "" {
-		return "(no PDF region)"
-	}
-	return "[PDF crop placeholder]"
 }
 
 // statusText composes the bottom row: focus, breadcrumb, locator, filter,

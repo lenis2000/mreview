@@ -1,0 +1,219 @@
+package ui
+
+import (
+	"container/list"
+	"fmt"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"mreview/pkg/parser"
+	"mreview/pkg/pdf"
+	"mreview/pkg/synctex"
+)
+
+// pdfRenderDebounce is the delay between a cursor move and the PDF crop/render
+// that follows it. Keeps us from rendering for every intermediate block
+// traversed by a count-prefixed motion.
+const pdfRenderDebounce = 30 * time.Millisecond
+
+// pdfCropCacheMax bounds the UI-level crop cache (keyed by block + geometry).
+const pdfCropCacheMax = 64
+
+// pdfRenderMsg is emitted from a debounced Tick. A stale message — one whose
+// Generation no longer matches the Model's current pdfGen — is dropped.
+type pdfRenderMsg struct {
+	Generation int
+	Image      string
+	Status     string
+}
+
+// pdfRenderInputs captures the data a Tick callback needs to compute a crop.
+// Held by value so the async goroutine does not race the Update loop.
+type pdfRenderInputs struct {
+	Doc        *parser.Document
+	BlockID    string
+	PDF        *pdf.Doc
+	Index      *synctex.Index
+	WidthCells int
+	HeightCells int
+}
+
+// schedulePDFRender bumps the generation counter and returns a Tick command
+// that will produce a pdfRenderMsg after pdfRenderDebounce. The callback is
+// a pure function of its captured inputs — no Model state leaks across
+// goroutines.
+func (m *Model) schedulePDFRender() tea.Cmd {
+	if m.PDF == nil || m.Synctex == nil {
+		// No PDF or SyncTeX wired — View falls through to pdfPaneBody's
+		// static placeholder, so no command is needed.
+		return nil
+	}
+	m.pdfGen++
+	gen := m.pdfGen
+	w, h := pdfPaneCells(m.Width, m.Height)
+	inputs := pdfRenderInputs{
+		Doc:         m.Doc,
+		BlockID:     m.CursorBlockID,
+		PDF:         m.PDF,
+		Index:       m.Synctex,
+		WidthCells:  w,
+		HeightCells: h,
+	}
+	cache := m.pdfCache
+	return tea.Tick(pdfRenderDebounce, func(time.Time) tea.Msg {
+		image, status := renderPDFForBlock(inputs, cache)
+		return pdfRenderMsg{Generation: gen, Image: image, Status: status}
+	})
+}
+
+// pdfPaneCells returns the inner (width, height) in terminal cells for the
+// PDF pane at the given terminal dimensions. Mirrors renderPane's inset math:
+// border eats 2 cells each axis, title eats one row, status bar one row.
+func pdfPaneCells(termW, termH int) (int, int) {
+	if termW <= 0 || termH <= 0 {
+		return 0, 0
+	}
+	_, _, pdfW := paneWidths(termW)
+	innerW := pdfW - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	innerH := termH - statusBarHeight - 2 - 1 // status + border top/bottom + title
+	if innerH < 1 {
+		innerH = 1
+	}
+	return innerW, innerH
+}
+
+// renderPDFForBlock does the actual crop+kitty-encode. Returns the escape
+// string on success, or a status string on failure/no-region. Results are
+// memoised in cache for cheap revisits.
+func renderPDFForBlock(in pdfRenderInputs, cache *pdfCropCache) (string, string) {
+	block := resolveBlock(in.Doc, in.BlockID)
+	if block == nil {
+		return "", "(no cursor)"
+	}
+	if block.StartLine == 0 {
+		return "", pdf.NoRegionPlaceholder
+	}
+	file := block.File
+	if file == "" && in.Doc != nil {
+		file = in.Doc.File
+	}
+	region := in.Index.RegionForLines(file, block.StartLine, block.EndLine)
+	if region == nil || !pdf.HasExtent(*region) {
+		return "", pdf.NoRegionPlaceholder
+	}
+	key := pdfCropKey{
+		BlockID: block.ID,
+		Mtime:   in.PDF.Mtime().UnixNano(),
+		Width:   in.WidthCells,
+		Height:  in.HeightCells,
+	}
+	if cache != nil {
+		if esc, ok := cache.get(key); ok {
+			return esc, ""
+		}
+	}
+	png, err := pdf.Crop(in.PDF, *region, 4)
+	if err != nil {
+		return "", fmt.Sprintf("pdf: %v", err)
+	}
+	esc, err := pdf.RenderKitty(png, in.WidthCells, in.HeightCells)
+	if err != nil {
+		return "", fmt.Sprintf("pdf: %v", err)
+	}
+	if cache != nil {
+		cache.put(key, esc)
+	}
+	return esc, ""
+}
+
+// resolveBlock is a thin wrapper returning the Block for an ID or nil.
+func resolveBlock(doc *parser.Document, id string) *parser.Block {
+	if doc == nil || id == "" {
+		return nil
+	}
+	return doc.ByID[id]
+}
+
+// pdfCropKey keys the per-block crop memo on (id, file mtime, geometry).
+// mtime guarantees an outdated cache is flushed when latexmk rebuilds.
+type pdfCropKey struct {
+	BlockID string
+	Mtime   int64
+	Width   int
+	Height  int
+}
+
+// pdfCropCache is a bounded LRU of rendered kitty escape strings.
+type pdfCropCache struct {
+	max   int
+	ll    *list.List
+	index map[pdfCropKey]*list.Element
+}
+
+type pdfCropEntry struct {
+	key pdfCropKey
+	esc string
+}
+
+// newPDFCropCache returns a cache bounded to max entries (fallback 1).
+func newPDFCropCache(max int) *pdfCropCache {
+	if max < 1 {
+		max = 1
+	}
+	return &pdfCropCache{max: max, ll: list.New(), index: map[pdfCropKey]*list.Element{}}
+}
+
+func (c *pdfCropCache) get(k pdfCropKey) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	if e, ok := c.index[k]; ok {
+		c.ll.MoveToFront(e)
+		return e.Value.(pdfCropEntry).esc, true
+	}
+	return "", false
+}
+
+func (c *pdfCropCache) put(k pdfCropKey, esc string) {
+	if c == nil {
+		return
+	}
+	if e, ok := c.index[k]; ok {
+		e.Value = pdfCropEntry{key: k, esc: esc}
+		c.ll.MoveToFront(e)
+		return
+	}
+	e := c.ll.PushFront(pdfCropEntry{key: k, esc: esc})
+	c.index[k] = e
+	for c.ll.Len() > c.max {
+		tail := c.ll.Back()
+		if tail == nil {
+			break
+		}
+		c.ll.Remove(tail)
+		delete(c.index, tail.Value.(pdfCropEntry).key)
+	}
+}
+
+// pdfPaneBody picks what to draw inside the PDF pane: a live kitty escape
+// when one is available, a status string when the render produced no image,
+// or the fallback placeholder when neither is set yet.
+func (m Model) pdfPaneBody() string {
+	if m.PDFImage != "" {
+		return m.PDFImage
+	}
+	if m.PDFStatus != "" {
+		return m.PDFStatus
+	}
+	if m.Doc == nil || m.CursorBlockID == "" {
+		return "(no PDF region)"
+	}
+	if m.PDF == nil && m.Synctex == nil {
+		return "(no PDF loaded)"
+	}
+	return pdf.NoRegionPlaceholder
+}

@@ -8,20 +8,58 @@ import (
 )
 
 // Update is the bubbletea state-transition function. Handles window resizes,
-// quit, filter cycling, and (Task 11) vim-style navigation plus jump-stack
-// manipulation.
+// quit, filter cycling, (Task 11) vim-style navigation plus jump-stack
+// manipulation, and (Task 15) the debounced PDF-pane render pipeline.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if rm, ok := msg.(pdfRenderMsg); ok {
+		return m.handlePDFRender(rm)
+	}
+	before := m.CursorBlockID
+	beforeW, beforeH := m.Width, m.Height
+	var next tea.Model
+	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
-		return m, nil
+		next = m
 	case tea.KeyMsg:
 		if m.Popup != nil {
-			return m.updatePopup(msg)
+			next, cmd = m.updatePopup(msg)
+		} else {
+			next, cmd = m.updateKey(msg)
 		}
-		return m.updateKey(msg)
+	default:
+		return m, nil
 	}
+
+	nm, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	geometryChanged := nm.Width != beforeW || nm.Height != beforeH
+	cursorChanged := nm.CursorBlockID != before
+	if (cursorChanged || geometryChanged) && !nm.quitting {
+		if tick := nm.schedulePDFRender(); tick != nil {
+			if cmd == nil {
+				cmd = tick
+			} else {
+				cmd = tea.Batch(cmd, tick)
+			}
+		}
+	}
+	return nm, cmd
+}
+
+// handlePDFRender applies a freshly produced PDF crop (or its status fallback)
+// to the model. Stale generations — produced before a more recent move — are
+// silently dropped.
+func (m Model) handlePDFRender(msg pdfRenderMsg) (tea.Model, tea.Cmd) {
+	if msg.Generation != m.pdfGen {
+		return m, nil
+	}
+	m.PDFImage = msg.Image
+	m.PDFStatus = msg.Status
 	return m, nil
 }
 

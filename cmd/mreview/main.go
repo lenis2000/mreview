@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
 
 	"mreview/pkg/parser"
+	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
+	"mreview/pkg/synctex"
 	"mreview/pkg/ui"
 )
 
@@ -117,6 +120,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
+
+	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
+	// either file is missing (e.g. latexmk hasn't run yet) the pane falls
+	// back to a placeholder rather than aborting the session.
+	stem := strings.TrimSuffix(o.File, ".tex")
+	pdfPath := stem + ".pdf"
+	synctexPath := stem + ".synctex.gz"
+	if pdfDoc, pdfErr := pdf.Open(pdfPath); pdfErr == nil {
+		defer pdfDoc.Close()
+		model.PDF = pdfDoc
+	}
+	if idx, idxErr := synctex.Open(synctexPath); idxErr == nil {
+		model.Synctex = idx
+	}
+
 	final, err := runTUI(model, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "mreview: tui: %v\n", err)

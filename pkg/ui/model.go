@@ -6,7 +6,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/parser"
+	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
+	"mreview/pkg/synctex"
 )
 
 // Filter selects which outline rows are visible. The skeleton only stores the
@@ -88,6 +90,26 @@ type Model struct {
 	// quitting is set when an internal Quit command was returned, so View can
 	// short-circuit during the final render frame.
 	quitting bool
+
+	// PDF, Synctex are optional handles for the cursor-following PDF pane.
+	// When either is nil the pane shows a placeholder. Both are injected by
+	// the caller (cmd/mreview/main.go) after a successful build.
+	PDF     *pdf.Doc
+	Synctex *synctex.Index
+
+	// PDFImage holds the most recent kitty-graphics escape string for the
+	// PDF pane; PDFStatus holds the text placeholder when no image is
+	// available (e.g. block outside PDF, render error).
+	PDFImage  string
+	PDFStatus string
+
+	// pdfGen is a monotonic counter bumped whenever a render is scheduled;
+	// it lets us discard stale pdfRenderMsg results delivered after the
+	// user has already moved on.
+	pdfGen int
+
+	// pdfCache memoises kitty escape strings by (block, mtime, geometry).
+	pdfCache *pdfCropCache
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -109,6 +131,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Focus:         PaneOutline,
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),
+		pdfCache:      newPDFCropCache(pdfCropCacheMax),
 	}
 	if n := len(side.Detached); n > 0 {
 		m.Status = fmt.Sprintf("%d detached annotation(s) — see ## Detached in sidecar", n)
@@ -128,8 +151,12 @@ func firstContentBlockID(doc *parser.Document) string {
 	return ""
 }
 
-// Init returns the initial command. The skeleton has no startup work to
-// schedule; Task 14+ will trigger the first PDF render here.
+// Init returns the initial command. When a PDF and SyncTeX index are wired,
+// we schedule the first cursor-following render so the pane is populated
+// before the user presses anything.
 func (m Model) Init() tea.Cmd {
-	return nil
+	if m.PDF == nil || m.Synctex == nil {
+		return nil
+	}
+	return m.schedulePDFRender()
 }
