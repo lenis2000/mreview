@@ -71,6 +71,14 @@ type Keymap struct {
 	// keyboard users can drive line nav without leaving the outline pane.
 	SourceLineUp   []string // [ — previous line within block
 	SourceLineDown []string // ] — next line within block
+
+	// Edit-in-place. E suspends mreview and runs $EDITOR on paper.tex
+	// positioned at the cursor's absolute source line; on return the
+	// reload pipeline re-parses, rebuilds if necessary, and remaps
+	// annotations. ctrl+e is the lightweight inline-edit mode for
+	// one-line wording fixes.
+	ExternalEdit []string
+	InlineEdit   []string
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -115,6 +123,9 @@ func DefaultKeymap() Keymap {
 
 		SourceLineUp:   []string{"["},
 		SourceLineDown: []string{"]"},
+
+		ExternalEdit: []string{"E"},
+		InlineEdit:   []string{"ctrl+e"},
 	}
 }
 

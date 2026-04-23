@@ -16,6 +16,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rm, ok := msg.(pdfRenderMsg); ok {
 		return m.handlePDFRender(rm)
 	}
+	if rlm, ok := msg.(reloadMsg); ok {
+		if rlm.err != nil {
+			m.Status = "editor: " + rlm.err.Error()
+		}
+		nm, cmd := m.reloadFromDisk()
+		return nm, cmd
+	}
 	before := m.CursorBlockID
 	beforeW, beforeH := m.Width, m.Height
 	var next tea.Model
@@ -238,6 +245,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor+1)
 		m.CountBuf = ""
 		return m, nil
+	}
+	if matches(key, m.Keymap.ExternalEdit) {
+		m.CountBuf = ""
+		return m.editInExternalEditor()
+	}
+	if matches(key, m.Keymap.InlineEdit) {
+		m.CountBuf = ""
+		return m.StartLineEdit()
 	}
 
 	// When the source pane has focus, hijack the standard sibling-nav
@@ -560,6 +575,16 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		_ = p
 		return m, nil
+	case *LineEditPopup:
+		switch msg.Type {
+		case tea.KeyEnter, tea.KeyCtrlS:
+			return m.SubmitLineEdit()
+		case tea.KeyEsc, tea.KeyCtrlC:
+			return m.CancelLineEdit()
+		}
+		var cmd tea.Cmd
+		p.TI, cmd = p.TI.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }

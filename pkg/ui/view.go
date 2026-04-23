@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -211,6 +212,9 @@ func (m Model) renderSourcePane(width, height int) string {
 		title = m.Styles.PaneTitle.Render("Help")
 		body = RenderHelpBody(innerW)
 		_ = p
+	case *LineEditPopup:
+		title = m.Styles.PaneTitle.Render(fmt.Sprintf("Edit line %d · %s", p.AbsoluteLine, m.Doc.File))
+		body = renderLineEditBody(p, innerW, bodyH, m.Styles)
 	default:
 		var anns []persist.Annotation
 		if m.Sidecar != nil {
@@ -237,6 +241,26 @@ func annotationPaneTitle(doc *parser.Document, p *AnnotationPopup) string {
 		prefix = "Edit annotation"
 	}
 	return prefix + " · " + bc
+}
+
+// renderLineEditBody lays out the inline single-line editor plus its
+// hint inside the source pane. We intentionally don't show the full
+// source here — this popup is for one-line wording fixes, not
+// navigation, so clearing the pane keeps the user focused on exactly
+// what they're rewriting.
+func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) string {
+	hint := "[Enter submit · Esc cancel]"
+	w := innerW
+	if w > 2 {
+		w -= 2
+	}
+	if p.TI.Width != w {
+		p.TI.Width = w
+	}
+	prefix := styles.SourceGutter.Render(fmt.Sprintf("%4d ", p.AbsoluteLine))
+	body := prefix + p.TI.View()
+	_ = innerH
+	return body + "\n\n" + styles.OutlineMuted.Render(hint)
 }
 
 // renderAnnotationBody lays out the textarea and a help hint within the
