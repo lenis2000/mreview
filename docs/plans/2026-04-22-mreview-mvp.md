@@ -269,14 +269,14 @@ a A e d space          — annotations + reviewed
 **Files:**
 - Create: `pkg/persist/sidecar.go`, `pkg/persist/remap.go`, `pkg/persist/sidecar_test.go`, `pkg/persist/remap_test.go`
 
-- [ ] `Sidecar{Paper, PDF, Cursor string, Reviewed []string, Annotations []Annotation}` with `Annotation{BlockID, Breadcrumb, File string, StartLine, EndLine int, SourceQuote, Note string}`
-- [ ] `Load(path)` — YAML frontmatter + markdown body; missing file → empty sidecar + nil error
-- [ ] `Save(path, *Sidecar)` — stable round-trip ordering
-- [ ] heading: `` ## <Breadcrumb> — `<BlockID>` (<File>:L<start>-L<end>) `` (LP explicit: include line numbers)
-- [ ] source quote as fenced blockquote, ≤6 lines, middle-ellipsis `…`
-- [ ] `Remap(old *Sidecar, newDoc) (*Sidecar, []Annotation)` — (1) exact ID, (2) label, (3) Levenshtein similarity ≥0.85 on source quote; unmatched → detached
-- [ ] tests: round-trip, stale remap (rename/move/delete/unchanged), line-number format
-- [ ] `make test && make lint`
+- [x] `Sidecar{Paper, PDF, Cursor string, Reviewed []string, Annotations []Annotation}` with `Annotation{BlockID, Breadcrumb, File string, StartLine, EndLine int, SourceQuote, Note string}`
+- [x] `Load(path)` — YAML frontmatter + markdown body; missing file → empty sidecar + nil error
+- [x] `Save(path, *Sidecar)` — stable round-trip ordering
+- [x] heading: `` ## <Breadcrumb> — `<BlockID>` (<File>:L<start>-L<end>) `` (LP explicit: include line numbers)
+- [x] source quote as fenced blockquote, ≤6 lines, middle-ellipsis `…`
+- [x] `Remap(old *Sidecar, newDoc) (*Sidecar, []Annotation)` — (1) exact ID, (2) label, (3) Levenshtein similarity ≥0.85 on source quote; unmatched → detached
+- [x] tests: round-trip, stale remap (rename/move/delete/unchanged), line-number format
+- [x] `make test && make lint`
 
 ### Task 9: Bubbletea TUI skeleton — three-pane layout
 
