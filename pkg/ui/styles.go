@@ -21,10 +21,11 @@ type Styles struct {
 	OutlineMuted  lipgloss.Style
 
 	// Source pane.
-	SourceGutter  lipgloss.Style
-	SourceComment lipgloss.Style
-	SourceCommand lipgloss.Style
-	SourceMath    lipgloss.Style
+	SourceGutter     lipgloss.Style
+	SourceComment    lipgloss.Style
+	SourceCommand    lipgloss.Style
+	SourceMath       lipgloss.Style
+	SourceAnnotation lipgloss.Style
 }
 
 // DefaultStyles returns the baseline visual treatment. Colors are expressed
@@ -47,10 +48,11 @@ func DefaultStyles() Styles {
 		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("238")),
 		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 
-		SourceGutter:  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-		SourceComment: lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
-		SourceCommand: lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
-		SourceMath:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
+		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("228")).Background(lipgloss.Color("236")).Italic(true),
 	}
 }
 
@@ -74,9 +76,10 @@ func lightStyles() Styles {
 		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("251")),
 		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
 
-		SourceGutter:  lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		SourceComment: lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
-		SourceCommand: lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		SourceMath:    lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
+		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Background(lipgloss.Color("230")).Italic(true),
 	}
 }

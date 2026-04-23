@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"mreview/pkg/parser"
+	"mreview/pkg/persist"
 )
 
 // Pane width ratios — outline 25%, source 40%, PDF 35%. The percentages are
@@ -203,7 +204,11 @@ func (m Model) renderSourcePane(width, height int) string {
 		body = RenderHelpBody(innerW)
 		_ = p
 	default:
-		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor)
+		var anns []persist.Annotation
+		if m.Sidecar != nil {
+			anns = m.Sidecar.Annotations
+		}
+		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns)
 	}
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)

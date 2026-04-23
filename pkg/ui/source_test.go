@@ -22,7 +22,7 @@ func TestRenderSource_IncludesLineNumbers(t *testing.T) {
 	}
 	require.NotNil(t, proof)
 
-	out := RenderSource(doc, proof.ID, 60, 20, DefaultStyles(), false, 0)
+	out := RenderSource(doc, proof.ID, 60, 20, DefaultStyles(), false, 0, nil)
 	plain := stripANSI(out)
 	assert.Contains(t, plain, "proof") // the \begin{proof} command text
 	// The first visible line should start with the proof's StartLine padded
@@ -32,13 +32,13 @@ func TestRenderSource_IncludesLineNumbers(t *testing.T) {
 }
 
 func TestRenderSource_EmptyCursor(t *testing.T) {
-	out := RenderSource(nil, "", 40, 5, DefaultStyles(), false, 0)
+	out := RenderSource(nil, "", 40, 5, DefaultStyles(), false, 0, nil)
 	assert.Contains(t, stripANSI(out), "no block selected")
 }
 
 func TestRenderSource_UnknownCursor(t *testing.T) {
 	doc := outlineDoc(t)
-	out := RenderSource(doc, "does-not-exist", 40, 5, DefaultStyles(), false, 0)
+	out := RenderSource(doc, "does-not-exist", 40, 5, DefaultStyles(), false, 0, nil)
 	assert.Contains(t, stripANSI(out), "unknown block")
 }
 

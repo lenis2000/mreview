@@ -6,6 +6,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"mreview/pkg/parser"
+	"mreview/pkg/persist"
 )
 
 // RenderSource returns the rendered body of the source pane for the current
@@ -16,7 +17,10 @@ import (
 //
 // width is the inner pane width; height is the inner pane height. softWrap
 // controls whether long lines wrap to additional rows or get truncated.
-func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int) string {
+// annotations are rendered inline: a block-level note (LineOffset 0) shows
+// as a row directly above the block's first line; line-pinned notes show
+// as a row directly below the line they're anchored to.
+func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation) string {
 	if doc == nil || cursor == "" {
 		return styles.OutlineMuted.Render("(no block selected)")
 	}
@@ -72,8 +76,51 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 		}
 	}
 
+	// Group this block's annotations by the line they decorate. A line-
+	// pinned annotation gets keyed to its anchor line; the block-level note
+	// (LineOffset 0) is keyed one position before the block's first line so
+	// it renders as a header row above line 1.
+	notesByLine := map[int][]persist.Annotation{}
+	for _, a := range annotations {
+		if a.BlockID != b.ID {
+			continue
+		}
+		if a.LineOffset > 0 {
+			ln := b.StartLine + a.LineOffset - 1
+			if ln > b.EndLine {
+				ln = b.EndLine
+			}
+			notesByLine[ln] = append(notesByLine[ln], a)
+		} else {
+			notesByLine[b.StartLine-1] = append(notesByLine[b.StartLine-1], a)
+		}
+	}
+
 	var out strings.Builder
 	rows := 0
+	emitNotes := func(forLine int) {
+		notes, ok := notesByLine[forLine]
+		if !ok {
+			return
+		}
+		for _, n := range notes {
+			noteRows := annotationRows(n, gutterW, bodyWidth, styles)
+			for _, r := range noteRows {
+				if rows >= height {
+					return
+				}
+				if rows > 0 {
+					out.WriteByte('\n')
+				}
+				out.WriteString(r)
+				rows++
+			}
+		}
+	}
+
+	// Block-level annotation header (if any) — renders above line 1.
+	emitNotes(b.StartLine - 1)
+
 	for ln := startLine; ln <= endLine && rows < height; ln++ {
 		if ln-1 >= len(allLines) {
 			break
@@ -99,14 +146,73 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 				// the next `a` will annotate stands out at a glance.
 				rowText = styles.OutlineCursor.Width(width).Render(stripANSI(rowText))
 			}
-			out.WriteString(rowText)
-			rows++
-			if rows < height && (i < len(segments)-1 || ln < endLine) {
+			if rows > 0 {
 				out.WriteByte('\n')
 			}
+			out.WriteString(rowText)
+			rows++
 		}
+		emitNotes(ln)
 	}
 	return out.String()
+}
+
+// annotationRows formats one annotation as one or more inline display rows.
+// The first row carries a `▸` sigil; continuation rows align under the note
+// text. Long notes wrap on word boundaries within bodyWidth so the inline
+// preview never overflows the pane.
+func annotationRows(a persist.Annotation, gutterW, bodyWidth int, styles Styles) []string {
+	const sigil = "▸ "
+	indent := strings.Repeat(" ", gutterW) + " "
+	noteWidth := bodyWidth - runewidth.StringWidth(sigil)
+	if noteWidth < 1 {
+		noteWidth = 1
+	}
+	noteText := strings.TrimSpace(a.Note)
+	if noteText == "" {
+		noteText = "(empty)"
+	}
+	// Collapse internal newlines to spaces so each note is one paragraph in
+	// the inline view; the full multi-line body still lives in the sidecar.
+	noteText = strings.Join(strings.Fields(noteText), " ")
+	wrapped := wrapWords(noteText, noteWidth)
+	rows := make([]string, 0, len(wrapped))
+	for i, line := range wrapped {
+		var prefix string
+		if i == 0 {
+			prefix = sigil
+		} else {
+			prefix = strings.Repeat(" ", runewidth.StringWidth(sigil))
+		}
+		rows = append(rows, indent+styles.SourceAnnotation.Render(prefix+line))
+	}
+	return rows
+}
+
+// wrapWords breaks a single-paragraph string into width-bounded rows, splitting
+// on whitespace where possible. Used for inline annotation rendering so a
+// long note doesn't trip the pane border.
+func wrapWords(s string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if s == "" {
+		return []string{""}
+	}
+	var rows []string
+	rem := s
+	for runewidth.StringWidth(rem) > 0 {
+		take := takeCells(rem, width)
+		if take == "" {
+			break
+		}
+		rows = append(rows, take)
+		rem = strings.TrimLeft(rem[len(take):], " \t")
+	}
+	if len(rows) == 0 {
+		rows = append(rows, s)
+	}
+	return rows
 }
 
 // wrapOrClip turns one source line into one or more visible row strings.
