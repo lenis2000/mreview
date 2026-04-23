@@ -76,45 +76,60 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 	return m
 }
 
-// scrollSource shifts the source line cursor by delta lines. When the
-// cursor would step past the block's first/last line, the cursor jumps to
-// the previous/next block (DFS order) and lands on its last/first line so
-// the wheel scroll reads as continuous.
+// scrollSource shifts the source line cursor by delta *absolute* source
+// lines. The previous implementation stepped between blocks via PrevInner /
+// NextInner, which skipped lines in any gap that didn't belong to a leaf
+// block (whitespace, uncovered prose). This walks the raw line numbers
+// instead, then re-homes the cursor on whichever block tightly contains
+// the new absolute line — so every keystroke moves by exactly one line.
 func (m Model) scrollSource(delta int) Model {
 	if m.Doc == nil || m.CursorBlockID == "" {
 		return m
 	}
-	want := m.SourceLineCursor + delta
-	n := blockLineCount(m.Doc, m.CursorBlockID)
-	if want >= 1 && want <= n {
-		m.SourceLineCursor = want
+	b := m.Doc.ByID[m.CursorBlockID]
+	if b == nil || b.StartLine == 0 {
 		return m
 	}
-	if want < 1 {
-		id := PrevInner(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
-		if id == "" || id == m.CursorBlockID {
-			m.SourceLineCursor = 1
-			return m
-		}
-		m.CursorBlockID = id
-		newN := blockLineCount(m.Doc, id)
-		if newN < 1 {
-			newN = 1
-		}
-		m.SourceLineCursor = newN
+	curAbs := b.StartLine + m.SourceLineCursor - 1
+	newAbs := curAbs + delta
+	if newAbs < 1 {
+		newAbs = 1
+	}
+	total := sourceLineTotal(m.Doc)
+	if total > 0 && newAbs > total {
+		newAbs = total
+	}
+	// Prefer the most-specific non-root block covering the new line.
+	// Fall back to the current block when there's a gap no block covers,
+	// clamping the offset so SourceLineCursor stays in [1, blockLineCount].
+	if other := blockContainingLine(m.Doc, newAbs); other != nil {
+		m.CursorBlockID = other.ID
+		m.SourceLineCursor = newAbs - other.StartLine + 1
 		return m
 	}
-	id := NextInner(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
-	if id == "" || id == m.CursorBlockID {
-		if n < 1 {
-			n = 1
-		}
-		m.SourceLineCursor = n
-		return m
-	}
-	m.CursorBlockID = id
-	m.SourceLineCursor = 1
+	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, newAbs-b.StartLine+1)
 	return m
+}
+
+// sourceLineTotal returns the number of source lines in the document, or 0
+// when the source is empty. Matches the line count the renderer sees after
+// strings.Split on "\n".
+func sourceLineTotal(doc *parser.Document) int {
+	if doc == nil {
+		return 0
+	}
+	src := string(doc.Source)
+	if src == "" {
+		return 0
+	}
+	n := strings.Count(src, "\n") + 1
+	if src[len(src)-1] == '\n' {
+		n--
+	}
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 // paneAtPoint returns which pane covers the (x, y) terminal cell along with
