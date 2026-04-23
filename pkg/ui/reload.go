@@ -192,7 +192,10 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		if b, ok := newDoc.ByLabel[oldCursor]; ok {
 			newCursor = b.ID
 		} else {
-			newCursor = firstContentBlockID(newDoc)
+			// Mirror ui.New's fallback: after the cursor vanished (edits
+			// deleted or split the block), prefer the next unreviewed
+			// block over jumping back to the start of the document.
+			newCursor = firstUnreviewedOrAny(newDoc, newSidecar)
 		}
 	}
 

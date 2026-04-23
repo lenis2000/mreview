@@ -53,13 +53,15 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 // like --wait is how tea.ExecProcess knows to wait for the edit to
 // finish before reloading.
 //
-// $EDITOR is split on whitespace via strings.Fields — adequate for the
-// common cases (`code --wait`, `emacsclient -c`, `nvim -u NONE`). Shell
-// quoting (spaces inside a path) is not parsed; users with such setups
-// should point $EDITOR at a wrapper script instead.
+// $EDITOR is tokenised with parseShellArgs, which understands single
+// and double quotes and backslash escapes — enough for GUI-app paths
+// containing spaces (`EDITOR="/Applications/My App/bin/edit" --wait`)
+// without pulling in a full shell parser. Variable expansion and
+// command substitution are intentionally not supported; a user who
+// needs those should point $EDITOR at a wrapper script.
 func resolveEditor() (string, []string, bool) {
 	if v := strings.TrimSpace(os.Getenv("EDITOR")); v != "" {
-		tokens := strings.Fields(v)
+		tokens := parseShellArgs(v)
 		if len(tokens) > 0 {
 			if _, err := exec.LookPath(tokens[0]); err == nil {
 				return tokens[0], tokens[1:], true
@@ -72,6 +74,75 @@ func resolveEditor() (string, []string, bool) {
 		}
 	}
 	return "", nil, false
+}
+
+// parseShellArgs tokenises an $EDITOR-style string the way a POSIX
+// shell would for simple commands: whitespace separates tokens;
+// single quotes take their contents literally; double quotes take
+// contents literally except that a backslash before `"` or `\`
+// is an escape; outside quotes a backslash escapes the next rune
+// (so `\ ` produces a literal space). Unterminated quotes fall
+// through as a single token ending at EOL — good enough for
+// `EDITOR` strings, which are never interactively composed.
+func parseShellArgs(s string) []string {
+	const (
+		stateNormal = iota
+		stateSingle
+		stateDouble
+	)
+	var out []string
+	var buf []rune
+	state := stateNormal
+	inToken := false
+	flush := func() {
+		if inToken {
+			out = append(out, string(buf))
+			buf = buf[:0]
+			inToken = false
+		}
+	}
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		switch state {
+		case stateNormal:
+			switch {
+			case r == ' ' || r == '\t':
+				flush()
+			case r == '\'':
+				state = stateSingle
+				inToken = true
+			case r == '"':
+				state = stateDouble
+				inToken = true
+			case r == '\\' && i+1 < len(runes):
+				i++
+				buf = append(buf, runes[i])
+				inToken = true
+			default:
+				buf = append(buf, r)
+				inToken = true
+			}
+		case stateSingle:
+			if r == '\'' {
+				state = stateNormal
+			} else {
+				buf = append(buf, r)
+			}
+		case stateDouble:
+			if r == '"' {
+				state = stateNormal
+			} else if r == '\\' && i+1 < len(runes) &&
+				(runes[i+1] == '"' || runes[i+1] == '\\') {
+				i++
+				buf = append(buf, runes[i])
+			} else {
+				buf = append(buf, r)
+			}
+		}
+	}
+	flush()
+	return out
 }
 
 // buildEditorLineArgs produces the final argv tail: a jump-to-line flag
