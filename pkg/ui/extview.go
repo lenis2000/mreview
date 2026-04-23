@@ -23,24 +23,29 @@ const pdfManualMaxZoom = 6
 // manualRenderInputs groups the knobs that drive renderManualPDF so the
 // parameter list stays readable.
 type manualRenderInputs struct {
-	Doc         *pdf.Doc
-	Page        int
-	Zoom        int
-	WidthCells  int
-	HeightCells int
-	Dual        string // "" | "horizontal" | "vertical"
-	Dark        bool
-	CropT       float64
-	CropB       float64
-	CropL       float64
-	CropR       float64
+	Doc          *pdf.Doc
+	Page         int
+	Zoom         int
+	WidthCells   int
+	HeightCells  int
+	CellWidthPx  float64
+	CellHeightPx float64
+	Dual         string // "" | "horizontal" | "vertical"
+	Dark         bool
+	CropT        float64
+	CropB        float64
+	CropL        float64
+	CropR        float64
 }
 
 // renderManualPDF produces a kitty-graphics escape sequence for the PDF
 // pane in manual mode. Applies in order: per-edge crop, centred zoom
 // crop, optional dark-mode invert, optional dual-page composition, then
-// aspect-fit into the pane cells (with the requested fit mode choosing
-// which axis to prioritise).
+// aspect-fit into the pane cells.
+//
+// DPI is chosen adaptively (chooseManualDPI) so a high zoom level on a
+// large pane gets a crisp render instead of the upscale blur the old
+// fixed-200 dpi path produced.
 func renderManualPDF(in manualRenderInputs) (string, string) {
 	if in.Doc == nil {
 		return "", "(no PDF loaded)"
@@ -54,13 +59,14 @@ func renderManualPDF(in manualRenderInputs) (string, string) {
 	if in.Page < 0 {
 		return "", "(empty PDF)"
 	}
-	primary, err := renderSinglePage(in.Doc, in.Page, in)
+	dpi := chooseManualDPI(in)
+	primary, err := renderSinglePage(in.Doc, in.Page, in, dpi)
 	if err != nil {
 		return "", fmt.Sprintf("pdf: %v", err)
 	}
 	var composed image.Image = primary
 	if in.Dual != "" && in.Page+1 < in.Doc.NumPage() {
-		second, err := renderSinglePage(in.Doc, in.Page+1, in)
+		second, err := renderSinglePage(in.Doc, in.Page+1, in, dpi)
 		if err == nil {
 			composed = composeDual(primary, second, in.Dual)
 		}
@@ -76,28 +82,64 @@ func renderManualPDF(in manualRenderInputs) (string, string) {
 	return esc, ""
 }
 
-// renderSinglePage rasterises one page at an appropriate DPI (informed by
-// the requested fit mode and current pane cell size), then applies crop +
-// zoom + dark-mode invert. The output is already in its final pixel
-// dimensions; renderManualPDF only composes and encodes from here.
-func renderSinglePage(d *pdf.Doc, pageIdx int, in manualRenderInputs) (image.Image, error) {
-	dpi := pdf.DefaultCropDPI
+// chooseManualDPI computes the render resolution that best fits the
+// pane after per-edge crop, zoom crop, and dual-page composition.
+// Falls back to DefaultCropDPI when pane pixel dimensions aren't known.
+func chooseManualDPI(in manualRenderInputs) float64 {
+	if in.Doc == nil || in.CellWidthPx <= 0 || in.CellHeightPx <= 0 {
+		return pdf.DefaultCropDPI
+	}
+	bounds, err := in.Doc.Bounds(in.Page)
+	if err != nil {
+		return pdf.DefaultCropDPI
+	}
+	pageWPt := float64(bounds.Dx())
+	pageHPt := float64(bounds.Dy())
+	if pageWPt < 1 || pageHPt < 1 {
+		return pdf.DefaultCropDPI
+	}
+	visW := pageWPt * (1 - clampFrac(in.CropL) - clampFrac(in.CropR))
+	visH := pageHPt * (1 - clampFrac(in.CropT) - clampFrac(in.CropB))
+	if in.Zoom > 0 {
+		z := in.Zoom
+		if z > pdfManualMaxZoom {
+			z = pdfManualMaxZoom
+		}
+		frac := 1.0 - float64(z)*pdfManualZoomStep
+		if frac < 0.1 {
+			frac = 0.1
+		}
+		visW *= frac
+		visH *= frac
+	}
+	finalW, finalH := visW, visH
+	switch in.Dual {
+	case "horizontal":
+		finalW = 2 * visW
+	case "vertical":
+		finalH = 2 * visH
+	}
+	paneWPx := int(float64(in.WidthCells) * in.CellWidthPx)
+	paneHPx := int(float64(in.HeightCells) * in.CellHeightPx)
+	return pdf.SuggestDPI(finalW, finalH, paneWPx, paneHPx)
+}
+
+// renderSinglePage rasterises one page at the given DPI then applies
+// per-edge crop + zoom + dark-mode invert. The output is already in
+// its final pixel dimensions; renderManualPDF only composes and
+// encodes from here.
+func renderSinglePage(d *pdf.Doc, pageIdx int, in manualRenderInputs, dpi float64) (image.Image, error) {
 	img, err := d.Page(pageIdx, dpi)
 	if err != nil {
 		return nil, err
 	}
-	bounds := img.Bounds()
-	// Apply per-edge crop first so zoom calculates off the visible area,
-	// not the full page.
 	cropped := cropEdges(img, in.CropL, in.CropT, in.CropR, in.CropB)
-	// Apply zoom: shrink the crop rect centrally.
 	if in.Zoom > 0 {
 		cropped = zoomCrop(cropped, in.Zoom)
 	}
 	if in.Dark {
 		cropped = invertColors(cropped)
 	}
-	_ = bounds
 	return cropped, nil
 }
 

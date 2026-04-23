@@ -109,6 +109,12 @@ func RenderKitty(pngBytes []byte, widthCells, heightCells int) (string, error) {
 	return sb.String(), nil
 }
 
+// DetectCellPixelSize is the exported wrapper around detectCellPixelSize
+// used by callers (notably the UI's pane→pixel math) outside this package.
+func DetectCellPixelSize() (float64, float64) {
+	return detectCellPixelSize()
+}
+
 // detectCellPixelSize returns the pixel dimensions of one terminal cell.
 // Tries TIOCGWINSZ first; falls back to typical kitty defaults if the kernel
 // doesn't report pixel sizes (some non-kitty terminals leave Xpixel/Ypixel

@@ -30,6 +30,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rr, ok := msg.(reloadResultMsg); ok {
 		return m.applyReloadResult(rr)
 	}
+	if or, ok := msg.(ocrReportMsg); ok {
+		m.Status = or.status
+		return m, nil
+	}
 	before := m.CursorBlockID
 	beforeW, beforeH := m.Width, m.Height
 	var next tea.Model
@@ -260,6 +264,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if matches(key, m.Keymap.InlineEdit) {
 		m.CountBuf = ""
 		return m.StartLineEdit()
+	}
+	if matches(key, m.Keymap.OCRReport) {
+		m.CountBuf = ""
+		return m.startOCRReport()
 	}
 
 	// When the source pane has focus, hijack the standard sibling-nav

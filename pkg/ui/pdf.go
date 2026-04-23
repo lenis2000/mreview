@@ -32,12 +32,17 @@ type pdfRenderMsg struct {
 // pdfRenderInputs captures the data a Tick callback needs to compute a crop.
 // Held by value so the async goroutine does not race the Update loop.
 type pdfRenderInputs struct {
-	Doc        *parser.Document
-	BlockID    string
-	PDF        *pdf.Doc
-	Index      *synctex.Index
-	WidthCells int
-	HeightCells int
+	Doc          *parser.Document
+	BlockID      string
+	PDF          *pdf.Doc
+	Index        *synctex.Index
+	WidthCells   int
+	HeightCells  int
+	CellWidthPx  float64
+	CellHeightPx float64
+	// PageLayout points at the model-owned multi-column cache. Safe to
+	// share across goroutines — the cache serialises its own access.
+	PageLayout *pageLayoutCache
 }
 
 // schedulePDFRender bumps the generation counter and returns a Tick command
@@ -66,6 +71,7 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 		return nil
 	}
 	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
+	cellW, cellH := pdf.DetectCellPixelSize()
 	if m.PDFManual {
 		// Manual mode renders the current page directly — no SyncTeX
 		// needed and no debounce, since user-driven page/zoom keys want
@@ -73,17 +79,19 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 		m.pdfGen++
 		gen := m.pdfGen
 		inputs := manualRenderInputs{
-			Doc:         m.PDF,
-			Page:        m.ManualPDFPage,
-			Zoom:        m.ManualPDFZoom,
-			WidthCells:  w,
-			HeightCells: h,
-			Dual:        m.ManualPDFDual,
-			Dark:        m.ManualPDFDark,
-			CropT:       m.ManualPDFCropT,
-			CropB:       m.ManualPDFCropB,
-			CropL:       m.ManualPDFCropL,
-			CropR:       m.ManualPDFCropR,
+			Doc:          m.PDF,
+			Page:         m.ManualPDFPage,
+			Zoom:         m.ManualPDFZoom,
+			WidthCells:   w,
+			HeightCells:  h,
+			CellWidthPx:  cellW,
+			CellHeightPx: cellH,
+			Dual:         m.ManualPDFDual,
+			Dark:         m.ManualPDFDark,
+			CropT:        m.ManualPDFCropT,
+			CropB:        m.ManualPDFCropB,
+			CropL:        m.ManualPDFCropL,
+			CropR:        m.ManualPDFCropR,
 		}
 		return func() tea.Msg {
 			img, status := renderManualPDF(inputs)
@@ -96,12 +104,15 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 	m.pdfGen++
 	gen := m.pdfGen
 	inputs := pdfRenderInputs{
-		Doc:         m.Doc,
-		BlockID:     m.CursorBlockID,
-		PDF:         m.PDF,
-		Index:       m.Synctex,
-		WidthCells:  w,
-		HeightCells: h,
+		Doc:          m.Doc,
+		BlockID:      m.CursorBlockID,
+		PDF:          m.PDF,
+		Index:        m.Synctex,
+		WidthCells:   w,
+		HeightCells:  h,
+		CellWidthPx:  cellW,
+		CellHeightPx: cellH,
+		PageLayout:   m.pageLayout,
 	}
 	cache := m.pdfCache
 	return tea.Tick(pdfRenderDebounce, func(time.Time) tea.Msg {
@@ -171,11 +182,23 @@ func renderPDFForBlock(in pdfRenderInputs, cache *pdfCropCache) (string, string)
 			return esc, ""
 		}
 	}
-	// Render the SyncTeX target in the flow of its surroundings instead of a
-	// tight box. 80 PDF points is roughly an inch — about a paragraph above
-	// and below for typical 11pt body text — which gives the reviewer enough
-	// surrounding context to recognise the spot at a glance.
-	png, err := pdf.CropWithContext(in.PDF, *region, 80)
+	// CropFitted picks DPI, vpad, and column-mode to fill the pane.
+	// Adaptive DPI avoids kitty up-/downscaling blur; adaptive vpad
+	// fills the pane vertically without distorting the cursor block;
+	// column-mode is delegated to the page-level layout cache so a
+	// single-column paper with a narrow inline equation doesn't get
+	// sliced.
+	multi := false
+	if in.PageLayout != nil {
+		multi = in.PageLayout.IsMultiColumn(in.PDF, in.Doc, region.Page)
+	}
+	paneWPx := int(float64(in.WidthCells) * in.CellWidthPx)
+	paneHPx := int(float64(in.HeightCells) * in.CellHeightPx)
+	png, err := pdf.CropFitted(in.PDF, *region, pdf.FitOptions{
+		PaneWidthPx:  paneWPx,
+		PaneHeightPx: paneHPx,
+		MultiColumn:  multi,
+	})
 	if err != nil {
 		return "", fmt.Sprintf("pdf: %v", err)
 	}

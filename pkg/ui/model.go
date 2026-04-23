@@ -121,6 +121,11 @@ type Model struct {
 	// pdfCache memoises kitty escape strings by (block, mtime, geometry).
 	pdfCache *pdfCropCache
 
+	// pageLayout memoises the per-page multi-column verdict so every
+	// block on the same page reuses the decision instead of paying for
+	// the median-region-width computation on each render.
+	pageLayout *pageLayoutCache
+
 	// Config holds the merged TOML configuration. nil-safe: DefaultConfig()
 	// populates it when New is called.
 	Config *Config
@@ -210,6 +215,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),
 		pdfCache:         newPDFCropCache(pdfCropCacheMax),
+		pageLayout:       newPageLayoutCache(),
 		SoftWrap:         true,
 		SourceLineCursor: 1,
 		// Default optimistic — the real capability check runs in

@@ -77,6 +77,11 @@ type Keymap struct {
 	// one-line wording fixes.
 	ExternalEdit []string
 	InlineEdit   []string
+
+	// OCR debug — renders the current PDF crop, runs tesseract, and
+	// saves a bug report (PNG + similarity score + source vs OCR text)
+	// to .mreview-ocr-reports/ for later investigation.
+	OCRReport []string
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -123,6 +128,7 @@ func DefaultKeymap() Keymap {
 
 		ExternalEdit: []string{"E"},
 		InlineEdit:   []string{"ctrl+e"},
+		OCRReport:    []string{"B"},
 	}
 }
 
