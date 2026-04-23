@@ -104,6 +104,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	model := ui.New(doc, side)
+	model.SidecarPath = sidecarPath
 	if err := runTUI(model, stdout, stderr); err != nil {
 		fmt.Fprintf(stderr, "mreview: tui: %v\n", err)
 		return 1

@@ -29,6 +29,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
+	// A pending delete-confirmation intercepts every key: y/Y confirms,
+	// anything else cancels. The [y/N] prompt lives in the status bar.
+	if m.Pending != nil {
+		yes := key == "y" || key == "Y"
+		return m.ConfirmDelete(yes), nil
+	}
+
 	// A pending-g combo intercepts the very next key.
 	if m.PendingG {
 		m.PendingG = false
@@ -70,6 +77,16 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case matches(key, m.Keymap.Annotate):
+		return m.StartAnnotation(false)
+	case matches(key, m.Keymap.AnnotateEnv):
+		return m.StartAnnotation(true)
+	case matches(key, m.Keymap.EditAnnotation):
+		return m.EditAnnotation()
+	case matches(key, m.Keymap.DeleteAnnotation):
+		return m.BeginDelete(), nil
+	case matches(key, m.Keymap.ToggleReviewed):
+		return m.ToggleReviewed()
 	case matches(key, m.Keymap.NavNextOuter):
 		return m.applyMotion(NextSibling), nil
 	case matches(key, m.Keymap.NavPrevOuter):
@@ -218,6 +235,16 @@ func (m Model) jumpForward() (tea.Model, tea.Cmd) {
 // Popup field and may jump the cursor to the popup's selected block.
 func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch p := m.Popup.(type) {
+	case *AnnotationPopup:
+		switch msg.Type {
+		case tea.KeyEsc, tea.KeyCtrlS:
+			return m.SubmitAnnotation()
+		case tea.KeyCtrlC:
+			return m.CancelAnnotation()
+		}
+		var cmd tea.Cmd
+		p.TA, cmd = p.TA.Update(msg)
+		return m, cmd
 	case *RefListPopup:
 		key := msg.String()
 		switch key {

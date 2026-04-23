@@ -66,6 +66,17 @@ type Model struct {
 	Keymap Keymap
 	Styles Styles
 
+	// SidecarPath is the on-disk path written by saveSidecar. Empty in tests
+	// that exercise model logic without touching disk.
+	SidecarPath string
+	// SaveFn, when non-nil, replaces the default persist.Save path. Tests
+	// override it to record calls and inspect the in-memory sidecar.
+	SaveFn func(*persist.Sidecar) error
+
+	// Pending holds the target of an in-flight `d` delete awaiting [y/N]
+	// confirmation in the status bar.
+	Pending *PendingDelete
+
 	// CountBuf accumulates digit prefixes for motion counts (e.g. "12j").
 	// PendingG is set after the first `g` of a two-key `g<x>` combo (gg, go,
 	// gu) and cleared on the next keypress.

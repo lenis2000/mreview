@@ -338,14 +338,14 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/ui/annotation.go`, `pkg/ui/annotation_test.go`
 - Modify: `pkg/ui/update.go`, `pkg/ui/view.go`, `pkg/ui/model.go`
 
-- [ ] inline textarea popup (`bubbles/textarea`): `a` current block, `A` enclosing env; submit on `Ctrl-S` / `Esc`; `Ctrl-C` cancel
-- [ ] on submit: append `persist.Annotation` + `persist.Save` immediately
-- [ ] `e` reopens textarea with existing content → replace on submit
-- [ ] `d` deletes after `[y/N]` status-line confirmation
-- [ ] `space` toggles reviewed; persist; if filter=Unreviewed and now reviewed → auto-advance to next unreviewed
-- [ ] breadcrumb generator: `"Proof of Theorem 3.2, step [2]"` from parent chain
-- [ ] tests: popup lifecycle, save persists, edit replaces, delete removes, reviewed toggle + auto-advance, breadcrumb format
-- [ ] `make test && make lint`
+- [x] inline textarea popup (`bubbles/textarea`): `a` current block, `A` enclosing env; submit on `Ctrl-S` / `Esc`; `Ctrl-C` cancel
+- [x] on submit: append `persist.Annotation` + `persist.Save` immediately
+- [x] `e` reopens textarea with existing content → replace on submit
+- [x] `d` deletes after `[y/N]` status-line confirmation
+- [x] `space` toggles reviewed; persist; if filter=Unreviewed and now reviewed → auto-advance to next unreviewed
+- [x] breadcrumb generator: `"Proof of Theorem 3.2, step [2]"` from parent chain
+- [x] tests: popup lifecycle, save persists, edit replaces, delete removes, reviewed toggle + auto-advance, breadcrumb format
+- [x] `make test && make lint`
 
 ### Task 13: Fuzzy search + annotation list popup
 

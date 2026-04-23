@@ -27,6 +27,13 @@ type Keymap struct {
 
 	JumpBack    []string // ctrl+o
 	JumpForward []string // ctrl+i, tab
+
+	// Annotation (Task 12).
+	Annotate         []string // a — current block
+	AnnotateEnv      []string // A — enclosing env
+	EditAnnotation   []string // e — edit existing annotation
+	DeleteAnnotation []string // d — delete with [y/N] confirm
+	ToggleReviewed   []string // space — toggle reviewed state
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -45,6 +52,12 @@ func DefaultKeymap() Keymap {
 		NavPrefixG:   []string{"g"},
 		JumpBack:     []string{"ctrl+o"},
 		JumpForward:  []string{"ctrl+i", "tab"},
+
+		Annotate:         []string{"a"},
+		AnnotateEnv:      []string{"A"},
+		EditAnnotation:   []string{"e"},
+		DeleteAnnotation: []string{"d"},
+		ToggleReviewed:   []string{" ", "space"},
 	}
 }
 

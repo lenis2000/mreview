@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"mreview/pkg/parser"
 )
 
 // Pane width ratios — outline 25%, source 40%, PDF 35%. The percentages are
@@ -112,7 +114,9 @@ func (m Model) renderOutlinePane(width, height int) string {
 	return style.Width(innerW).Height(innerH).Render(content)
 }
 
-// renderSourcePane wraps RenderSource in a bordered pane.
+// renderSourcePane wraps RenderSource in a bordered pane. When an annotation
+// popup is active, its textarea and title replace the source-pane body so
+// the user's typing is visible without a separate overlay.
 func (m Model) renderSourcePane(width, height int) string {
 	style := m.Styles.Pane
 	if m.Focus == PaneSource {
@@ -131,9 +135,53 @@ func (m Model) renderSourcePane(width, height int) string {
 	if bodyH < 1 {
 		bodyH = 1
 	}
-	body := RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
+	var body string
+	if p, ok := m.Popup.(*AnnotationPopup); ok {
+		title = m.Styles.PaneTitle.Render(annotationPaneTitle(m.Doc, p))
+		body = renderAnnotationBody(p, innerW, bodyH)
+	} else {
+		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
+	}
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)
+}
+
+// annotationPaneTitle formats "Annotation · <breadcrumb>" for the source-pane
+// title while the popup is active.
+func annotationPaneTitle(doc *parser.Document, p *AnnotationPopup) string {
+	bc := AnnotationBreadcrumb(doc, p.TargetID)
+	if bc == "" {
+		if p.Editing {
+			return "Edit annotation"
+		}
+		return "Annotation"
+	}
+	prefix := "Annotation"
+	if p.Editing {
+		prefix = "Edit annotation"
+	}
+	return prefix + " · " + bc
+}
+
+// renderAnnotationBody lays out the textarea and a help hint within the
+// source pane's inner area.
+func renderAnnotationBody(p *AnnotationPopup, innerW, innerH int) string {
+	hint := "[Ctrl-S/Esc submit · Ctrl-C cancel]"
+	taH := innerH - 1
+	if taH < 1 {
+		taH = 1
+	}
+	if p.TA.Height() != taH {
+		p.TA.SetHeight(taH)
+	}
+	w := innerW
+	if w > 2 {
+		w -= 2
+	}
+	if p.TA.Width() != w {
+		p.TA.SetWidth(w)
+	}
+	return p.TA.View() + "\n" + hint
 }
 
 func (m Model) pdfPlaceholder() string {
@@ -155,6 +203,9 @@ func (m Model) statusText() string {
 	}
 	if loc := LocatorFor(m.Doc, m.CursorBlockID); loc != "" {
 		parts = append(parts, loc)
+	}
+	if m.Pending != nil {
+		parts = append(parts, "[y/N] delete annotation?")
 	}
 	if m.Status != "" {
 		parts = append(parts, m.Status)
