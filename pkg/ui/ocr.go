@@ -27,6 +27,10 @@ type ocrReportMsg struct {
 // them away), runs tesseract, compares to the cursor block's source,
 // and writes a report file to .mreview-ocr-reports/.
 func (m Model) startOCRReport() (Model, tea.Cmd) {
+	if m.PDFManual {
+		m.Status = "B: OCR report not available in manual PDF mode (press V to return)"
+		return m, nil
+	}
 	if m.Doc == nil || m.CursorBlockID == "" {
 		m.Status = "B: no block selected"
 		return m, nil

@@ -50,6 +50,12 @@ type reloadResultMsg struct {
 	// the prior PDFImage on screen and skip scheduling a render that
 	// would lookup new line numbers in an old SyncTeX index.
 	buildStale bool
+	// oldPDF is the handle that was live when this reload started,
+	// passed through so applyReloadResult can close it only after the
+	// new handle is installed. Without this, a goroutine closing oldPDF
+	// while a newer reload is still in flight would leave the model
+	// pointing at a closed handle until the newer reload finishes.
+	oldPDF *pdf.Doc
 }
 
 // requestReload returns a tea.Cmd that posts a reloadMsg. Used by edit
@@ -115,12 +121,24 @@ func (m Model) startReload() (Model, tea.Cmd) {
 // roll the model back to its older artefacts.
 func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	if r.gen != m.reloadGen {
+		// Stale reload — discard. If this goroutine opened a new PDF
+		// handle, close it so it doesn't leak; oldPDF stays live for
+		// the winning reload or the model.
+		if r.newPDF != nil {
+			r.newPDF.Close()
+		}
 		return m, nil
 	}
 	if r.newDoc != nil {
 		m.Doc = r.newDoc
 	}
 	if r.newPDF != nil {
+		// Close the previous handle now that we're committing the new
+		// one onto the model. Safe: no other goroutine still references
+		// oldPDF because startReload captured it by value.
+		if r.oldPDF != nil && r.oldPDF != r.newPDF {
+			r.oldPDF.Close()
+		}
 		m.PDF = r.newPDF
 	}
 	if r.newSyncTeX != nil {
@@ -273,10 +291,10 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 			newPDF = pdfDoc
 			newSyncTeX = idx
 			populateRegions(newDoc, idx)
-			// Only close the old handle after the new pair is committed.
-			if oldPDF != nil && oldPDF != newPDF {
-				oldPDF.Close()
-			}
+			// Don't close oldPDF here — applyReloadResult owns that
+			// decision. A goroutine closing oldPDF while a newer reload
+			// is in flight would leave the live model pointing at a
+			// closed handle until the newer result arrives.
 		} else {
 			if pdfDoc != nil {
 				pdfDoc.Close()
@@ -295,6 +313,7 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 		newSyncTeX: newSyncTeX,
 		status:     status,
 		buildStale: buildStale,
+		oldPDF:     oldPDF,
 	}
 }
 

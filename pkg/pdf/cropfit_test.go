@@ -22,9 +22,9 @@ func openFixture(t *testing.T) *Doc {
 func TestSuggestDPI_WidthLimitedPickedWhenCropIsWideRelativeToPane(t *testing.T) {
 	// Crop is 400×200 pt (aspect 0.5), pane is 600×400 px (aspect 0.67).
 	// crop aspect (0.5) < pane aspect (0.67) → width-limited.
-	// DPI = 600 × 72 / 400 = 108 → rounded to 100 (nearest 25 floor at 100).
+	// DPI = 600 × 72 / 400 = 108 → ceil bucket 125.
 	dpi := SuggestDPI(400, 200, 600, 400)
-	assert.Equal(t, 100.0, dpi)
+	assert.Equal(t, 125.0, dpi)
 }
 
 func TestSuggestDPI_HeightLimitedPickedWhenCropIsTallerThanPane(t *testing.T) {
@@ -38,9 +38,9 @@ func TestSuggestDPI_HeightLimitedPickedWhenCropIsTallerThanPane(t *testing.T) {
 func TestSuggestDPI_LargePaneRequestsHigherDPI(t *testing.T) {
 	// Pane 1500×1500 px on a 612×800 pt crop.
 	// cropAspect = 800/612 = 1.307 > paneAspect = 1.0 → height-limited.
-	// DPI = 1500 × 72 / 800 = 135 → bucket 125.
+	// DPI = 1500 × 72 / 800 = 135 → ceil bucket 150.
 	dpi := SuggestDPI(612, 800, 1500, 1500)
-	assert.Equal(t, 125.0, dpi)
+	assert.Equal(t, 150.0, dpi)
 }
 
 func TestSuggestDPI_CapsAtMaxToProtectMemory(t *testing.T) {
@@ -56,12 +56,12 @@ func TestSuggestDPI_FloorsAtMinForFontHinting(t *testing.T) {
 	assert.Equal(t, fitMinDPI, dpi, "DPI floor keeps font hinting acceptable")
 }
 
-func TestSuggestDPI_RoundsToBucket(t *testing.T) {
-	// Crop 612 × 400 pt, pane 1024 × 600 px. DPI_w = 1024×72/612 = 120.4.
-	// Crop aspect (0.65) < pane aspect (0.59)? 0.65 > 0.59 → height-limited.
-	// DPI_h = 600×72/400 = 108 → bucket 100.
+func TestSuggestDPI_CeilsToBucket(t *testing.T) {
+	// Crop 612 × 400 pt, pane 1024 × 600 px.
+	// cropAspect = 400/612 = 0.65 > paneAspect = 600/1024 = 0.59
+	// → height-limited. DPI = 600×72/400 = 108 → ceil bucket 125.
 	dpi := SuggestDPI(612, 400, 1024, 600)
-	assert.Equal(t, 100.0, dpi)
+	assert.Equal(t, 125.0, dpi)
 }
 
 func TestSuggestDPI_DegenerateInputsReturnDefault(t *testing.T) {

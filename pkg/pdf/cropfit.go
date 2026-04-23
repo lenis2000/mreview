@@ -92,7 +92,7 @@ func SuggestDPI(cropWPt, cropHPt float64, paneWPx, paneHPx int) float64 {
 	if dpi > fitMaxDPI {
 		dpi = fitMaxDPI
 	}
-	return math.Round(dpi/fitDPIBucket) * fitDPIBucket
+	return math.Ceil(dpi/fitDPIBucket) * fitDPIBucket
 }
 
 // CropFitted produces a PNG sized to fill (or come close to filling) the
