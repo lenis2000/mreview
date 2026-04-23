@@ -238,14 +238,14 @@ a A e d space          — annotations + reviewed
 **Files:**
 - Create: `pkg/build/build.go`, `pkg/build/build_test.go`
 
-- [ ] `Run(texPath, buildCmd string) (*Result, error)` with `Result{PDFPath, SyncTeXPath, AuxPath, BBLPath, LogPath}`
-- [ ] default: `latexmk -pdf -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error <basename>` in the paper's dir
-- [ ] capture combined stdout/stderr + last 40 log lines
-- [ ] non-zero exit OR log has `!` OR undefined ref/citation warning after final pass → wrapped error with tail + first error line
-- [ ] `ResolveBuildOutputs(texPath) *Result` for `--no-build`
-- [ ] tests: mock command (`sh -c …`) + fake `.log` fixtures for error detection
-- [ ] `testing.Short()` gates real-latexmk tests
-- [ ] `make test && make lint`
+- [x] `Run(texPath, buildCmd string) (*Result, error)` with `Result{PDFPath, SyncTeXPath, AuxPath, BBLPath, LogPath}`
+- [x] default: `latexmk -pdf -synctex=1 -interaction=nonstopmode -halt-on-error -file-line-error <basename>` in the paper's dir
+- [x] capture combined stdout/stderr + last 40 log lines
+- [x] non-zero exit OR log has `!` OR undefined ref/citation warning after final pass → wrapped error with tail + first error line
+- [x] `ResolveBuildOutputs(texPath) *Result` for `--no-build`
+- [x] tests: mock command (`sh -c …`) + fake `.log` fixtures for error detection
+- [x] `testing.Short()` gates real-latexmk tests
+- [x] `make test && make lint`
 
 ### Task 7: SyncTeX parser
 
