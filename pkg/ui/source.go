@@ -142,6 +142,7 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 	pushNotes(b.StartLine - 1)
 	pushEditor(b.StartLine - 1)
 
+	cursorFirstRow := -1
 	for ln := startLine; ln <= endLine; ln++ {
 		if ln-1 >= len(allLines) {
 			break
@@ -164,6 +165,9 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 			rowText := gutterStyled + " " + seg
 			if isCursor {
 				rowText = styles.OutlineCursor.Width(width).Render(stripANSI(rowText))
+				if cursorFirstRow < 0 {
+					cursorFirstRow = len(rendered)
+				}
 			}
 			rendered = append(rendered, rowText)
 		}
@@ -178,10 +182,16 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		return strings.Join(rendered, "\n")
 	}
 
-	// Centre the cursor block in the visible window. If the block won't
-	// fit, anchor the window to its first row so we always see the start.
+	// Centre the line cursor when one is set; otherwise centre the cursor
+	// block. The line cursor wins because user-driven j/k motion expects
+	// "the highlighted row stays roughly in the middle as I scroll" — if we
+	// centred on the block instead, line motion within a tall block could
+	// push the highlighted row off the bottom edge.
 	offset := 0
-	if blockFirstRow >= 0 {
+	switch {
+	case cursorFirstRow >= 0:
+		offset = cursorFirstRow - height/2
+	case blockFirstRow >= 0:
 		blockRows := blockLastRow - blockFirstRow + 1
 		if blockRows >= height {
 			offset = blockFirstRow
