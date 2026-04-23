@@ -135,10 +135,37 @@ func buildOCRReport(pngBytes []byte, blockSource, blockID, breadcrumb, docFile s
 	fmt.Fprintf(&buf, "## Source (LaTeX)\n\n```latex\n%s\n```\n\n", blockSource)
 	fmt.Fprintf(&buf, "## OCR Output\n\n```\n%s\n```\n\n", strings.TrimSpace(ocrText))
 
+	// Coverage analysis: what source words were lost (not in the crop)
+	// and what extra words appear (from surrounding context / vpad).
+	cov := coverageAnalysis(blockSource, ocrText)
+	fmt.Fprintf(&buf, "## Coverage\n\n")
+	fmt.Fprintf(&buf, "- **Source words:** %d\n", cov.sourceWords)
+	fmt.Fprintf(&buf, "- **OCR words:** %d\n", cov.ocrWords)
+	fmt.Fprintf(&buf, "- **Retained:** %d (%.0f%% of source)\n", cov.retained, cov.retainedPct)
+	fmt.Fprintf(&buf, "- **Lost from source:** %d (%.0f%%)\n", cov.lost, cov.lostPct)
+	fmt.Fprintf(&buf, "- **Extra in crop:** %d (%.0f%% of OCR)\n", cov.extra, cov.extraPct)
+	if len(cov.lostSample) > 0 {
+		fmt.Fprintf(&buf, "\n**Lost words (sample):** %s\n", strings.Join(cov.lostSample, ", "))
+	}
+	if len(cov.extraSample) > 0 {
+		fmt.Fprintf(&buf, "\n**Extra words (sample):** %s\n", strings.Join(cov.extraSample, ", "))
+	}
+	fmt.Fprintf(&buf, "\n")
+
+	fmt.Fprintf(&buf, "## Auto-notes\n\n")
 	if sim < 0.3 {
-		fmt.Fprintf(&buf, "## Auto-notes\n\n- Similarity very low (%.2f) — likely wrong page/region or OCR failed on math-heavy content.\n", sim)
+		fmt.Fprintf(&buf, "- Similarity very low (%.2f) — likely wrong page/region or OCR failed on math-heavy content.\n", sim)
 	} else if sim < 0.6 {
-		fmt.Fprintf(&buf, "## Auto-notes\n\n- Moderate similarity (%.2f) — may indicate a partial mismatch or heavy math that OCR couldn't parse.\n", sim)
+		fmt.Fprintf(&buf, "- Moderate similarity (%.2f) — may indicate a partial mismatch or heavy math that OCR couldn't parse.\n", sim)
+	}
+	if cov.lostPct > 50 {
+		fmt.Fprintf(&buf, "- Over half the source words are missing from the crop — region may be too tight or on the wrong page.\n")
+	}
+	if cov.extraPct > 60 {
+		fmt.Fprintf(&buf, "- Most of the crop's text comes from surrounding context — vpad may be too generous relative to block size.\n")
+	}
+	if cov.sourceWords == 0 {
+		fmt.Fprintf(&buf, "- Source block has no extractable words (pure math / commands) — OCR comparison is unreliable.\n")
 	}
 
 	if err := os.WriteFile(mdPath, buf.Bytes(), 0o644); err != nil {
@@ -215,6 +242,134 @@ func ocrSimilarity(latexSource, ocrText string) float64 {
 		return 0
 	}
 	return float64(inter) / float64(union)
+}
+
+// coverageResult summarises what the crop captured vs. the source.
+type coverageResult struct {
+	sourceWords int
+	ocrWords    int
+	retained    int
+	retainedPct float64
+	lost        int
+	lostPct     float64
+	extra       int
+	extraPct    float64
+	lostSample  []string
+	extraSample []string
+}
+
+// coverageAnalysis does a word-level comparison between the LaTeX
+// source (after stripping commands) and the OCR output. Reports how
+// many source words made it into the crop (retained), how many didn't
+// (lost), and how many OCR words don't appear in the source (extra —
+// typically from vpad context above/below the block).
+func coverageAnalysis(latexSource, ocrText string) coverageResult {
+	srcWords := extractWords(stripLaTeXCommands(latexSource))
+	ocrWords := extractWords(ocrText)
+
+	srcSet := wordBag(srcWords)
+	ocrSet := wordBag(ocrWords)
+
+	var retained, lost int
+	var lostSample []string
+	for w, n := range srcSet {
+		have := ocrSet[w]
+		if have >= n {
+			retained += n
+		} else {
+			retained += have
+			lost += n - have
+			if len(lostSample) < 10 {
+				lostSample = append(lostSample, w)
+			}
+		}
+	}
+
+	var extra int
+	var extraSample []string
+	for w, n := range ocrSet {
+		have := srcSet[w]
+		if n > have {
+			extra += n - have
+			if len(extraSample) < 10 {
+				extraSample = append(extraSample, w)
+			}
+		}
+	}
+
+	totalSrc := len(srcWords)
+	totalOCR := len(ocrWords)
+	res := coverageResult{
+		sourceWords: totalSrc,
+		ocrWords:    totalOCR,
+		retained:    retained,
+		lost:        lost,
+		extra:       extra,
+		lostSample:  lostSample,
+		extraSample: extraSample,
+	}
+	if totalSrc > 0 {
+		res.retainedPct = float64(retained) / float64(totalSrc) * 100
+		res.lostPct = float64(lost) / float64(totalSrc) * 100
+	}
+	if totalOCR > 0 {
+		res.extraPct = float64(extra) / float64(totalOCR) * 100
+	}
+	return res
+}
+
+// stripLaTeXCommands does a rough strip: removes \command sequences,
+// braces, dollar signs, and common environments so what remains is
+// approximately the "rendered text" a reader would see. Not meant to
+// be a proper TeX parser — just good enough for word-level comparison.
+func stripLaTeXCommands(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		r := runes[i]
+		switch {
+		case r == '\\':
+			// Skip \command (letters after backslash).
+			i++
+			for i < len(runes) && unicode.IsLetter(runes[i]) {
+				i++
+			}
+		case r == '{' || r == '}' || r == '$' || r == '~' || r == '%':
+			i++
+		default:
+			b.WriteRune(r)
+			i++
+		}
+	}
+	return b.String()
+}
+
+// extractWords splits on whitespace and punctuation, lowercases, and
+// filters to words ≥ 3 chars so trivial tokens ("a", "of") don't
+// dominate the comparison.
+func extractWords(s string) []string {
+	var words []string
+	for _, raw := range strings.Fields(s) {
+		w := strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				return unicode.ToLower(r)
+			}
+			return -1
+		}, raw)
+		if len(w) >= 3 {
+			words = append(words, w)
+		}
+	}
+	return words
+}
+
+func wordBag(words []string) map[string]int {
+	m := map[string]int{}
+	for _, w := range words {
+		m[w]++
+	}
+	return m
 }
 
 func sanitizeFilename(s string) string {
