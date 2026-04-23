@@ -7,8 +7,21 @@ import (
 	"io"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
+
+	"mreview/pkg/parser"
+	"mreview/pkg/persist"
+	"mreview/pkg/ui"
 )
+
+// runTUI is overridable by tests to bypass tea.NewProgram (which requires a
+// real TTY). It returns a non-nil error to surface failures to the caller.
+var runTUI = func(model tea.Model, stdout, stderr io.Writer) error {
+	prog := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(stdout))
+	_, err := prog.Run()
+	return err
+}
 
 // version is the mreview release version. Overridable at build time via -ldflags.
 var version = "dev"
@@ -33,11 +46,11 @@ func main() {
 // 0 = success, 1 = error, 2 = usage error.
 func run(args []string, stdout, stderr io.Writer) int {
 	var o opts
-	parser := flags.NewParser(&o, flags.HelpFlag|flags.PassDoubleDash)
-	parser.Name = "mreview"
-	parser.Usage = "[OPTIONS] paper.tex"
+	flagParser := flags.NewParser(&o, flags.HelpFlag|flags.PassDoubleDash)
+	flagParser.Name = "mreview"
+	flagParser.Usage = "[OPTIONS] paper.tex"
 
-	rest, err := parser.ParseArgs(args)
+	rest, err := flagParser.ParseArgs(args)
 	if err != nil {
 		var flagsErr *flags.Error
 		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
@@ -68,6 +81,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintln(stderr, "mreview: not implemented yet")
-	return 1
+	src, readErr := os.ReadFile(o.File)
+	if readErr != nil {
+		fmt.Fprintf(stderr, "mreview: read %q: %v\n", o.File, readErr)
+		return 1
+	}
+	doc, parseErr := parser.Parse(src)
+	if parseErr != nil {
+		fmt.Fprintf(stderr, "mreview: parse %q: %v\n", o.File, parseErr)
+		return 1
+	}
+	doc.File = o.File
+
+	sidecarPath := o.Sidecar
+	if sidecarPath == "" {
+		sidecarPath = o.File + ".mreview.md"
+	}
+	side, sideErr := persist.Load(sidecarPath)
+	if sideErr != nil {
+		fmt.Fprintf(stderr, "mreview: load sidecar %q: %v\n", sidecarPath, sideErr)
+		return 1
+	}
+
+	model := ui.New(doc, side)
+	if err := runTUI(model, stdout, stderr); err != nil {
+		fmt.Fprintf(stderr, "mreview: tui: %v\n", err)
+		return 1
+	}
+	return 0
 }

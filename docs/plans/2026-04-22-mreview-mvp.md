@@ -288,14 +288,14 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/ui/model.go`, `pkg/ui/update.go`, `pkg/ui/view.go`, `pkg/ui/keys.go`, `pkg/ui/styles.go`, `pkg/ui/model_test.go`
 - Modify: `cmd/mreview/main.go`, `go.mod`
 
-- [ ] add deps: `bubbletea`, `lipgloss`, `bubbles`
-- [ ] `Model{Doc, Sidecar, CursorBlockID, Filter, Width, Height, Status, JumpStack, Popup}`
-- [ ] horizontal split 25/40/35 via `JoinHorizontal` + bottom status line
-- [ ] placeholder content per pane; `q` / `Ctrl-C` quit; others no-op
-- [ ] wire `main.go`: on successful parse (stub for now), `tea.NewProgram(m).Run()`
-- [ ] tests: `Init`, `Update` with `KeyMsg q` → quit cmd; `WindowSizeMsg` updates dims
-- [ ] manual: `make build && ./bin/mreview testdata/sample.tex` shows three panes
-- [ ] `make test && make lint`
+- [x] add deps: `bubbletea`, `lipgloss`, `bubbles`
+- [x] `Model{Doc, Sidecar, CursorBlockID, Filter, Width, Height, Status, JumpStack, Popup}`
+- [x] horizontal split 25/40/35 via `JoinHorizontal` + bottom status line
+- [x] placeholder content per pane; `q` / `Ctrl-C` quit; others no-op
+- [x] wire `main.go`: on successful parse (stub for now), `tea.NewProgram(m).Run()`
+- [x] tests: `Init`, `Update` with `KeyMsg q` → quit cmd; `WindowSizeMsg` updates dims
+- [x] manual test (skipped - not automatable; requires interactive TTY)
+- [x] `make test && make lint`
 
 ### Task 10: Outline pane + source pane + filter cycling
 
