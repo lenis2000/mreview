@@ -49,12 +49,44 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 	// Split remaining vertical budget between context above and below the
 	// block, biased slightly to the top so the block sits a touch lower than
 	// dead-centre — matches the way readers naturally land on a target.
-	ctxBudget := height - blockH
+	// Estimate row cost of inline annotations on the cursor block — they
+	// share the visible-row budget with source lines, and ignoring them
+	// pushes the block off-screen when several notes pile up.
+	annRows := 0
+	for _, a := range annotations {
+		if a.BlockID == b.ID {
+			annRows++
+		}
+	}
+	ctxBudget := height - blockH - annRows
 	if ctxBudget < 0 {
 		ctxBudget = 0
 	}
 	topCtx := ctxBudget / 2
 	botCtx := ctxBudget - topCtx
+
+	// Redistribute unused after-context to before-context (and vice versa)
+	// when the block sits near the start or end of the document. Without
+	// this the last paragraph of a paper renders with empty rows below and
+	// no extra context above — the user can't see what came before the
+	// block they're sitting on.
+	maxAfter := total - b.EndLine
+	if maxAfter < 0 {
+		maxAfter = 0
+	}
+	if botCtx > maxAfter {
+		topCtx += botCtx - maxAfter
+		botCtx = maxAfter
+	}
+	maxBefore := b.StartLine - 1
+	if maxBefore < 0 {
+		maxBefore = 0
+	}
+	if topCtx > maxBefore {
+		botCtx += topCtx - maxBefore
+		topCtx = maxBefore
+	}
+
 	startLine := b.StartLine - topCtx
 	if startLine < 1 {
 		startLine = 1
