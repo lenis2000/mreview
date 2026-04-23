@@ -110,6 +110,10 @@ type Model struct {
 
 	// pdfCache memoises kitty escape strings by (block, mtime, geometry).
 	pdfCache *pdfCropCache
+
+	// Config holds the merged TOML configuration. nil-safe: DefaultConfig()
+	// populates it when New is called.
+	Config *Config
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -133,6 +137,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Styles:        DefaultStyles(),
 		pdfCache:      newPDFCropCache(pdfCropCacheMax),
 	}
+	m.Config = DefaultConfig()
 	if n := len(side.Detached); n > 0 {
 		m.Status = fmt.Sprintf("%d detached annotation(s) — see ## Detached in sidecar", n)
 	}

@@ -149,6 +149,13 @@ func (m Model) renderSourcePane(width, height int) string {
 	case *RefListPopup:
 		title = m.Styles.PaneTitle.Render("Referrers — " + p.Label)
 		body = renderRefListBody(m.Doc, p, innerW, bodyH, m.Styles)
+	case *BibPopup:
+		title = m.Styles.PaneTitle.Render("Bibliography — " + p.Key)
+		body = RenderBibBody(p, innerW, bodyH, m.Styles)
+	case *HelpPopup:
+		title = m.Styles.PaneTitle.Render("Help")
+		body = RenderHelpBody(innerW)
+		_ = p
 	default:
 		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
 	}

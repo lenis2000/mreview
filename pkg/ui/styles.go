@@ -53,3 +53,30 @@ func DefaultStyles() Styles {
 		SourceMath:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 	}
 }
+
+// lightStyles returns a palette tuned for light-background terminals. The
+// structural roles (pane border, status bar, cursor row) are unchanged — only
+// the colour indices shift so foregrounds remain legible on a pale backdrop.
+func lightStyles() Styles {
+	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("245"))
+	focus := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("26"))
+	return Styles{
+		Pane:         border,
+		PaneFocused:  focus,
+		PaneTitle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")),
+		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("253")),
+		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Bold(true),
+		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color("26")),
+
+		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
+		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("32")).Bold(true),
+		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("251")),
+		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+
+		SourceGutter:  lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		SourceComment: lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
+		SourceCommand: lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
+		SourceMath:    lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
+	}
+}

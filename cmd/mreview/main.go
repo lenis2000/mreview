@@ -27,7 +27,7 @@ var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 }
 
 // version is the mreview release version. Overridable at build time via -ldflags.
-var version = "dev"
+var version = "0.1.0"
 
 // opts holds all command-line options.
 type opts struct {
@@ -118,8 +118,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	cfg, cfgErr := ui.LoadConfig(o.Config)
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
+		return 1
+	}
+	cfg = ui.ApplyThemeEnv(cfg)
+
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
+	model.Config = cfg
+	model.Styles = ui.StylesForTheme(cfg.Theme)
 
 	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
 	// either file is missing (e.g. latexmk hasn't run yet) the pane falls

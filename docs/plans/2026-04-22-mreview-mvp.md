@@ -406,14 +406,14 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/ui/bib.go`, `pkg/ui/help.go`, `pkg/ui/config.go`, `pkg/ui/config_test.go`
 - Modify: various
 
-- [ ] `gd` on `\cite{key}` near cursor → popup w/ bib entry; else status `"gd: no cite under cursor"`
-- [ ] `?` help overlay with keybinding table
-- [ ] config: TOML at `~/.config/mreview/config.toml` + `./.mreview.toml` (project overrides user). Options: `theorem_envs`, `figure_envs`, `colors.*`, `build_cmd`, `keybinds.*`
-- [ ] `--config <path>` override
-- [ ] theme env var `MREVIEW_THEME=dark|light`
-- [ ] tests: config merge precedence, help rendering, bib popup content
-- [ ] manual end-to-end on a real LLM-generated paper: open, walk all blocks, annotate some, mark many reviewed, quit, inspect sidecar, re-open, verify resume-on-first-unreviewed
-- [ ] `make test && make lint`; bump version to `0.1.0`
+- [x] `gd` on `\cite{key}` near cursor → popup w/ bib entry; else status `"gd: no cite under cursor"`
+- [x] `?` help overlay with keybinding table
+- [x] config: TOML at `~/.config/mreview/config.toml` + `./.mreview.toml` (project overrides user). Options: `theorem_envs`, `figure_envs`, `colors.*`, `build_cmd`, `keybinds.*`
+- [x] `--config <path>` override
+- [x] theme env var `MREVIEW_THEME=dark|light`
+- [x] tests: config merge precedence, help rendering, bib popup content
+- [x] manual end-to-end (skipped — not automatable; requires interactive kitty TTY and real paper)
+- [x] `make test && make lint`; bump version to `0.1.0`
 
 ### Task 17: Verify acceptance criteria
 

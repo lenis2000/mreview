@@ -84,8 +84,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.jumpToRef(), nil
 		case "u":
 			return m.openRefListPopup(), nil
+		case "d":
+			return m.OpenBibPopup(), nil
 		}
-		// Fall through — the key was not one of gg/go/gu; treat it as a
+		// Fall through — the key was not one of gg/go/gu/gd; treat it as a
 		// fresh key press (may still be quit, filter, nav, etc.).
 	}
 
@@ -115,6 +117,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case matches(key, m.Keymap.OpenHelp):
+		return m.OpenHelp(), nil
 	case matches(key, m.Keymap.OpenSearch):
 		return m.OpenSearch()
 	case matches(key, m.Keymap.OpenAnnotList):
@@ -312,6 +316,24 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSearchPopup(p, msg)
 	case *AnnotListPopup:
 		return m.updateAnnotListPopup(p, msg)
+	case *BibPopup:
+		key := msg.String()
+		switch key {
+		case "esc", "q", "ctrl+c", "?":
+			m.Popup = nil
+			return m, nil
+		}
+		_ = p
+		return m, nil
+	case *HelpPopup:
+		key := msg.String()
+		switch key {
+		case "esc", "q", "ctrl+c", "?":
+			m.Popup = nil
+			return m, nil
+		}
+		_ = p
+		return m, nil
 	}
 	return m, nil
 }

@@ -335,6 +335,74 @@ func TestRun_DetachedShowsStatusCountInModel(t *testing.T) {
 	}
 }
 
+func TestRun_ConfigFlagLoaded(t *testing.T) {
+	paper := writeFixturePaper(t)
+	dir := filepath.Dir(paper)
+	configPath := filepath.Join(dir, "mreview.toml")
+	if err := os.WriteFile(configPath, []byte("theme = \"light\"\nbuild_cmd = \"pdflatex\"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	captured := withStubTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--config", configPath, "--stdout=none", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%q", code, stderr.String())
+	}
+	m, ok := (*captured).(ui.Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", *captured)
+	}
+	if m.Config == nil {
+		t.Fatalf("expected model.Config to be set")
+	}
+	if m.Config.Theme != "light" {
+		t.Fatalf("expected light theme, got %q", m.Config.Theme)
+	}
+	if m.Config.BuildCmd != "pdflatex" {
+		t.Fatalf("expected BuildCmd=pdflatex, got %q", m.Config.BuildCmd)
+	}
+}
+
+func TestRun_ConfigFlagMissingFileIsError(t *testing.T) {
+	paper := writeFixturePaper(t)
+	withStubTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--config", filepath.Join(t.TempDir(), "nope.toml"), paper}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit on missing explicit config")
+	}
+}
+
+func TestRun_ThemeEnvApplied(t *testing.T) {
+	paper := writeFixturePaper(t)
+	t.Setenv("MREVIEW_THEME", "light")
+	captured := withStubTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--stdout=none", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%q", code, stderr.String())
+	}
+	m, ok := (*captured).(ui.Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", *captured)
+	}
+	if m.Config.Theme != "light" {
+		t.Fatalf("expected env-derived theme=light, got %q", m.Config.Theme)
+	}
+}
+
+func TestRun_VersionString(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "0.1.0") {
+		t.Fatalf("expected version 0.1.0 on stdout, got %q", stdout.String())
+	}
+}
+
 func TestRun_UnknownStdoutFormatRejected(t *testing.T) {
 	paper := writeFixturePaper(t)
 	// Go-flags enforces the allowed choices at parse time, so an invalid

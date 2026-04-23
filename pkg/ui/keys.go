@@ -38,6 +38,9 @@ type Keymap struct {
 	// Popups (Task 13).
 	OpenSearch    []string // / — fuzzy search
 	OpenAnnotList []string // @ — annotation list
+
+	// Help overlay (Task 16).
+	OpenHelp []string // ? — keybinding table overlay
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -65,6 +68,8 @@ func DefaultKeymap() Keymap {
 
 		OpenSearch:    []string{"/"},
 		OpenAnnotList: []string{"@"},
+
+		OpenHelp: []string{"?"},
 	}
 }
 
