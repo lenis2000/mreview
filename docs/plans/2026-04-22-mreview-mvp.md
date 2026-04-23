@@ -321,13 +321,13 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/ui/nav.go`, `pkg/ui/nav_test.go`
 - Modify: `pkg/ui/update.go`, `pkg/ui/keys.go`
 
-- [ ] `j`/`k` outer sibling; `J`/`K` inner (proof-steps, inner paragraphs, display math)
-- [ ] `{`/`}` section; `gg`/`G` first/last (respect filter)
-- [ ] motion counts: buffer digits → apply to next motion → reset; `0`-alone resets
-- [ ] ref jumping: `go` picks first resolved outgoing ref in current block (MVP); push/pop/redo jump stack (bounded 50)
-- [ ] `gu`: list blocks whose `RefsOut` target current block's label (popup with jump)
-- [ ] tests: motion counts, stack push/pop/redo bounds, filter-aware motion
-- [ ] `make test && make lint`
+- [x] `j`/`k` outer sibling; `J`/`K` inner (proof-steps, inner paragraphs, display math)
+- [x] `{`/`}` section; `gg`/`G` first/last (respect filter)
+- [x] motion counts: buffer digits → apply to next motion → reset; `0`-alone resets
+- [x] ref jumping: `go` picks first resolved outgoing ref in current block (MVP); push/pop/redo jump stack (bounded 50)
+- [x] `gu`: list blocks whose `RefsOut` target current block's label (popup with jump)
+- [x] tests: motion counts, stack push/pop/redo bounds, filter-aware motion
+- [x] `make test && make lint`
 
 ### Task 12: Annotation entry + reviewed toggle + auto-advance
 

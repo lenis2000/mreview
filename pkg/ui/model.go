@@ -59,12 +59,18 @@ type Model struct {
 	Filter        Filter
 	Width, Height int
 	Status        string
-	JumpStack     []string
+	JumpStack     JumpStack
 	Popup         Popup
 
 	Focus  Pane
 	Keymap Keymap
 	Styles Styles
+
+	// CountBuf accumulates digit prefixes for motion counts (e.g. "12j").
+	// PendingG is set after the first `g` of a two-key `g<x>` combo (gg, go,
+	// gu) and cleared on the next keypress.
+	CountBuf string
+	PendingG bool
 
 	// quitting is set when an internal Quit command was returned, so View can
 	// short-circuit during the final render frame.

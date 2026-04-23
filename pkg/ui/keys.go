@@ -6,25 +6,45 @@ package ui
 
 import tea "github.com/charmbracelet/bubbletea"
 
-// Keymap centralises the small set of key bindings the skeleton recognises.
-// The fields are typed as string literals from the bubbletea KeyMsg.String()
-// surface so tests can construct synthetic events without needing the real
-// reader. Later tasks extend this struct rather than scattering string
-// literals across handlers.
+// Keymap centralises the small set of key bindings the TUI recognises. Fields
+// hold the bubbletea `KeyMsg.String()` forms so tests can construct synthetic
+// events without a real reader. Later tasks extend the struct rather than
+// scatter string literals across handlers.
 type Keymap struct {
-	Quit         []string
-	ForceQuit    []string
-	CycleFilter  []string
+	Quit        []string
+	ForceQuit   []string
+	CycleFilter []string
+
+	// Navigation (Task 11).
+	NavNextOuter []string // j — next outer sibling
+	NavPrevOuter []string // k — prev outer sibling
+	NavNextInner []string // J — next in DFS (includes proof-steps, etc.)
+	NavPrevInner []string // K — prev in DFS
+	NavNextSec   []string // } — next section
+	NavPrevSec   []string // { — prev section
+	NavLast      []string // G — last visible
+	NavPrefixG   []string // g — prefix for gg / go / gu
+
+	JumpBack    []string // ctrl+o
+	JumpForward []string // ctrl+i, tab
 }
 
-// DefaultKeymap returns the built-in bindings. `q` and `Ctrl-C` quit; `f`
-// cycles the outline filter. Later tasks bolt navigation, annotation, and
-// search on top of this struct.
+// DefaultKeymap returns the built-in bindings.
 func DefaultKeymap() Keymap {
 	return Keymap{
-		Quit:        []string{"q"},
-		ForceQuit:   []string{"ctrl+c"},
-		CycleFilter: []string{"f"},
+		Quit:         []string{"q"},
+		ForceQuit:    []string{"ctrl+c"},
+		CycleFilter:  []string{"f"},
+		NavNextOuter: []string{"j", "down"},
+		NavPrevOuter: []string{"k", "up"},
+		NavNextInner: []string{"J"},
+		NavPrevInner: []string{"K"},
+		NavNextSec:   []string{"}"},
+		NavPrevSec:   []string{"{"},
+		NavLast:      []string{"G"},
+		NavPrefixG:   []string{"g"},
+		JumpBack:     []string{"ctrl+o"},
+		JumpForward:  []string{"ctrl+i", "tab"},
 	}
 }
 
