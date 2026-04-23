@@ -37,6 +37,12 @@ type reloadResultMsg struct {
 	newSyncTeX *synctex.Index
 	newCursor  string
 	status     string
+	// buildStale is true when this reload could not produce a coherent
+	// (doc, PDF, SyncTeX) triple — either the rebuild failed or one of
+	// the artefact reopens failed. applyReloadResult uses it to keep
+	// the prior PDFImage on screen and skip scheduling a render that
+	// would lookup new line numbers in an old SyncTeX index.
+	buildStale bool
 }
 
 // requestReload returns a tea.Cmd that posts a reloadMsg. Used by edit
@@ -80,9 +86,11 @@ func (m Model) startReload() (Model, tea.Cmd) {
 //
 // PDF and SyncTeX are both nil-preserving: a reload that didn't
 // reproduce them (e.g. the rebuild failed) leaves the previous handles
-// in place. The alternative — clearing them — would silently turn the
-// PDF pane blank on every transient build error, which is more
-// confusing than a stale-but-recognisable crop.
+// in place. When r.buildStale is true the model also keeps its prior
+// PDFImage and skips the render schedule — the alternative (running
+// the render anyway) would feed new doc line numbers into the old
+// SyncTeX index and paint a wrong crop on top of a "rebuild failed"
+// status bar.
 func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	if r.newDoc != nil {
 		m.Doc = r.newDoc
@@ -100,13 +108,20 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		m.CursorBlockID = r.newCursor
 	}
 	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
-	m.pdfCache = newPDFCropCache(pdfCropCacheMax)
-	m.PDFImage = ""
+	m.BuildStale = r.buildStale
 	if r.status != "" {
 		m.Status = r.status
 	} else if m.Doc != nil {
 		m.Status = fmt.Sprintf("reloaded · %d blocks", len(m.Doc.Blocks))
 	}
+	if m.BuildStale {
+		// Keep the prior PDF crop visible and don't schedule a fresh
+		// render. The cache stays warm so a subsequent successful
+		// reload can flush it cleanly.
+		return m, nil
+	}
+	m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+	m.PDFImage = ""
 	return m, m.schedulePDFRender()
 }
 
@@ -127,14 +142,23 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 
 	buildRes := build.ResolveBuildOutputs(path)
 	status := ""
-	// buildOK gates the artefact reload (aux/bbl/PDF/synctex). When the
-	// rebuild reports an error we keep the prior PDF + SyncTeX handles
-	// and skip aux/bbl: those files belong to the *previous* successful
-	// build and pretending they describe newDoc would silently mislead
-	// every other pane (theorem numbers, citation labels, PDF crops,
-	// SyncTeX line→region map) while the source pane is showing the
-	// freshly-broken file.
-	buildOK := true
+	// buildStale flips to true whenever the reload can't deliver a
+	// coherent (Doc, PDF, SyncTeX) triple back to the model. Sources:
+	//
+	//   - latexmk reported an error or lmkf returned error/timeout
+	//     (the new artefacts on disk do not match newDoc);
+	//   - both pdf.Open and synctex.Open are needed for a coherent
+	//     pair, and a partial success would leave the model with new
+	//     PDF + old SyncTeX or old PDF + new SyncTeX. Both opens must
+	//     therefore succeed together; on partial success we close the
+	//     orphan, keep the previous handles, and treat the reload as
+	//     stale.
+	//
+	// Aux/bbl loads are gated on the build step alone (rebuildOK below)
+	// — they only enrich newDoc and don't participate in the rendering
+	// pair, so a mid-pair failure shouldn't suppress them.
+	rebuildOK := true
+	buildStale := false
 	editTime := time.Now()
 	if st, err := os.Stat(path); err == nil {
 		// Use the tex's mtime as the "edit time" yardstick so we don't
@@ -153,10 +177,10 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 			status = fmt.Sprintf("lmkf rebuild ok · %d blocks", len(newDoc.Blocks))
 		case "error":
 			status = "lmkf rebuild error — " + errLine
-			buildOK = false
+			rebuildOK = false
 		default:
 			status = "lmkf didn't finish in time (edit saved anyway)"
-			buildOK = false
+			rebuildOK = false
 		}
 	case shouldRebuild(path, buildRes.PDFPath):
 		res, berr := build.RunWith(build.Options{
@@ -165,7 +189,7 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		})
 		if berr != nil {
 			status = "rebuild failed — " + shortBuildErr(berr)
-			buildOK = false
+			rebuildOK = false
 		} else {
 			buildRes = res
 			status = fmt.Sprintf("rebuilt + reloaded · %d blocks", len(newDoc.Blocks))
@@ -174,12 +198,16 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
 	}
 
+	if !rebuildOK {
+		buildStale = true
+	}
+
 	// Aux/bbl enrich newDoc with theorem numbers and citation entries.
 	// They're only safe to apply when the build that produced them
 	// matches newDoc — i.e. when the current rebuild succeeded. On
 	// failure we leave newDoc un-enriched (numbers blank) rather than
 	// pulling stale numbers off disk.
-	if buildOK {
+	if rebuildOK {
 		if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
 			parser.ApplyAux(newDoc, auxEntries)
 		}
@@ -195,26 +223,36 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 	newSidecar.Detached = append(newSidecar.Detached, detached...)
 	RefreshRemappedAnnotations(newDoc, newSidecar)
 
-	// PDF + SyncTeX are only reopened on a successful rebuild. The old
-	// handles stay live in the model (applyReloadResult is nil-
-	// preserving for both fields) so a transient build error doesn't
-	// blank the PDF pane; the user sees the previous crop with a
-	// "rebuild failed" status instead of a panel turning blank.
+	// PDF + SyncTeX must update as a coherent pair. The render path
+	// (renderPDFForBlock) calls Index.RegionForLines(file, doc.StartLine,
+	// doc.EndLine) — feeding *new* doc line numbers into an *old* SyncTeX
+	// index would silently produce wrong regions, and pairing a new PDF
+	// with an old SyncTeX (or vice versa) breaks coherence in subtler
+	// ways. So: only adopt the new pair when both opens succeed; on any
+	// partial success, close the orphan handle, keep the previous
+	// handles in the model (applyReloadResult is nil-preserving), and
+	// flag the reload as stale so the next render is suppressed.
 	var newPDF *pdf.Doc
 	var newSyncTeX *synctex.Index
-	if buildOK {
-		if pdfDoc, err := pdf.Open(buildRes.PDFPath); err == nil {
+	if rebuildOK {
+		pdfDoc, pdfErr := pdf.Open(buildRes.PDFPath)
+		idx, sxErr := synctex.Open(buildRes.SyncTeXPath)
+		if pdfErr == nil && sxErr == nil {
 			newPDF = pdfDoc
-			// Only close the old handle after the new one opens — a
-			// reopen failure must not leave the model with a closed
-			// *pdf.Doc.
+			newSyncTeX = idx
+			populateRegions(newDoc, idx)
+			// Only close the old handle after the new pair is committed.
 			if oldPDF != nil && oldPDF != newPDF {
 				oldPDF.Close()
 			}
-		}
-		if idx, err := synctex.Open(buildRes.SyncTeXPath); err == nil {
-			newSyncTeX = idx
-			populateRegions(newDoc, idx)
+		} else {
+			if pdfDoc != nil {
+				pdfDoc.Close()
+			}
+			// synctex.Index has no Close — it's an in-memory parsed
+			// struct that the GC will reclaim once the local goes out
+			// of scope.
+			buildStale = true
 		}
 	}
 
@@ -227,6 +265,7 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 		newSyncTeX: newSyncTeX,
 		newCursor:  newCursor,
 		status:     status,
+		buildStale: buildStale,
 	}
 }
 

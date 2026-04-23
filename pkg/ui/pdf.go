@@ -48,6 +48,17 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 	if m.PDF == nil {
 		return nil
 	}
+	if m.BuildStale {
+		// The current m.Doc was parsed from a freshly-edited .tex but
+		// the rebuild that should have produced matching PDF + SyncTeX
+		// failed (or the artefacts couldn't be paired). Auto rendering
+		// would feed new line numbers into the old SyncTeX index, and
+		// the resulting region is meaningless. Manual mode is page-
+		// based and could in principle still render, but suppressing
+		// it too keeps the contract simple — "stale build = no new
+		// crops until the next successful rebuild".
+		return nil
+	}
 	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
 	if m.PDFManual {
 		// Manual mode renders the current page directly — no SyncTeX

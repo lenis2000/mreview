@@ -150,6 +150,15 @@ type Model struct {
 	ManualPDFCropB float64
 	ManualPDFCropL float64
 	ManualPDFCropR float64
+
+	// BuildStale signals that m.Doc is ahead of m.PDF + m.Synctex —
+	// the last reload couldn't deliver a coherent (doc, PDF, synctex)
+	// triple, so any further auto render would lookup new line numbers
+	// against a SyncTeX index from the previous build and produce
+	// wrong crops. While true, schedulePDFRender returns nil and the
+	// PDF pane keeps showing whatever PDFImage was last rendered.
+	// Cleared by the next reload that succeeds end-to-end.
+	BuildStale bool
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -167,15 +176,14 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 	}
 	filter := DefaultFilter(side)
 	// Edge case: a fully-reviewed paper would otherwise open with
-	// FilterUnreviewed (because side.Reviewed is non-empty) on a cursor
-	// block that's also reviewed — and the outline pane renders empty
-	// while the source pane shows a real block. Downgrade to FilterAll
-	// in that case so the outline matches the cursor; the user can
-	// switch back to `unreviewed` themselves with `f`.
-	if cursor != "" && doc != nil {
-		if b := doc.ByID[cursor]; b != nil && !blockMatchesFilter(b, side, filter) {
-			filter = FilterAll
-		}
+	// FilterUnreviewed (because side.Reviewed is non-empty) and an
+	// outline pane that renders `(no blocks)`. Downgrade to FilterAll
+	// only in that genuinely-empty case — a partially-reviewed sidecar
+	// where the saved cursor happens to land on a reviewed block must
+	// stay on FilterUnreviewed, since outstanding work remains in the
+	// outline even though the cursor itself is filtered out.
+	if filter != FilterAll && doc != nil && FirstVisible(doc, side, filter) == "" {
+		filter = FilterAll
 	}
 	m := Model{
 		Doc:           doc,

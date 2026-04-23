@@ -6,7 +6,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
+	"mreview/pkg/synctex"
 )
 
 // TestResolveReloadCursor_KeepsLiveID asserts that a cursor that
@@ -214,4 +216,120 @@ func TestApplyReloadResult_PreservesPDFAndSyncTeXOnNil(t *testing.T) {
 	assert.Equal(t, priorSynctex, nm.Synctex, "nil newSyncTeX must not clear model.Synctex")
 	assert.Equal(t, m.PDF, nm.PDF, "nil newPDF must not clear model.PDF")
 	assert.Equal(t, "rebuild failed — ...", nm.Status)
+}
+
+// TestApplyReloadResult_BuildStalePreservesImageAndSuppressesRender
+// is the review-new.md (pass 4) #1 regression guard: after a reload
+// that couldn't produce a coherent (Doc, PDF, SyncTeX) triple, the
+// prior PDFImage must stay on screen (so the user doesn't see the
+// pane turn blank) and no render command must be scheduled (auto-
+// rendering against a stale SyncTeX index would paint a wrong crop).
+func TestApplyReloadResult_BuildStalePreservesImageAndSuppressesRender(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.Width, m.Height = 120, 40
+	const sentinel = "\x1b_Gsentinel-kitty-escape\x1b\\"
+	m.PDFImage = sentinel
+
+	nm, cmd := m.applyReloadResult(reloadResultMsg{
+		newDoc:     doc,
+		newSidecar: &persist.Sidecar{},
+		newPDF:     nil,
+		newSyncTeX: nil,
+		status:     "rebuild failed — ...",
+		buildStale: true,
+	})
+	assert.True(t, nm.BuildStale, "stale build must set the flag so subsequent renders self-suppress")
+	assert.Equal(t, sentinel, nm.PDFImage, "stale build must leave the prior PDF crop on screen")
+	assert.Nil(t, cmd, "stale build must not schedule a new render against the mismatched handles")
+}
+
+// TestApplyReloadResult_FreshBuildClearsStaleFlag covers the happy
+// path that unfreezes the PDF pane: a subsequent successful reload
+// clears BuildStale, flushes PDFImage, and returns a non-nil render
+// command so the user sees a fresh crop against the new artefacts.
+// (PDF is nil in this synthetic test, so schedulePDFRender itself
+// returns nil — the assertion is on the flag/PDFImage transitions,
+// which are the actionable part of the contract.)
+func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.Width, m.Height = 120, 40
+	m.BuildStale = true
+	m.PDFImage = "leftover-from-stale-session"
+
+	nm, _ := m.applyReloadResult(reloadResultMsg{
+		newDoc:     doc,
+		newSidecar: &persist.Sidecar{},
+		status:     "rebuilt + reloaded · 5 blocks",
+		buildStale: false,
+	})
+	assert.False(t, nm.BuildStale, "successful reload must clear the stale flag")
+	assert.Empty(t, nm.PDFImage, "successful reload must flush the prior image so a fresh render replaces it")
+}
+
+// TestSchedulePDFRender_SuppressedWhenBuildStale covers the render-
+// side half of the contract: even with a real *pdf.Doc attached,
+// scheduling must short-circuit while BuildStale is true. Uses the
+// same fixture as the existing PDF tests so we exercise the actual
+// early-return path rather than a synthetic mock.
+func TestSchedulePDFRender_SuppressedWhenBuildStale(t *testing.T) {
+	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
+	require.NoError(t, err)
+	defer pdfDoc.Close()
+
+	idx, err := synctex.Open(pdfFixturePath(t, "sample.synctex.gz"))
+	require.NoError(t, err)
+
+	m := New(parsedSample(t), &persist.Sidecar{})
+	m.PDF = pdfDoc
+	m.Synctex = idx
+	m.Width, m.Height = 120, 40
+	m.BuildStale = true
+
+	assert.Nil(t, m.schedulePDFRender(), "BuildStale=true must short-circuit the render scheduler")
+
+	// Clearing the flag restores normal scheduling.
+	m.BuildStale = false
+	require.NotNil(t, m.schedulePDFRender(), "clearing BuildStale must resume rendering")
+}
+
+// TestNew_PartialReviewWithReviewedCursorKeepsUnreviewedFilter is
+// the review-new.md (pass 4) #2 regression guard. Before the fix,
+// any saved cursor that didn't pass DefaultFilter would trigger a
+// downgrade to FilterAll — even when outstanding unreviewed work
+// still existed. The correct behaviour: downgrade only when the
+// filter would render an empty outline.
+func TestNew_PartialReviewWithReviewedCursorKeepsUnreviewedFilter(t *testing.T) {
+	doc := parsedSample(t)
+	require.GreaterOrEqual(t, len(doc.Blocks), 3)
+
+	// Pick a block to mark reviewed AND use as the saved cursor; pick
+	// another block that stays unreviewed so FilterUnreviewed has
+	// something to show.
+	var reviewedID, unreviewedID string
+	for _, b := range doc.Blocks {
+		if b == doc.Root {
+			continue
+		}
+		if reviewedID == "" {
+			reviewedID = b.ID
+			continue
+		}
+		unreviewedID = b.ID
+		break
+	}
+	require.NotEmpty(t, reviewedID)
+	require.NotEmpty(t, unreviewedID)
+
+	side := &persist.Sidecar{
+		Reviewed: []string{reviewedID},
+		Cursor:   reviewedID, // saved cursor is on a reviewed block
+	}
+	m := New(doc, side)
+
+	assert.Equal(t, FilterUnreviewed, m.Filter,
+		"saved cursor on a reviewed block must NOT downgrade the filter when unreviewed work remains")
+	assert.Equal(t, reviewedID, m.CursorBlockID,
+		"cursor stays on the user-saved block even when it falls outside the active filter")
 }
