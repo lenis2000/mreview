@@ -306,14 +306,14 @@ a A e d space          — annotations + reviewed
 - Create: `pkg/ui/outline.go`, `pkg/ui/source.go`, `pkg/ui/filter.go`, `pkg/ui/outline_test.go`
 - Modify: `pkg/ui/model.go`, `pkg/ui/view.go`, `pkg/ui/update.go`
 
-- [ ] outline: depth-indented tree, icons (`§` section, `⊞` thm-like, `⊢` proof, `▤` figure, `≡` display), suffix markers (`●` annotated, `✓` reviewed, `⚠` unresolved, `⊘` no-region); truncation, focused-row style
-- [ ] source pane: render `Block.Source` with lightweight LaTeX coloring (commands, math delimiters — no chroma)
-- [ ] breadcrumb + `file:Lstart-Lend` in status line
-- [ ] filter: `FilterAll|Unreviewed|Annotated|Issues`; `f` cycles; status indicator
-- [ ] default filter on load: `Unreviewed` if any reviewed blocks exist, else `All`
-- [ ] tests: structural assertions on rendered strings; filter transitions; marker application
-- [ ] manual: sample.tex, cycle filters, verify markers
-- [ ] `make test && make lint`
+- [x] outline: depth-indented tree, icons (`§` section, `⊞` thm-like, `⊢` proof, `▤` figure, `≡` display), suffix markers (`●` annotated, `✓` reviewed, `⚠` unresolved, `⊘` no-region); truncation, focused-row style
+- [x] source pane: render `Block.Source` with lightweight LaTeX coloring (commands, math delimiters — no chroma)
+- [x] breadcrumb + `file:Lstart-Lend` in status line
+- [x] filter: `FilterAll|Unreviewed|Annotated|Issues`; `f` cycles; status indicator
+- [x] default filter on load: `Unreviewed` if any reviewed blocks exist, else `All`
+- [x] tests: structural assertions on rendered strings; filter transitions; marker application
+- [x] manual test (skipped - not automatable; requires interactive TTY)
+- [x] `make test && make lint`
 
 ### Task 11: Navigation + ref jumping + jump stack
 

@@ -86,7 +86,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Doc:           doc,
 		Sidecar:       side,
 		CursorBlockID: cursor,
-		Filter:        FilterAll,
+		Filter:        DefaultFilter(side),
 		Focus:         PaneOutline,
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),

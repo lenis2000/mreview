@@ -2,10 +2,9 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Styles bundles the small set of lipgloss styles the skeleton needs. Task 10
-// will extend this with focus markers, syntax colors, and outline icons; for
-// now the panes share a thin border and the status bar is a single inverted
-// row at the bottom.
+// Styles bundles the lipgloss styles used across panes. The concrete palette
+// mirrors revdiff's two-pane layout (subtle border, inverted status row) so
+// the look-and-feel is consistent with the sister tool.
 type Styles struct {
 	Pane         lipgloss.Style
 	PaneFocused  lipgloss.Style
@@ -13,11 +12,24 @@ type Styles struct {
 	StatusBar    lipgloss.Style
 	StatusKey    lipgloss.Style
 	StatusFilter lipgloss.Style
+
+	// Outline pane.
+	OutlineIcon   lipgloss.Style
+	OutlineMarker lipgloss.Style
+	OutlineCursor lipgloss.Style
+	OutlineActive lipgloss.Style
+	OutlineMuted  lipgloss.Style
+
+	// Source pane.
+	SourceGutter  lipgloss.Style
+	SourceComment lipgloss.Style
+	SourceCommand lipgloss.Style
+	SourceMath    lipgloss.Style
 }
 
-// DefaultStyles returns the baseline visual treatment used by the skeleton.
-// Color choices mirror revdiff's two-pane layout (subtle border, inverted
-// status row) so the look-and-feel is consistent with sister tools.
+// DefaultStyles returns the baseline visual treatment. Colors are expressed
+// as ANSI 256 indices so the palette works on most terminals without
+// truecolor support; the kitty target handles both.
 func DefaultStyles() Styles {
 	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
 	focus := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("39"))
@@ -28,5 +40,16 @@ func DefaultStyles() Styles {
 		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")),
 		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
 		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
+
+		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
+		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color("178")),
+		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("24")).Bold(true),
+		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("238")),
+		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+
+		SourceGutter:  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		SourceComment: lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
+		SourceCommand: lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
+		SourceMath:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
 	}
 }

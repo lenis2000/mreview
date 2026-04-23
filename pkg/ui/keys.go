@@ -12,16 +12,19 @@ import tea "github.com/charmbracelet/bubbletea"
 // reader. Later tasks extend this struct rather than scattering string
 // literals across handlers.
 type Keymap struct {
-	Quit       []string
-	ForceQuit  []string
+	Quit         []string
+	ForceQuit    []string
+	CycleFilter  []string
 }
 
-// DefaultKeymap returns the built-in bindings. `q` and `Ctrl-C` quit; the rest
-// is a no-op until later tasks introduce navigation, annotation, and search.
+// DefaultKeymap returns the built-in bindings. `q` and `Ctrl-C` quit; `f`
+// cycles the outline filter. Later tasks bolt navigation, annotation, and
+// search on top of this struct.
 func DefaultKeymap() Keymap {
 	return Keymap{
-		Quit:      []string{"q"},
-		ForceQuit: []string{"ctrl+c"},
+		Quit:        []string{"q"},
+		ForceQuit:   []string{"ctrl+c"},
+		CycleFilter: []string{"f"},
 	}
 }
 
@@ -40,4 +43,9 @@ func matches(key string, bindings []string) bool {
 func (k Keymap) isQuitKey(msg tea.KeyMsg) bool {
 	s := msg.String()
 	return matches(s, k.Quit) || matches(s, k.ForceQuit)
+}
+
+// isFilterKey reports whether the key event should cycle the outline filter.
+func (k Keymap) isFilterKey(msg tea.KeyMsg) bool {
+	return matches(msg.String(), k.CycleFilter)
 }

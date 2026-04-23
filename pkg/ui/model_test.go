@@ -94,6 +94,17 @@ func TestUpdate_UnboundKeyIsNoOp(t *testing.T) {
 	assert.False(t, updated.(Model).quitting)
 }
 
+func TestUpdate_FilterKeyCycles(t *testing.T) {
+	m := New(parsedSample(t), nil)
+	require.Equal(t, FilterAll, m.Filter)
+	for _, want := range []Filter{FilterUnreviewed, FilterAnnotated, FilterIssues, FilterAll} {
+		res, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+		assert.Nil(t, cmd)
+		m = res.(Model)
+		assert.Equal(t, want, m.Filter)
+	}
+}
+
 func TestUpdate_WindowSize(t *testing.T) {
 	m := New(parsedSample(t), nil)
 	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

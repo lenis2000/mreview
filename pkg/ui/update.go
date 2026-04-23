@@ -16,6 +16,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
+		if m.Keymap.isFilterKey(msg) {
+			m.Filter = CycleFilter(m.Filter)
+			return m, nil
+		}
 	}
 	return m, nil
 }

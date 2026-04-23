@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -36,8 +35,8 @@ func (m Model) View() string {
 
 	outlineW, sourceW, pdfW := paneWidths(m.Width)
 
-	outline := m.renderPane("Outline", m.outlinePlaceholder(), outlineW, paneHeight, m.Focus == PaneOutline)
-	source := m.renderPane("Source", m.sourcePlaceholder(), sourceW, paneHeight, m.Focus == PaneSource)
+	outline := m.renderOutlinePane(outlineW, paneHeight)
+	source := m.renderSourcePane(sourceW, paneHeight)
 	pdf := m.renderPane("PDF", m.pdfPlaceholder(), pdfW, paneHeight, m.Focus == PanePDF)
 
 	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
@@ -86,35 +85,55 @@ func (m Model) renderPane(title, body string, width, height int, focused bool) s
 	return style.Width(innerW).Height(innerH).Render(content)
 }
 
-func (m Model) outlinePlaceholder() string {
-	if m.Doc == nil {
-		return "(no document)"
+// renderOutlinePane is the bordered outline pane using the real tree builder
+// and cursor-aware row renderer.
+func (m Model) renderOutlinePane(width, height int) string {
+	style := m.Styles.Pane
+	if m.Focus == PaneOutline {
+		style = m.Styles.PaneFocused
 	}
-	count := len(m.Doc.Blocks) - 1 // exclude synthetic root
-	if count < 0 {
-		count = 0
+	innerW := width - 2
+	if innerW < 1 {
+		innerW = 1
 	}
-	return fmt.Sprintf("%d block(s)\nfilter: %s", count, m.Filter)
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	title := m.Styles.PaneTitle.Render("Outline")
+	rows := BuildOutline(m.Doc, m.Sidecar, m.Filter)
+	// Reserve 2 inner rows for the title + blank separator; the rest is rows.
+	bodyH := innerH - 1
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	body := RenderOutline(rows, m.CursorBlockID, innerW, bodyH, m.Focus == PaneOutline, m.Styles)
+	content := title + "\n" + body
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
-func (m Model) sourcePlaceholder() string {
-	if m.Doc == nil || m.CursorBlockID == "" {
-		return "(no block selected)"
+// renderSourcePane wraps RenderSource in a bordered pane.
+func (m Model) renderSourcePane(width, height int) string {
+	style := m.Styles.Pane
+	if m.Focus == PaneSource {
+		style = m.Styles.PaneFocused
 	}
-	b, ok := m.Doc.ByID[m.CursorBlockID]
-	if !ok || b == nil {
-		return "(unknown block)"
+	innerW := width - 2
+	if innerW < 1 {
+		innerW = 1
 	}
-	src := b.Source
-	if src == "" {
-		return fmt.Sprintf("[%s] (empty source)", b.Kind)
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
 	}
-	// Skeleton preview only — Task 10 introduces real LaTeX-aware rendering.
-	const preview = 400
-	if len(src) > preview {
-		src = src[:preview] + "…"
+	title := m.Styles.PaneTitle.Render("Source")
+	bodyH := innerH - 1
+	if bodyH < 1 {
+		bodyH = 1
 	}
-	return src
+	body := RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles)
+	content := title + "\n" + body
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m Model) pdfPlaceholder() string {
@@ -124,15 +143,18 @@ func (m Model) pdfPlaceholder() string {
 	return "[PDF crop placeholder]"
 }
 
-// statusText composes the bottom row: focus, cursor breadcrumb, filter,
+// statusText composes the bottom row: focus, breadcrumb, locator, filter,
 // transient status, and quit hint. Sections are joined with " · ".
 func (m Model) statusText() string {
 	parts := []string{
 		m.Styles.StatusKey.Render(focusLabel(m.Focus)),
 		m.Styles.StatusFilter.Render("filter:" + m.Filter.String()),
 	}
-	if m.CursorBlockID != "" {
-		parts = append(parts, "cursor:"+m.CursorBlockID)
+	if bc := BreadcrumbFor(m.Doc, m.CursorBlockID); bc != "" {
+		parts = append(parts, bc)
+	}
+	if loc := LocatorFor(m.Doc, m.CursorBlockID); loc != "" {
+		parts = append(parts, loc)
 	}
 	if m.Status != "" {
 		parts = append(parts, m.Status)
