@@ -14,10 +14,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rm, ok := msg.(pdfRenderMsg); ok {
 		return m.handlePDFRender(rm)
 	}
-	if sm, ok := msg.(statusMsg); ok {
-		m.Status = sm.text
-		return m, nil
-	}
 	before := m.CursorBlockID
 	beforeW, beforeH := m.Width, m.Height
 	var next tea.Model
@@ -135,9 +131,46 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
-	if matches(key, m.Keymap.OpenPDFViewer) {
+	if matches(key, m.Keymap.PDFManual) {
+		m.PDFManual = !m.PDFManual
 		m.CountBuf = ""
-		return m.openPDFViewer()
+		m.PDFImage = ""
+		if m.PDFManual {
+			m.Status = "PDF: manual mode (n/p page · +/- zoom · V exit)"
+		} else {
+			m.Status = ""
+		}
+		return m, m.schedulePDFRender()
+	}
+	if m.PDFManual {
+		switch {
+		case matches(key, m.Keymap.PDFNextPage):
+			if m.PDF != nil && m.ManualPDFPage < m.PDF.NumPage()-1 {
+				m.ManualPDFPage++
+			}
+			m.CountBuf = ""
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFPrevPage):
+			if m.ManualPDFPage > 0 {
+				m.ManualPDFPage--
+			}
+			m.CountBuf = ""
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFZoomIn):
+			m.ManualPDFZoom++
+			m.CountBuf = ""
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFZoomOut):
+			if m.ManualPDFZoom > 0 {
+				m.ManualPDFZoom--
+			}
+			m.CountBuf = ""
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFZoomReset):
+			m.ManualPDFZoom = 0
+			m.CountBuf = ""
+			return m, m.schedulePDFRender()
+		}
 	}
 	if matches(key, m.Keymap.SourceLineUp) {
 		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor-1)

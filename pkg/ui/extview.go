@@ -1,72 +1,90 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
+	"image"
+	"image/draw"
+	"image/png"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"mreview/pkg/pdf"
 )
 
-// defaultPDFViewer is the absolute path to LP's docviewer binary (the
-// `dv` shell alias points here). Used as the fallback when the
-// MREVIEW_PDF_VIEWER env var is unset and `dv` is not on $PATH (which it
-// usually isn't, since dv is just a shell alias).
-const defaultPDFViewer = "/Users/leo/local/bin/docviewer"
+// pdfManualZoomStep is the per-keypress crop fraction reduction. Each +
+// shrinks the rendered crop by this much (so 1/(1-z*step) of the page is
+// visible) and each - expands it back toward full-page.
+const pdfManualZoomStep = 0.15
 
-// openPDFViewer suspends the TUI and execs an external PDF viewer on the
-// current paper's PDF. Resolution order:
-//  1. $MREVIEW_PDF_VIEWER (single binary path; arguments not supported).
-//  2. The `dv` binary on $PATH.
-//  3. defaultPDFViewer.
-//
-// Returns a status-only update if the PDF isn't loaded or the viewer
-// can't be located, so the user gets feedback in the status bar instead
-// of a silent no-op.
-func (m Model) openPDFViewer() (tea.Model, tea.Cmd) {
-	if m.PDF == nil {
-		m.Status = "V: no PDF loaded"
-		return m, nil
-	}
-	pdfPath := m.PDF.Path()
-	if pdfPath == "" {
-		m.Status = "V: PDF path unknown"
-		return m, nil
-	}
-	viewer := resolvePDFViewer()
-	if viewer == "" {
-		m.Status = fmt.Sprintf("V: PDF viewer not found (set $MREVIEW_PDF_VIEWER or install at %s)", defaultPDFViewer)
-		return m, nil
-	}
-	cmd := exec.Command(viewer, pdfPath)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			return statusMsg{text: fmt.Sprintf("V: viewer exited: %v", err)}
-		}
-		return statusMsg{text: ""}
-	})
-}
+// pdfManualMaxZoom caps the zoom level at ~85% crop so the user can't
+// accidentally zoom past a useful level.
+const pdfManualMaxZoom = 5
 
-// statusMsg is delivered after the external viewer exits. The Update loop
-// applies it to Model.Status so any error message is visible once the TUI
-// resumes.
-type statusMsg struct{ text string }
-
-// resolvePDFViewer picks the binary to exec, in env / PATH / fallback order.
-func resolvePDFViewer() string {
-	if v := os.Getenv("MREVIEW_PDF_VIEWER"); v != "" {
-		if _, err := os.Stat(v); err == nil {
-			return v
-		}
-		if abs, err := exec.LookPath(v); err == nil {
-			return abs
-		}
+// renderManualPDF produces a kitty-graphics escape sequence for the PDF
+// pane in manual mode. It crops the current page to a centred sub-rectangle
+// determined by zoom, then aspect-fits the result into the pane cells via
+// pdf.RenderKitty (which handles cell sizing + the C=1 cursor pin).
+func renderManualPDF(d *pdf.Doc, pageIdx, zoom, widthCells, heightCells int) (string, string) {
+	if d == nil {
+		return "", "(no PDF loaded)"
 	}
-	if abs, err := exec.LookPath("dv"); err == nil {
-		return abs
+	if pageIdx < 0 {
+		pageIdx = 0
 	}
-	if _, err := os.Stat(defaultPDFViewer); err == nil {
-		return defaultPDFViewer
+	if pageIdx >= d.NumPage() {
+		pageIdx = d.NumPage() - 1
 	}
-	return ""
+	if pageIdx < 0 {
+		return "", "(empty PDF)"
+	}
+	img, err := d.Page(pageIdx, pdf.DefaultCropDPI)
+	if err != nil {
+		return "", fmt.Sprintf("pdf: %v", err)
+	}
+	bounds := img.Bounds()
+	pageW := bounds.Dx()
+	pageH := bounds.Dy()
+	if pageW < 1 || pageH < 1 {
+		return "", "(empty page)"
+	}
+	if zoom < 0 {
+		zoom = 0
+	}
+	if zoom > pdfManualMaxZoom {
+		zoom = pdfManualMaxZoom
+	}
+	frac := 1.0 - float64(zoom)*pdfManualZoomStep
+	if frac < 0.1 {
+		frac = 0.1
+	}
+	cropW := int(float64(pageW) * frac)
+	cropH := int(float64(pageH) * frac)
+	if cropW < 1 {
+		cropW = 1
+	}
+	if cropH < 1 {
+		cropH = 1
+	}
+	x0 := bounds.Min.X + (pageW-cropW)/2
+	y0 := bounds.Min.Y + (pageH-cropH)/2
+	rect := image.Rect(x0, y0, x0+cropW, y0+cropH)
+	var cropped image.Image
+	type subImager interface {
+		SubImage(image.Rectangle) image.Image
+	}
+	if si, ok := any(img).(subImager); ok {
+		cropped = si.SubImage(rect)
+	} else {
+		dst := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+		draw.Draw(dst, dst.Bounds(), img, rect.Min, draw.Src)
+		cropped = dst
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, cropped); err != nil {
+		return "", fmt.Sprintf("pdf: encode png: %v", err)
+	}
+	esc, err := pdf.RenderKitty(buf.Bytes(), widthCells, heightCells)
+	if err != nil {
+		return "", fmt.Sprintf("pdf: %v", err)
+	}
+	return esc, ""
 }

@@ -45,14 +45,29 @@ type pdfRenderInputs struct {
 // a pure function of its captured inputs — no Model state leaks across
 // goroutines.
 func (m *Model) schedulePDFRender() tea.Cmd {
-	if m.PDF == nil || m.Synctex == nil {
-		// No PDF or SyncTeX wired — View falls through to pdfPaneBody's
-		// static placeholder, so no command is needed.
+	if m.PDF == nil {
+		return nil
+	}
+	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
+	if m.PDFManual {
+		// Manual mode renders the current page directly — no SyncTeX
+		// needed and no debounce, since user-driven page/zoom keys want
+		// instant feedback.
+		m.pdfGen++
+		gen := m.pdfGen
+		page := m.ManualPDFPage
+		zoom := m.ManualPDFZoom
+		doc := m.PDF
+		return func() tea.Msg {
+			img, status := renderManualPDF(doc, page, zoom, w, h)
+			return pdfRenderMsg{Generation: gen, Image: img, Status: status}
+		}
+	}
+	if m.Synctex == nil {
 		return nil
 	}
 	m.pdfGen++
 	gen := m.pdfGen
-	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
 	inputs := pdfRenderInputs{
 		Doc:         m.Doc,
 		BlockID:     m.CursorBlockID,

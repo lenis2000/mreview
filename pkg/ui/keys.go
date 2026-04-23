@@ -47,11 +47,16 @@ type Keymap struct {
 
 	// Layout (\) cycles between 3-column and outline+stacked layouts.
 	// Wrap (w) toggles soft-wrap for the source pane.
-	// OpenPDFViewer (V) suspends mreview and opens the PDF in an external
-	// viewer (defaults to dv / docviewer; override via $MREVIEW_PDF_VIEWER).
-	ToggleLayout    []string
-	ToggleWrap      []string
-	OpenPDFViewer   []string
+	// PDFManual (V) toggles the PDF pane between cursor-following crops
+	// and a full-page manual mode (n/p = page nav, +/- = zoom).
+	ToggleLayout []string
+	ToggleWrap   []string
+	PDFManual    []string
+	PDFNextPage  []string
+	PDFPrevPage  []string
+	PDFZoomIn    []string
+	PDFZoomOut   []string
+	PDFZoomReset []string
 
 	// Source-line cursor — moves the per-block 1-based line marker that the
 	// `a` (line annotation) key operates on. Independent of pane focus so
@@ -88,9 +93,14 @@ func DefaultKeymap() Keymap {
 
 		OpenHelp: []string{"?"},
 
-		ToggleLayout:  []string{"\\"},
-		ToggleWrap:    []string{"w"},
-		OpenPDFViewer: []string{"V"},
+		ToggleLayout: []string{"\\"},
+		ToggleWrap:   []string{"w"},
+		PDFManual:    []string{"V"},
+		PDFNextPage:  []string{"."},
+		PDFPrevPage:  []string{","},
+		PDFZoomIn:    []string{"+", "="},
+		PDFZoomOut:   []string{"-"},
+		PDFZoomReset: []string{")"},
 
 		SourceLineUp:   []string{"["},
 		SourceLineDown: []string{"]"},

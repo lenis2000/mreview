@@ -136,6 +136,13 @@ type Model struct {
 	// annotation key (`a`) and the highlighted row in source rendering.
 	// Reset to 1 whenever CursorBlockID changes (see Update).
 	SourceLineCursor int
+
+	// PDFManual switches the PDF pane from cursor-following crops to a
+	// full-page manual viewer. ManualPDFPage is the 0-based page index;
+	// ManualPDFZoom is a small integer (0 = fit page, +N = zoom in).
+	PDFManual     bool
+	ManualPDFPage int
+	ManualPDFZoom int
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
