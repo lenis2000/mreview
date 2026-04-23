@@ -3,6 +3,9 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -116,7 +119,28 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 
 	buildRes := build.ResolveBuildOutputs(path)
 	status := ""
-	if shouldRebuild(path, buildRes.PDFPath) {
+	editTime := time.Now()
+	if st, err := os.Stat(path); err == nil {
+		// Use the tex's mtime as the "edit time" yardstick so we don't
+		// race against a second-level clock skew.
+		editTime = st.ModTime()
+	}
+	switch {
+	case func() bool { _, ok := lmkfLogPath(path); return ok }():
+		// lmkf (latexmk -pvc wrapper) is already watching this paper.
+		// Skip our own latexmk and poll the log file for the pass-
+		// completion marker triggered by our edit.
+		logPath, _ := lmkfLogPath(path)
+		result, errLine := waitForLmkfComplete(logPath, editTime, 25*time.Second)
+		switch result {
+		case "ok":
+			status = fmt.Sprintf("lmkf rebuild ok · %d blocks", len(newDoc.Blocks))
+		case "error":
+			status = "lmkf rebuild error — " + errLine
+		default:
+			status = "lmkf didn't finish in time (edit saved anyway)"
+		}
+	case shouldRebuild(path, buildRes.PDFPath):
 		res, berr := build.RunWith(build.Options{
 			TexPath:  path,
 			BuildCmd: buildCmd,
@@ -127,7 +151,7 @@ func performReload(path string, oldSidecar *persist.Sidecar, oldCursor string, o
 			buildRes = res
 			status = fmt.Sprintf("rebuilt + reloaded · %d blocks", len(newDoc.Blocks))
 		}
-	} else {
+	default:
 		status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
 	}
 
@@ -219,6 +243,96 @@ func shortBuildErr(err error) string {
 		}
 	}
 	return msg
+}
+
+// lmkfActive reports whether LP's `lmkf` shell function (latexmk -pvc
+// wrapper) is watching this particular .tex. lmkf writes
+// /tmp/lmkf-status/<project-dirname> containing the absolute path to
+// the .log file it's monitoring; we confirm both the file exists and
+// the log path inside matches what we'd expect for our tex. This lets
+// us skip our own latexmk invocation and instead wait for lmkf's
+// continuous-build loop to regenerate the PDF.
+func lmkfActive(texPath string) bool {
+	_, ok := lmkfLogPath(texPath)
+	return ok
+}
+
+// lmkfLogPath returns the absolute .log path lmkf is watching for
+// this .tex, or ok=false if no matching status file exists.
+func lmkfLogPath(texPath string) (string, bool) {
+	abs, err := filepath.Abs(texPath)
+	if err != nil {
+		return "", false
+	}
+	projectDir := filepath.Dir(abs)
+	statusFile := filepath.Join("/tmp/lmkf-status", filepath.Base(projectDir))
+	data, err := os.ReadFile(statusFile)
+	if err != nil {
+		return "", false
+	}
+	want := strings.TrimSuffix(abs, filepath.Ext(abs)) + ".log"
+	got := strings.TrimSpace(string(data))
+	if got != want {
+		return "", false
+	}
+	return got, true
+}
+
+// latexmkCompleteMarker is the line latexmk prints at the end of every
+// successful pdflatex pass. The menubar plugin at
+// /Users/leo/menubar-plugins/lmkf-status.100ms.sh uses the same marker
+// to distinguish "still compiling" from "finished".
+const latexmkCompleteMarker = "Here is how much of TeX"
+
+// waitForLmkfComplete polls the .log file until lmkf finishes a pass
+// triggered by an edit made after `editTime`. Returns ("ok", "") on
+// success, ("error", firstErrorLine) when the completed pass has a
+// LaTeX error, or ("timeout", "") if the deadline expired (lmkf maybe
+// not running fast enough, or not running at all). Polling the log is
+// more reliable than comparing .pdf mtime — the PDF only updates on
+// success, so failures would otherwise look like "stuck compiling"
+// forever.
+func waitForLmkfComplete(logPath string, editTime time.Time, timeout time.Duration) (string, string) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		st, err := os.Stat(logPath)
+		if err == nil && !st.ModTime().Before(editTime) {
+			if data, err := os.ReadFile(logPath); err == nil {
+				if bytes := logContainsMarker(data); bytes {
+					if errLine := firstLogError(data); errLine != "" {
+						return "error", errLine
+					}
+					return "ok", ""
+				}
+			}
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return "timeout", ""
+}
+
+// logContainsMarker reports whether the latexmk completion marker
+// appears in the last 8 KiB of the log. latexmk appends on each pass,
+// so checking the tail keeps the read cheap even for multi-thousand-
+// line logs.
+func logContainsMarker(data []byte) bool {
+	const tailBytes = 8 * 1024
+	if len(data) > tailBytes {
+		data = data[len(data)-tailBytes:]
+	}
+	return strings.Contains(string(data), latexmkCompleteMarker)
+}
+
+// firstLogError returns the first `^! ` line from the log, empty if
+// none. Used to surface a specific error message on lmkf rebuild
+// failure instead of a generic "something went wrong".
+func firstLogError(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "! ") {
+			return strings.TrimPrefix(line, "! ")
+		}
+	}
+	return ""
 }
 
 // populateRegions mirrors cmd/mreview/main.go's populatePDFRegions but
