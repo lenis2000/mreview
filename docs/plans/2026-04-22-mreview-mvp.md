@@ -370,11 +370,11 @@ a A e d space          — annotations + reviewed
 - Modify: `pkg/ui/model.go`, `cmd/mreview/main.go`
 - Create: `pkg/persist/stdout.go`, `pkg/persist/stdout_test.go`
 
-- [ ] on startup: if sidecar exists → `Load` + `Remap`; detached → `## Detached` section + status count + outline marker first-load
-- [ ] on `q`: save sidecar, emit per `--stdout` flag
-- [ ] `md` → annotations body (no frontmatter); `json` → `[{block_id, breadcrumb, file, start_line, end_line, source_quote, note}]`; `none` → skip
-- [ ] tests: stdout md/json format, quit saves before emit
-- [ ] `make test && make lint`
+- [x] on startup: if sidecar exists → `Load` + `Remap`; detached → `## Detached` section + status count + outline marker first-load
+- [x] on `q`: save sidecar, emit per `--stdout` flag
+- [x] `md` → annotations body (no frontmatter); `json` → `[{block_id, breadcrumb, file, start_line, end_line, source_quote, note}]`; `none` → skip
+- [x] tests: stdout md/json format, quit saves before emit
+- [x] `make test && make lint`
 
 ### Task 15: PDF rendering + kitty graphics + cursor sync
 

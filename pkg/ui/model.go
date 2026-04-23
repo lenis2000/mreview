@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/parser"
@@ -99,7 +101,7 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 	if cursor == "" || doc == nil || doc.ByID[cursor] == nil {
 		cursor = firstContentBlockID(doc)
 	}
-	return Model{
+	m := Model{
 		Doc:           doc,
 		Sidecar:       side,
 		CursorBlockID: cursor,
@@ -108,6 +110,10 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),
 	}
+	if n := len(side.Detached); n > 0 {
+		m.Status = fmt.Sprintf("%d detached annotation(s) — see ## Detached in sidecar", n)
+	}
+	return m
 }
 
 // firstContentBlockID returns the ID of the first non-root block, or "" when

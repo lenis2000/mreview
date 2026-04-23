@@ -16,11 +16,11 @@ import (
 )
 
 // runTUI is overridable by tests to bypass tea.NewProgram (which requires a
-// real TTY). It returns a non-nil error to surface failures to the caller.
-var runTUI = func(model tea.Model, stdout, stderr io.Writer) error {
+// real TTY). It returns the final model (so the caller can read the sidecar
+// state back out) plus any runtime error.
+var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
 	prog := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(stdout))
-	_, err := prog.Run()
-	return err
+	return prog.Run()
 }
 
 // version is the mreview release version. Overridable at build time via -ldflags.
@@ -97,16 +97,43 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if sidecarPath == "" {
 		sidecarPath = o.File + ".mreview.md"
 	}
-	side, sideErr := persist.Load(sidecarPath)
+	loaded, sideErr := persist.Load(sidecarPath)
 	if sideErr != nil {
 		fmt.Fprintf(stderr, "mreview: load sidecar %q: %v\n", sidecarPath, sideErr)
 		return 1
 	}
+	// Remap against the freshly parsed document. Annotations that no longer
+	// resolve to any block are preserved in side.Detached so they surface in
+	// the outline status line and persist into the next sidecar save.
+	side, detached := persist.Remap(loaded, doc)
+	side.Detached = append(side.Detached, loaded.Detached...)
+	side.Detached = append(side.Detached, detached...)
+
+	stdoutFmt, fmtErr := persist.ParseStdoutFormat(o.Stdout)
+	if fmtErr != nil {
+		fmt.Fprintf(stderr, "mreview: %v\n", fmtErr)
+		return 2
+	}
 
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
-	if err := runTUI(model, stdout, stderr); err != nil {
+	final, err := runTUI(model, stdout, stderr)
+	if err != nil {
 		fmt.Fprintf(stderr, "mreview: tui: %v\n", err)
+		return 1
+	}
+	// Prefer the final Model's sidecar — it is the same pointer in practice
+	// but the contract matters for test doubles that swap the pointer.
+	finalSide := side
+	if fm, ok := final.(ui.Model); ok && fm.Sidecar != nil {
+		finalSide = fm.Sidecar
+	}
+	if saveErr := persist.Save(sidecarPath, finalSide); saveErr != nil {
+		fmt.Fprintf(stderr, "mreview: save sidecar %q: %v\n", sidecarPath, saveErr)
+		return 1
+	}
+	if emitErr := persist.Emit(stdout, finalSide, stdoutFmt); emitErr != nil {
+		fmt.Fprintf(stderr, "mreview: emit: %v\n", emitErr)
 		return 1
 	}
 	return 0

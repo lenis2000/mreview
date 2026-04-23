@@ -33,7 +33,7 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 		if b, ok := resolveBlock(a, doc); ok {
 			mapped := a
 			mapped.BlockID = b.ID
-			mapped.File = b.File
+			mapped.File = blockFile(b, doc)
 			mapped.StartLine = b.StartLine
 			mapped.EndLine = b.EndLine
 			out.Annotations = append(out.Annotations, mapped)
@@ -68,6 +68,19 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 	}
 
 	return out, detached
+}
+
+// blockFile returns the block's File when set, else the document-level path.
+// Empty strings leak into the sidecar heading's `(...:Lx-Ly)` group and
+// break round-trip parsing, so a fallback is always emitted.
+func blockFile(b *parser.Block, doc *parser.Document) string {
+	if b != nil && b.File != "" {
+		return b.File
+	}
+	if doc != nil && doc.File != "" {
+		return doc.File
+	}
+	return "-"
 }
 
 func resolveBlock(a Annotation, doc *parser.Document) (*parser.Block, bool) {

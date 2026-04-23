@@ -34,13 +34,22 @@ type Annotation struct {
 }
 
 // Sidecar holds the parsed contents of a `.mreview.md` file.
+//
+// Detached carries annotations from a previous review session that no longer
+// map to any block in the current document — they are kept in a separate
+// `## Detached` section so the user can see and salvage them.
 type Sidecar struct {
 	Paper       string
 	PDF         string
 	Cursor      string
 	Reviewed    []string
 	Annotations []Annotation
+	Detached    []Annotation
 }
+
+// DetachedMarker is the literal heading used to separate the detached
+// annotations section from the main annotation body.
+const DetachedMarker = "## Detached"
 
 // MaxQuoteLines is the maximum number of lines (including any middle-ellipsis
 // marker) emitted in a blockquoted source snippet.
@@ -63,7 +72,7 @@ type frontmatter struct {
 // The separator between the breadcrumb and the block-ID is an em-dash (U+2014)
 // surrounded by ASCII spaces — note that the em-dash is multi-byte so we use
 // a character class in the regex.
-var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]+):L(\d+)-L(\d+)\)\s*$`)
+var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]*):L(\d+)-L(\d+)\)\s*$`)
 
 // Load reads a sidecar file from disk. A missing file is not an error: a
 // zero-value *Sidecar with empty fields is returned instead so callers can
@@ -110,6 +119,15 @@ func Marshal(s *Sidecar) ([]byte, error) {
 	for _, a := range s.Annotations {
 		buf.WriteString("\n")
 		buf.WriteString(formatAnnotation(a))
+	}
+	if len(s.Detached) > 0 {
+		buf.WriteString("\n")
+		buf.WriteString(DetachedMarker)
+		buf.WriteString("\n")
+		for _, a := range s.Detached {
+			buf.WriteString("\n")
+			buf.WriteString(formatAnnotation(a))
+		}
 	}
 	return []byte(buf.String()), nil
 }
@@ -196,10 +214,18 @@ func parse(data []byte) (*Sidecar, error) {
 		idx = end + 1
 	}
 
-	// Body: sequence of annotation sections.
+	// Body: sequence of annotation sections. The `## Detached` marker, when
+	// encountered, flips the destination to s.Detached for all subsequent
+	// annotation sections until EOF.
+	detached := false
 	for idx < len(lines) {
 		line := lines[idx]
 		if strings.TrimSpace(line) == "" {
+			idx++
+			continue
+		}
+		if strings.TrimSpace(line) == DetachedMarker {
+			detached = true
 			idx++
 			continue
 		}
@@ -244,7 +270,11 @@ func parse(data []byte) (*Sidecar, error) {
 			idx++
 		}
 		a.Note = strings.TrimRight(strings.Join(note, "\n"), "\n")
-		s.Annotations = append(s.Annotations, a)
+		if detached {
+			s.Detached = append(s.Detached, a)
+		} else {
+			s.Annotations = append(s.Annotations, a)
+		}
 	}
 	return s, nil
 }
