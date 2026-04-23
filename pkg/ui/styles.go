@@ -2,9 +2,12 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Styles bundles the lipgloss styles used across panes. The concrete palette
-// mirrors revdiff's two-pane layout (subtle border, inverted status row) so
-// the look-and-feel is consistent with the sister tool.
+// Styles bundles the lipgloss styles used across panes. The palette mirrors
+// vim's default colorscheme: Normal on black, Comment cyan italic,
+// Statement yellow (→ \commands), PreProc magenta bold (→ structural
+// keywords), Type green (→ env names), Constant/Number light red, Special
+// red for math delimiters. StatusLine uses a reverse-ish treatment (white
+// on dark blue) to match vim's default StatusLine group.
 type Styles struct {
 	Pane         lipgloss.Style
 	PaneFocused  lipgloss.Style
@@ -36,68 +39,123 @@ type Styles struct {
 	SourceAnnotation lipgloss.Style
 }
 
-// DefaultStyles returns the baseline visual treatment. Colors are expressed
-// as ANSI 256 indices so the palette works on most terminals without
-// truecolor support; the kitty target handles both.
+// vim-default 256-colour approximations. Names match the Vim highlight
+// group they're conceptually linked to so tweaking is intuitive later.
+const (
+	vimBg       = "16"  // Normal bg — true black
+	vimFg       = "231" // Normal fg — pure white
+	vimLineNr   = "240" // LineNr — mid grey
+	vimVertSplit = "238" // VertSplit — dim border
+	vimCursor   = "238" // CursorLine bg — subtle highlight
+	vimStatusBg = "17"  // StatusLine bg — dark blue (vim default is "User1")
+	vimStatusFg = "231" // StatusLine fg — white
+	vimComment  = "51"  // Comment — light cyan (vim: Cyan italic)
+	vimStmt     = "228" // Statement — yellow (soft, so math bold can pop harder)
+	vimPreProc  = "213" // PreProc — magenta/pink
+	vimType     = "120" // Type — light green
+	vimConstant = "210" // Constant / Number — light red-orange
+	vimSpecial  = "209" // Special — orange (used for math delims)
+	vimString   = "216" // String — peach (used for env names / math content)
+	vimSearch   = "226" // Search / hit highlight — bright yellow
+)
+
+// DefaultStyles returns the vim-default-dark palette. Colors are 256-index
+// so the look is consistent across terminals without truecolor.
 func DefaultStyles() Styles {
-	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
-	focus := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("39"))
+	pane := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(vimVertSplit)).
+		Background(lipgloss.Color(vimBg)).
+		Foreground(lipgloss.Color(vimFg))
+	focus := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("39")). // brighter blue for focus
+		Background(lipgloss.Color(vimBg)).
+		Foreground(lipgloss.Color(vimFg))
 	return Styles{
-		Pane:         border,
+		Pane:         pane,
 		PaneFocused:  focus,
-		PaneTitle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")),
-		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")),
-		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
-		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
+		PaneTitle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(vimStmt)).Background(lipgloss.Color(vimBg)),
+		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimStatusFg)).Background(lipgloss.Color(vimStatusBg)).Bold(true),
+		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimSpecial)).Bold(true).Background(lipgloss.Color(vimStatusBg)),
+		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color(vimType)).Background(lipgloss.Color(vimStatusBg)),
 
-		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
-		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color("178")),
-		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("24")).Bold(true),
-		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("238")),
-		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color(vimPreProc)).Background(lipgloss.Color(vimBg)),
+		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color(vimStmt)).Background(lipgloss.Color(vimBg)),
+		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color(vimFg)).Background(lipgloss.Color(vimCursor)).Bold(true),
+		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color(vimFg)).Background(lipgloss.Color("236")),
+		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNr)).Background(lipgloss.Color(vimBg)),
 
-		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true),
-		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("111")),
-		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color("213")).Bold(true),
-		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
-		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color("222")),
-		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color("114")),
-		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color("216")),
-		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("228")).Background(lipgloss.Color("236")).Italic(true),
+		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNr)).Background(lipgloss.Color(vimBg)),
+		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimComment)).Italic(true).Background(lipgloss.Color(vimBg)),
+		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimStmt)).Background(lipgloss.Color(vimBg)),
+		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimPreProc)).Bold(true).Background(lipgloss.Color(vimBg)),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color(vimSpecial)).Bold(true).Background(lipgloss.Color(vimBg)),
+		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color(vimString)).Background(lipgloss.Color(vimBg)),
+		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimType)).Background(lipgloss.Color(vimBg)),
+		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNr)).Background(lipgloss.Color(vimBg)),
+		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color(vimConstant)).Background(lipgloss.Color(vimBg)),
+		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color(vimBg)).Background(lipgloss.Color(vimSearch)).Italic(true),
 	}
 }
 
+// vim-default light-background approximations.
+const (
+	vimBgLight     = "231" // Normal bg — white
+	vimFgLight     = "16"  // Normal fg — black
+	vimLineNrL     = "250"
+	vimBorderL     = "245"
+	vimCursorL     = "254" // very light grey
+	vimStatusBgL   = "25"  // dark blue
+	vimStatusFgL   = "231" // white
+	vimCommentL    = "24"  // dark cyan
+	vimStmtL       = "130" // dark orange/brown
+	vimPreProcL    = "90"  // dark magenta
+	vimTypeL       = "22"  // dark green
+	vimConstantL   = "124" // dark red
+	vimSpecialL    = "160" // brighter red
+	vimStringL     = "94"  // brown/olive
+	vimSearchBgL   = "226"
+)
+
 // lightStyles returns a palette tuned for light-background terminals. The
-// structural roles (pane border, status bar, cursor row) are unchanged — only
-// the colour indices shift so foregrounds remain legible on a pale backdrop.
+// structural roles (pane border, status bar, cursor row) are unchanged —
+// only the colour indices shift so foregrounds remain legible on a pale
+// backdrop. Mirrors vim's default colorscheme for light bg.
 func lightStyles() Styles {
-	border := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("245"))
-	focus := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("26"))
+	pane := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(vimBorderL)).
+		Background(lipgloss.Color(vimBgLight)).
+		Foreground(lipgloss.Color(vimFgLight))
+	focus := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("26")).
+		Background(lipgloss.Color(vimBgLight)).
+		Foreground(lipgloss.Color(vimFgLight))
 	return Styles{
-		Pane:         border,
+		Pane:         pane,
 		PaneFocused:  focus,
-		PaneTitle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")),
-		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("253")),
-		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Bold(true),
-		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color("26")),
+		PaneTitle:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(vimStmtL)).Background(lipgloss.Color(vimBgLight)),
+		StatusBar:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimStatusFgL)).Background(lipgloss.Color(vimStatusBgL)).Bold(true),
+		StatusKey:    lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true).Background(lipgloss.Color(vimStatusBgL)),
+		StatusFilter: lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color(vimStatusBgL)),
 
-		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color("130")),
-		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("32")).Bold(true),
-		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("251")),
-		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
+		OutlineIcon:   lipgloss.NewStyle().Foreground(lipgloss.Color(vimPreProcL)).Background(lipgloss.Color(vimBgLight)),
+		OutlineMarker: lipgloss.NewStyle().Foreground(lipgloss.Color(vimStmtL)).Background(lipgloss.Color(vimBgLight)),
+		OutlineCursor: lipgloss.NewStyle().Foreground(lipgloss.Color(vimFgLight)).Background(lipgloss.Color(vimCursorL)).Bold(true),
+		OutlineActive: lipgloss.NewStyle().Foreground(lipgloss.Color(vimFgLight)).Background(lipgloss.Color("253")),
+		OutlineMuted:  lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNrL)).Background(lipgloss.Color(vimBgLight)),
 
-		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color("243")).Italic(true),
-		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color("25")),
-		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color("126")).Bold(true),
-		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Bold(true),
-		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color("94")),
-		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color("22")),
-		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color("243")),
-		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color("166")),
-		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color("130")).Background(lipgloss.Color("230")).Italic(true),
+		SourceGutter:     lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNrL)).Background(lipgloss.Color(vimBgLight)),
+		SourceComment:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimCommentL)).Italic(true).Background(lipgloss.Color(vimBgLight)),
+		SourceCommand:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimStmtL)).Background(lipgloss.Color(vimBgLight)),
+		SourceKeyword:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimPreProcL)).Bold(true).Background(lipgloss.Color(vimBgLight)),
+		SourceMath:       lipgloss.NewStyle().Foreground(lipgloss.Color(vimSpecialL)).Bold(true).Background(lipgloss.Color(vimBgLight)),
+		SourceMathText:   lipgloss.NewStyle().Foreground(lipgloss.Color(vimStringL)).Background(lipgloss.Color(vimBgLight)),
+		SourceEnvName:    lipgloss.NewStyle().Foreground(lipgloss.Color(vimTypeL)).Background(lipgloss.Color(vimBgLight)),
+		SourceBrace:      lipgloss.NewStyle().Foreground(lipgloss.Color(vimLineNrL)).Background(lipgloss.Color(vimBgLight)),
+		SourceNumber:     lipgloss.NewStyle().Foreground(lipgloss.Color(vimConstantL)).Background(lipgloss.Color(vimBgLight)),
+		SourceAnnotation: lipgloss.NewStyle().Foreground(lipgloss.Color(vimFgLight)).Background(lipgloss.Color(vimSearchBgL)).Italic(true),
 	}
 }
