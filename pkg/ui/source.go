@@ -10,17 +10,19 @@ import (
 )
 
 // RenderSource returns the rendered body of the source pane for the current
-// cursor block. It pulls a window of lines from the full document so the
-// cursor block has visible context above and below (dimmed); the block
-// itself is colorised normally and the row addressed by lineCursor (1-based
-// offset within the block) is highlighted as the line cursor.
-//
-// width is the inner pane width; height is the inner pane height. softWrap
-// controls whether long lines wrap to additional rows or get truncated.
-// annotations are rendered inline: a block-level note (LineOffset 0) shows
-// as a row directly above the block's first line; line-pinned notes show
-// as a row directly below the line they're anchored to.
+// cursor block. See renderSourceWithEditor — this is the no-editor path.
 func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation) string {
+	return renderSourceWithEditor(doc, cursor, width, height, styles, softWrap, lineCursor, annotations, nil)
+}
+
+// renderSourceWithEditor is RenderSource plus an optional inline annotation
+// editor. When editor != nil, its textarea is spliced into the source flow
+// at the editor's anchor line (just below for line-pinned, just above the
+// block's first line for block-level). The saved annotation that the editor
+// is replacing — keyed on (BlockID, LineOffset) — is suppressed so the user
+// sees one live editor rather than the editor *and* its old version side
+// by side.
+func renderSourceWithEditor(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation, editor *AnnotationPopup) string {
 	if doc == nil || cursor == "" {
 		return styles.OutlineMuted.Render("(no block selected)")
 	}
@@ -76,13 +78,34 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 		}
 	}
 
+	// Editor anchor line — where the textarea should splice in. For a
+	// block-level edit, that's one row above the block's first line (same
+	// as where the saved block-level note would render).
+	editorAnchor := -1
+	editorActive := editor != nil && editor.TargetID == b.ID
+	if editorActive {
+		if editor.LineOffset > 0 {
+			editorAnchor = b.StartLine + editor.LineOffset - 1
+			if editorAnchor > b.EndLine {
+				editorAnchor = b.EndLine
+			}
+		} else {
+			editorAnchor = b.StartLine - 1
+		}
+	}
+
 	// Group this block's annotations by the line they decorate. A line-
 	// pinned annotation gets keyed to its anchor line; the block-level note
 	// (LineOffset 0) is keyed one position before the block's first line so
-	// it renders as a header row above line 1.
+	// it renders as a header row above line 1. Skip the saved version of
+	// the annotation currently being edited so the user sees only the live
+	// editor.
 	notesByLine := map[int][]persist.Annotation{}
 	for _, a := range annotations {
 		if a.BlockID != b.ID {
+			continue
+		}
+		if editorActive && a.LineOffset == editor.LineOffset {
 			continue
 		}
 		if a.LineOffset > 0 {
@@ -98,28 +121,45 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 
 	var out strings.Builder
 	rows := 0
+	emitRow := func(s string) bool {
+		if rows >= height {
+			return false
+		}
+		if rows > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(s)
+		rows++
+		return rows < height
+	}
 	emitNotes := func(forLine int) {
 		notes, ok := notesByLine[forLine]
 		if !ok {
 			return
 		}
 		for _, n := range notes {
-			noteRows := annotationRows(n, gutterW, bodyWidth, styles)
-			for _, r := range noteRows {
-				if rows >= height {
+			for _, r := range annotationRows(n, gutterW, bodyWidth, styles) {
+				if !emitRow(r) {
 					return
 				}
-				if rows > 0 {
-					out.WriteByte('\n')
-				}
-				out.WriteString(r)
-				rows++
+			}
+		}
+	}
+	emitEditor := func(forLine int) {
+		if !editorActive || editorAnchor != forLine {
+			return
+		}
+		for _, r := range editorRows(editor, gutterW, bodyWidth, styles) {
+			if !emitRow(r) {
+				return
 			}
 		}
 	}
 
-	// Block-level annotation header (if any) — renders above line 1.
+	// Block-level annotation header (if any) and a block-level editor
+	// render above line 1.
 	emitNotes(b.StartLine - 1)
+	emitEditor(b.StartLine - 1)
 
 	for ln := startLine; ln <= endLine && rows < height; ln++ {
 		if ln-1 >= len(allLines) {
@@ -130,9 +170,6 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 		isCursor := ln == cursorLine
 		segments := wrapOrClip(raw, bodyWidth, softWrap, inBlock, styles)
 		for i, seg := range segments {
-			if rows >= height {
-				break
-			}
 			var gutter string
 			if i == 0 {
 				gutter = padLeft(itoa(ln), gutterW)
@@ -146,15 +183,49 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 				// the next `a` will annotate stands out at a glance.
 				rowText = styles.OutlineCursor.Width(width).Render(stripANSI(rowText))
 			}
-			if rows > 0 {
-				out.WriteByte('\n')
+			if !emitRow(rowText) {
+				return out.String()
 			}
-			out.WriteString(rowText)
-			rows++
 		}
 		emitNotes(ln)
+		emitEditor(ln)
 	}
 	return out.String()
+}
+
+// editorRows formats the live annotation textarea as a block of inline rows
+// indented under the gutter and prefixed with a sigil so it visually echoes
+// the saved-annotation row format. The textarea's own multi-line View() is
+// used as-is; per-line styling is applied uniformly so the editor stays
+// recognisable as commentary while typing.
+func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) []string {
+	if editor == nil {
+		return nil
+	}
+	const sigil = "▸ "
+	indent := strings.Repeat(" ", gutterW) + " "
+	noteWidth := bodyWidth - runewidth.StringWidth(sigil)
+	if noteWidth < 1 {
+		noteWidth = 1
+	}
+	if editor.TA.Width() != noteWidth {
+		editor.TA.SetWidth(noteWidth)
+	}
+	view := editor.TA.View()
+	hint := "[Ctrl-S submit · Ctrl-C cancel]"
+	rows := strings.Split(view, "\n")
+	out := make([]string, 0, len(rows)+1)
+	for i, row := range rows {
+		var prefix string
+		if i == 0 {
+			prefix = sigil
+		} else {
+			prefix = strings.Repeat(" ", runewidth.StringWidth(sigil))
+		}
+		out = append(out, indent+styles.SourceAnnotation.Render(prefix+row))
+	}
+	out = append(out, indent+styles.OutlineMuted.Render(hint))
+	return out
 }
 
 // annotationRows formats one annotation as one or more inline display rows.

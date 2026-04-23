@@ -185,8 +185,16 @@ func (m Model) renderSourcePane(width, height int) string {
 	var body string
 	switch p := m.Popup.(type) {
 	case *AnnotationPopup:
+		// Render the source pane normally with the editor spliced in at the
+		// annotation's anchor line so the user sees the surrounding source
+		// while typing — no full-pane takeover. The inline editor replaces
+		// only the rows it needs.
 		title = m.Styles.PaneTitle.Render(annotationPaneTitle(m.Doc, p))
-		body = renderAnnotationBody(p, innerW, bodyH)
+		var anns []persist.Annotation
+		if m.Sidecar != nil {
+			anns = m.Sidecar.Annotations
+		}
+		body = renderSourceWithEditor(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns, p)
 	case *SearchPopup:
 		title = m.Styles.PaneTitle.Render("Search")
 		body = renderSearchBody(p, innerW, bodyH, m.Styles)
