@@ -7,19 +7,14 @@ import (
 	"mreview/pkg/persist"
 )
 
-// handleMouse turns mouse events into focus + cursor moves. We only act on
-// the press half of a click (Action == MouseActionPress, Button == left) to
-// avoid double-firing on press+release pairs and to ignore wheel/motion
-// events the alt-screen capture also delivers.
-//
-// Behaviour by pane:
-//   - outline: focus + move block cursor to the clicked row.
-//   - source:  focus + move block cursor to the block containing the clicked
-//     line (if different) and set the source line cursor to that line.
-//   - pdf:     focus only — kitty graphics make per-row hit-testing
-//     unreliable so we don't try to map clicks to PDF features.
+// handleMouse turns mouse events into focus, cursor moves, and source
+// scrolling. Click (left press): set focus, and on outline/source jump
+// the relevant cursor to the clicked row. Wheel up/down on the source
+// pane: shift the source line cursor; crossing the block boundary
+// advances to the previous/next block so wheel scroll feels continuous.
+// Wheel up/down on the outline pane: move the block cursor.
 func (m Model) handleMouse(msg tea.MouseMsg) Model {
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+	if msg.Action != tea.MouseActionPress {
 		return m
 	}
 	if m.Width <= 0 || m.Height <= 0 {
@@ -29,27 +24,93 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 	if !ok {
 		return m
 	}
-	m.Focus = pane
-	switch pane {
-	case PaneOutline:
-		if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, innerY); id != "" {
-			if id != m.CursorBlockID {
+	switch msg.Button {
+	case tea.MouseButtonLeft:
+		m.Focus = pane
+		switch pane {
+		case PaneOutline:
+			if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, innerY); id != "" {
+				if id != m.CursorBlockID {
+					m.CursorBlockID = id
+					m.SourceLineCursor = 1
+				}
+			}
+		case PaneSource:
+			blockID, lineOff := sourceLineAt(m.Doc, m.CursorBlockID, m.Width, m.Height, m.Layout, innerY)
+			if blockID != "" {
+				if blockID != m.CursorBlockID {
+					m.CursorBlockID = blockID
+					m.SourceLineCursor = 1
+				}
+				if lineOff > 0 {
+					m.SourceLineCursor = lineOff
+				}
+			}
+		}
+	case tea.MouseButtonWheelUp:
+		switch pane {
+		case PaneSource:
+			m = m.scrollSource(-1)
+		case PaneOutline:
+			id := PrevSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+			if id != "" {
 				m.CursorBlockID = id
 				m.SourceLineCursor = 1
 			}
 		}
-	case PaneSource:
-		blockID, lineOff := sourceLineAt(m.Doc, m.CursorBlockID, m.Width, m.Height, m.Layout, innerY)
-		if blockID != "" {
-			if blockID != m.CursorBlockID {
-				m.CursorBlockID = blockID
+	case tea.MouseButtonWheelDown:
+		switch pane {
+		case PaneSource:
+			m = m.scrollSource(+1)
+		case PaneOutline:
+			id := NextSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+			if id != "" {
+				m.CursorBlockID = id
 				m.SourceLineCursor = 1
-			}
-			if lineOff > 0 {
-				m.SourceLineCursor = lineOff
 			}
 		}
 	}
+	return m
+}
+
+// scrollSource shifts the source line cursor by delta lines. When the
+// cursor would step past the block's first/last line, the cursor jumps to
+// the previous/next block (DFS order) and lands on its last/first line so
+// the wheel scroll reads as continuous.
+func (m Model) scrollSource(delta int) Model {
+	if m.Doc == nil || m.CursorBlockID == "" {
+		return m
+	}
+	want := m.SourceLineCursor + delta
+	n := blockLineCount(m.Doc, m.CursorBlockID)
+	if want >= 1 && want <= n {
+		m.SourceLineCursor = want
+		return m
+	}
+	if want < 1 {
+		id := PrevInner(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+		if id == "" || id == m.CursorBlockID {
+			m.SourceLineCursor = 1
+			return m
+		}
+		m.CursorBlockID = id
+		newN := blockLineCount(m.Doc, id)
+		if newN < 1 {
+			newN = 1
+		}
+		m.SourceLineCursor = newN
+		return m
+	}
+	id := NextInner(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+	if id == "" || id == m.CursorBlockID {
+		if n < 1 {
+			n = 1
+		}
+		m.SourceLineCursor = n
+		return m
+	}
+	m.CursorBlockID = id
+	m.SourceLineCursor = 1
 	return m
 }
 

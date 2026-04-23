@@ -36,6 +36,9 @@ func Parse(src []byte) (*Document, error) {
 	p.buildTree()
 	p.segmentRootProse()
 	p.segmentProofs()
+	p.segmentItemEnvs()
+	p.segmentLeafProse()
+	p.segmentLongParagraphs()
 	p.assignStableIDs()
 	p.resolveRefs()
 	return p.doc, nil
@@ -486,6 +489,266 @@ func (p *parser) lineIsBlank(line int) bool {
 		return true
 	}
 	if trimmed[0] == '%' {
+		return true
+	}
+	return false
+}
+
+// listEnvs are environments whose direct children are \item-delimited
+// entries; segmentItemEnvs splits each into KindParagraph sub-blocks.
+var listEnvs = map[string]bool{
+	"itemize":     true,
+	"enumerate":   true,
+	"description": true,
+}
+
+// segmentItemEnvs walks every itemize/enumerate/description leaf block and
+// turns each \item into a paragraph sub-block, so list entries become
+// individually navigable. Skips lists that already have structural children
+// (e.g. a nested theorem inside an item) — those are rare and the existing
+// tree is good enough.
+func (p *parser) segmentItemEnvs() {
+	blocks := append([]*Block(nil), p.doc.Blocks...)
+	for _, b := range blocks {
+		if b == p.doc.Root || len(b.ChildIDs) > 0 {
+			continue
+		}
+		if b.EnvName == "" || !listEnvs[b.EnvName] {
+			continue
+		}
+		startLine := b.StartLine + 1
+		endLine := b.EndLine - 1
+		if endLine < startLine {
+			continue
+		}
+		// Find lines starting with \item; each marks a new entry.
+		var itemStarts []int
+		for ln := startLine; ln <= endLine; ln++ {
+			if p.lineStartsWithItem(ln) {
+				itemStarts = append(itemStarts, ln)
+			}
+		}
+		if len(itemStarts) <= 1 {
+			continue
+		}
+		for i, s := range itemStarts {
+			e := endLine
+			if i+1 < len(itemStarts) {
+				e = itemStarts[i+1] - 1
+			}
+			child := &Block{
+				ID:        p.newID(),
+				Kind:      KindParagraph,
+				StartLine: s,
+				EndLine:   e,
+				ParentID:  b.ID,
+			}
+			child.Source = p.extractSource(s, e)
+			p.doc.Blocks = append(p.doc.Blocks, child)
+			p.doc.ByID[child.ID] = child
+			b.ChildIDs = append(b.ChildIDs, child.ID)
+		}
+	}
+}
+
+// lineStartsWithItem reports whether the given source line begins (after
+// optional whitespace) with the LaTeX `\item` macro.
+func (p *parser) lineStartsWithItem(line int) bool {
+	if line < 1 || line > p.totalLines {
+		return false
+	}
+	from := p.lineStarts[line-1]
+	var to int
+	if line >= p.totalLines {
+		to = len(p.src)
+	} else {
+		to = p.lineStarts[line]
+	}
+	raw := p.src[from:to]
+	raw = bytes.TrimLeft(raw, " \t")
+	if len(raw) < 5 {
+		return false
+	}
+	return bytes.HasPrefix(raw, []byte(`\item`)) &&
+		(len(raw) == 5 || !isLatexLetter(raw[5]))
+}
+
+// isLatexLetter reports whether b is part of a \command name (ASCII letter).
+func isLatexLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+// proseSplittableKinds picks block kinds whose source is plain prose and
+// therefore safe to chop on blank lines without losing semantic structure.
+// Theorems and proofs intentionally stay whole — splitting them would
+// fragment a single mathematical statement.
+var proseSplittableKinds = map[Kind]bool{
+	KindAbstract: true,
+	KindOther:    true,
+}
+
+// segmentLeafProse splits any leaf block of a prose-y kind into
+// blank-line-separated paragraphs. Leaves single-paragraph blocks alone so
+// short notes don't grow noisy structure. Excludes list envs (handled by
+// segmentItemEnvs) and figures/displays (no paragraph semantics).
+func (p *parser) segmentLeafProse() {
+	blocks := append([]*Block(nil), p.doc.Blocks...)
+	for _, b := range blocks {
+		if b == p.doc.Root || len(b.ChildIDs) > 0 {
+			continue
+		}
+		if b.StartLine == 0 || b.EndLine == 0 {
+			continue
+		}
+		if !proseSplittableKinds[b.Kind] {
+			continue
+		}
+		if b.EnvName != "" && listEnvs[b.EnvName] {
+			continue
+		}
+		startLine := b.StartLine
+		endLine := b.EndLine
+		if b.EnvName != "" {
+			startLine++
+			endLine--
+		}
+		if endLine < startLine {
+			continue
+		}
+		spans := p.paragraphSpans(startLine, endLine)
+		if len(spans) <= 1 {
+			continue
+		}
+		for _, sp := range spans {
+			child := &Block{
+				ID:        p.newID(),
+				Kind:      KindParagraph,
+				StartLine: sp[0],
+				EndLine:   sp[1],
+				ParentID:  b.ID,
+			}
+			child.Source = p.extractSource(sp[0], sp[1])
+			p.doc.Blocks = append(p.doc.Blocks, child)
+			p.doc.ByID[child.ID] = child
+			b.ChildIDs = append(b.ChildIDs, child.ID)
+		}
+	}
+}
+
+// paragraphSpans returns blank-line-separated [start, end] spans within
+// [startLine, endLine]. Blank lines and comment-only lines are treated as
+// separators (matches lineIsBlank).
+func (p *parser) paragraphSpans(startLine, endLine int) [][2]int {
+	var spans [][2]int
+	i := startLine
+	for i <= endLine {
+		for i <= endLine && p.lineIsBlank(i) {
+			i++
+		}
+		if i > endLine {
+			break
+		}
+		s := i
+		for i <= endLine && !p.lineIsBlank(i) {
+			i++
+		}
+		spans = append(spans, [2]int{s, i - 1})
+	}
+	return spans
+}
+
+// longParagraphLineThreshold is the line count above which a paragraph is
+// further chopped on sentence boundaries. Picked so that ~6 wrapped rows
+// fit comfortably in the source pane without scrolling.
+const longParagraphLineThreshold = 6
+
+// segmentLongParagraphs walks every leaf KindParagraph block and, when the
+// paragraph's line count exceeds longParagraphLineThreshold, splits it on
+// sentence boundaries (`. `, `? `, `! ` followed by whitespace or EOL).
+// Sub-blocks are also KindParagraph so the outline shows them uniformly.
+func (p *parser) segmentLongParagraphs() {
+	blocks := append([]*Block(nil), p.doc.Blocks...)
+	for _, b := range blocks {
+		if b == p.doc.Root || len(b.ChildIDs) > 0 {
+			continue
+		}
+		if b.Kind != KindParagraph {
+			continue
+		}
+		if b.EndLine-b.StartLine+1 <= longParagraphLineThreshold {
+			continue
+		}
+		spans := p.sentenceSpans(b.StartLine, b.EndLine)
+		if len(spans) <= 1 {
+			continue
+		}
+		for _, sp := range spans {
+			child := &Block{
+				ID:        p.newID(),
+				Kind:      KindParagraph,
+				StartLine: sp[0],
+				EndLine:   sp[1],
+				ParentID:  b.ID,
+			}
+			child.Source = p.extractSource(sp[0], sp[1])
+			p.doc.Blocks = append(p.doc.Blocks, child)
+			p.doc.ByID[child.ID] = child
+			b.ChildIDs = append(b.ChildIDs, child.ID)
+		}
+	}
+}
+
+// sentenceSpans walks lines [startLine, endLine] and returns line ranges
+// such that each range ends on a sentence-final line (line whose trimmed
+// content ends with `.`, `?`, or `!`). The final span absorbs whatever's
+// left if the paragraph doesn't end in a sentence terminator.
+//
+// We split at end-of-line, not mid-line, because the source pane renders
+// rows by source line and a sub-block boundary that doesn't align with a
+// line edge would be confusing in the outline.
+func (p *parser) sentenceSpans(startLine, endLine int) [][2]int {
+	var spans [][2]int
+	s := startLine
+	for ln := startLine; ln <= endLine; ln++ {
+		if p.lineEndsSentence(ln) {
+			spans = append(spans, [2]int{s, ln})
+			s = ln + 1
+		}
+	}
+	if s <= endLine {
+		spans = append(spans, [2]int{s, endLine})
+	}
+	return spans
+}
+
+// lineEndsSentence reports whether the trimmed content of line ends with a
+// sentence-terminating punctuation. Strips trailing whitespace and a
+// trailing percent comment so `prose.  % footnote` still counts as the end
+// of a sentence.
+func (p *parser) lineEndsSentence(line int) bool {
+	if line < 1 || line > p.totalLines {
+		return false
+	}
+	from := p.lineStarts[line-1]
+	var to int
+	if line >= p.totalLines {
+		to = len(p.src)
+	} else {
+		to = p.lineStarts[line]
+	}
+	raw := bytes.TrimRight(p.src[from:to], " \t\r\n")
+	// Drop a trailing %-comment.
+	if i := bytes.IndexByte(raw, '%'); i >= 0 {
+		// Don't break on an escaped `\%`.
+		if i == 0 || raw[i-1] != '\\' {
+			raw = bytes.TrimRight(raw[:i], " \t")
+		}
+	}
+	if len(raw) == 0 {
+		return false
+	}
+	switch raw[len(raw)-1] {
+	case '.', '?', '!':
 		return true
 	}
 	return false
