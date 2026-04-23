@@ -94,29 +94,36 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		}
 	}
 
-	// Group this block's annotations by the line they decorate. A line-
-	// pinned annotation gets keyed to its anchor line; the block-level note
-	// (LineOffset 0) is keyed one position before the block's first line so
-	// it renders as a header row above line 1. Skip the saved version of
-	// the annotation currently being edited so the user sees only the live
-	// editor.
+	// Group every annotation that anchors anywhere in the visible window
+	// (the cursor block AND the dimmed before/after context blocks). For
+	// each annotation we look up its target block in the parsed doc so we
+	// can resolve its anchor line; orphans (block id missing from doc) are
+	// ignored. The annotation currently being edited is suppressed so the
+	// live editor isn't doubled up by its previous saved text.
 	notesByLine := map[int][]persist.Annotation{}
 	for _, a := range annotations {
-		if a.BlockID != b.ID {
+		if editorActive && a.BlockID == editor.TargetID && a.LineOffset == editor.LineOffset {
 			continue
 		}
-		if editorActive && a.LineOffset == editor.LineOffset {
+		ab := doc.ByID[a.BlockID]
+		if ab == nil || ab.StartLine == 0 || ab.EndLine == 0 {
 			continue
 		}
+		var ln int
 		if a.LineOffset > 0 {
-			ln := b.StartLine + a.LineOffset - 1
-			if ln > b.EndLine {
-				ln = b.EndLine
+			ln = ab.StartLine + a.LineOffset - 1
+			if ln > ab.EndLine {
+				ln = ab.EndLine
 			}
-			notesByLine[ln] = append(notesByLine[ln], a)
 		} else {
-			notesByLine[b.StartLine-1] = append(notesByLine[b.StartLine-1], a)
+			ln = ab.StartLine - 1
 		}
+		// Drop annotations whose anchor falls outside the visible window —
+		// they'd never render anyway and skipping them keeps the map small.
+		if ln < startLine-1 || ln > endLine {
+			continue
+		}
+		notesByLine[ln] = append(notesByLine[ln], a)
 	}
 
 	var out strings.Builder
