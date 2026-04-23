@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
@@ -82,6 +83,7 @@ var version = "0.1.0"
 // opts holds all command-line options.
 type opts struct {
 	NoBuild  bool   `long:"no-build" description:"skip latexmk build, use existing outputs"`
+	Draft    bool   `long:"draft" description:"open TUI even when the build fails (stale artefacts shown with a warning)"`
 	BuildCmd string `long:"build-cmd" description:"override latexmk command"`
 	Sidecar  string `long:"sidecar" description:"path to sidecar .mreview.md (default: <paper>.mreview.md)"`
 	Stdout   string `long:"stdout" default:"md" choice:"md" choice:"json" choice:"none" description:"format for annotations emitted on quit"`
@@ -162,6 +164,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Resolve build artefact paths and optionally run latexmk. --no-build
 	// just resolves the conventional paths next to <paper>.tex.
 	buildRes := build.ResolveBuildOutputs(o.File)
+	var buildWarning string
 	if !o.NoBuild {
 		buildCmd := o.BuildCmd
 		if buildCmd == "" {
@@ -173,8 +176,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 			Stderr:   stderr,
 		})
 		if berr != nil {
-			fmt.Fprintf(stderr, "mreview: %v\n", berr)
-			return 1
+			if !o.Draft {
+				fmt.Fprintf(stderr, "mreview: %v\n", berr)
+				return 1
+			}
+			fmt.Fprintf(stderr, "mreview: --draft: %v\n", berr)
+			buildWarning = shortBuildWarning(berr)
 		}
 		buildRes = res
 	}
@@ -223,6 +230,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model.Config = cfg
 	model.Styles = ui.StylesForTheme(cfg.Theme)
 	model.KittyAvailable = ui.KittyGraphicsAvailable()
+	if buildWarning != "" {
+		model.BuildStale = true
+		model.Status = "build: " + buildWarning
+	}
 
 	// Best-effort PDF+SyncTeX wire-up. Both are optional at this stage: if
 	// either file is missing (e.g. --no-build on a never-built paper) the
@@ -261,4 +272,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// shortBuildWarning extracts a one-line summary from a build error for
+// the status bar. Falls back to the full error string when the type
+// doesn't carry a structured first-line field.
+func shortBuildWarning(err error) string {
+	var be *build.BuildError
+	if errors.As(err, &be) && be.FirstLine != "" {
+		return be.FirstLine
+	}
+	s := err.Error()
+	if i := strings.IndexByte(s, '\n'); i > 0 {
+		return s[:i]
+	}
+	return s
 }

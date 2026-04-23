@@ -31,6 +31,10 @@ func (m Model) startOCRReport() (Model, tea.Cmd) {
 		m.Status = "B: OCR report not available in manual PDF mode (press V to return)"
 		return m, nil
 	}
+	if m.BuildStale {
+		m.Status = "B: build is stale — rebuild first (E to edit, then retry)"
+		return m, nil
+	}
 	if m.Doc == nil || m.CursorBlockID == "" {
 		m.Status = "B: no block selected"
 		return m, nil
