@@ -198,15 +198,15 @@ a A e d space          — annotations + reviewed
 **Files:**
 - Create: `pkg/parser/block.go`, `pkg/parser/parse.go`, `pkg/parser/parse_test.go`
 
-- [ ] `Kind` enum + `Block` struct per spec (ID/Number/RefsOut added in Task 4/5)
-- [ ] `Parse(src []byte) (*Document, error)` with `Document{Blocks, Root, ByLabel, TheoremEnvs}`
-- [ ] auto-discover theorem envs from `\newtheorem` tokens; merge with built-in defaults; `proof` is always `KindProof`
-- [ ] tree: sections nest subsections; envs nest in current section; proofs are siblings of theorem; `ProofStep` = blank-line split inside `proof`
-- [ ] display math inside a proof → child of current `ProofStep`
-- [ ] figures → `KindFigure`; bibliography env → single `KindBibliography` wrapper (bbl enrichment Task 5)
-- [ ] unrecognized env → `KindOther`
-- [ ] tests against `testdata/sample.tex`: kinds, hierarchy, proof step count, env set, section nesting
-- [ ] `make test && make lint`
+- [x] `Kind` enum + `Block` struct per spec (ID/Number/RefsOut added in Task 4/5)
+- [x] `Parse(src []byte) (*Document, error)` with `Document{Blocks, Root, ByLabel, TheoremEnvs}`
+- [x] auto-discover theorem envs from `\newtheorem` tokens; merge with built-in defaults; `proof` is always `KindProof`
+- [x] tree: sections nest subsections; envs nest in current section; proofs are siblings of theorem; `ProofStep` = blank-line split inside `proof`
+- [x] display math inside a proof → child of current `ProofStep`
+- [x] figures → `KindFigure`; bibliography env → single `KindBibliography` wrapper (bbl enrichment Task 5)
+- [x] unrecognized env → `KindOther`
+- [x] tests against `testdata/sample.tex`: kinds, hierarchy, proof step count, env set, section nesting
+- [x] `make test && make lint`
 
 ### Task 4: Label/ref resolution + stable block IDs
 
