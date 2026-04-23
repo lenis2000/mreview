@@ -424,9 +424,9 @@ a A e d space          — annotations + reviewed
 
 ### Task 18: Update documentation
 
-- [ ] write/update `README.md` with install + usage + keybindings
-- [ ] update `CLAUDE.md` if internal patterns changed
-- [ ] move this plan to `docs/plans/completed/`
+- [x] write/update `README.md` with install + usage + keybindings
+- [x] update `CLAUDE.md` if internal patterns changed (no CLAUDE.md present — no internal patterns changed warranting one; skipped)
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-completion (manual / not executor-automatable)
 
