@@ -130,6 +130,12 @@ type Model struct {
 	// SoftWrap controls whether long source lines wrap to additional rows
 	// (the default) or get truncated with an ellipsis.
 	SoftWrap bool
+
+	// SourceLineCursor is the 1-based line number, within the current
+	// cursor block, that the source pane has selected. Drives the line
+	// annotation key (`a`) and the highlighted row in source rendering.
+	// Reset to 1 whenever CursorBlockID changes (see Update).
+	SourceLineCursor int
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
@@ -151,8 +157,9 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		Focus:         PaneOutline,
 		Keymap:        DefaultKeymap(),
 		Styles:        DefaultStyles(),
-		pdfCache:      newPDFCropCache(pdfCropCacheMax),
-		SoftWrap:      true,
+		pdfCache:         newPDFCropCache(pdfCropCacheMax),
+		SoftWrap:         true,
+		SourceLineCursor: 1,
 	}
 	m.Config = DefaultConfig()
 	if n := len(side.Detached); n > 0 {

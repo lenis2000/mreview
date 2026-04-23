@@ -203,7 +203,7 @@ func (m Model) renderSourcePane(width, height int) string {
 		body = RenderHelpBody(innerW)
 		_ = p
 	default:
-		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap)
+		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor)
 	}
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)

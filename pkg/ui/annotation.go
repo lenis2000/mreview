@@ -23,24 +23,32 @@ const (
 // AnnotationPopup is the modal hosting the bubbles textarea while the user
 // writes or edits a note. Mirrors revdiff's annotation popup pattern — one
 // target block, one textarea, submit-immediately semantics.
+//
+// LineOffset > 0 marks a line-pinned annotation (`a` key). 0 marks a
+// block-level annotation (`A` key). Stored on the popup so SubmitAnnotation
+// can write the right anchor through to persist.Annotation.
 type AnnotationPopup struct {
-	TA       textarea.Model
-	TargetID string
-	Editing  bool // true iff replacing an existing annotation
+	TA         textarea.Model
+	TargetID   string
+	LineOffset int
+	Editing    bool
 }
 
 // popup marks AnnotationPopup as a Popup (dispatched via Model.Popup).
 func (*AnnotationPopup) popup() {}
 
 // PendingDelete records a pending `d` confirmation. The status bar reads
-// `[y/N] delete annotation?` until the user answers.
+// `[y/N] delete annotation?` until the user answers. LineOffset matches
+// persist.Annotation: 0 = block-level annotation, >0 = line-pinned.
 type PendingDelete struct {
-	TargetID string
+	TargetID   string
+	LineOffset int
 }
 
 // newAnnotationPopup constructs a focused textarea popup. `initial` pre-fills
-// the editor with an existing note (empty string → blank popup).
-func newAnnotationPopup(targetID, initial string, editing bool) (*AnnotationPopup, tea.Cmd) {
+// the editor with an existing note (empty string → blank popup). lineOffset
+// 0 = block-level; >0 = line-pinned at that 1-based offset within the block.
+func newAnnotationPopup(targetID, initial string, editing bool, lineOffset int) (*AnnotationPopup, tea.Cmd) {
 	ta := textarea.New()
 	ta.Prompt = "│ "
 	ta.ShowLineNumbers = false
@@ -52,41 +60,64 @@ func newAnnotationPopup(targetID, initial string, editing bool) (*AnnotationPopu
 	}
 	cmd := ta.Focus()
 	return &AnnotationPopup{
-		TA:       ta,
-		TargetID: targetID,
-		Editing:  editing,
+		TA:         ta,
+		TargetID:   targetID,
+		LineOffset: lineOffset,
+		Editing:    editing,
 	}, cmd
 }
 
-// StartAnnotation opens the annotation popup targeting either the current
-// cursor block (enclosing=false, key `a`) or its enclosing env (enclosing=true,
-// key `A`). When an annotation already exists on the target, the popup is
-// pre-filled so `a` on an annotated block is equivalent to `e`.
-func (m Model) StartAnnotation(enclosing bool) (tea.Model, tea.Cmd) {
+// StartBlockAnnotation opens a popup that will write a whole-block
+// annotation (LineOffset = 0) on the cursor block. Bound to `A`.
+func (m Model) StartBlockAnnotation() (tea.Model, tea.Cmd) {
 	if m.Doc == nil || m.CursorBlockID == "" {
 		return m, nil
 	}
 	target := m.CursorBlockID
-	if enclosing {
-		if id := EnclosingEnv(m.Doc, target); id != "" {
-			target = id
-		}
-	}
-	initial, editing := findAnnotation(m.Sidecar, target)
-	p, cmd := newAnnotationPopup(target, initial, editing)
+	initial, editing := findAnnotationFor(m.Sidecar, target, 0)
+	p, cmd := newAnnotationPopup(target, initial, editing, 0)
 	m.Popup = p
 	m.CountBuf = ""
 	m.PendingG = false
 	return m, cmd
 }
 
-// EditAnnotation opens the popup only when the current cursor block has an
-// existing annotation. Without one, the key is a silent no-op.
-func (m Model) EditAnnotation() (tea.Model, tea.Cmd) {
-	if _, ok := findAnnotation(m.Sidecar, m.CursorBlockID); !ok {
+// StartLineAnnotation opens a popup pinned to the current SourceLineCursor
+// inside the cursor block. Bound to `a`. Falls back to a block annotation
+// if the block has no source range to anchor against.
+func (m Model) StartLineAnnotation() (tea.Model, tea.Cmd) {
+	if m.Doc == nil || m.CursorBlockID == "" {
 		return m, nil
 	}
-	return m.StartAnnotation(false)
+	target := m.CursorBlockID
+	offset := clampLineCursor(m.Doc, target, m.SourceLineCursor)
+	if blockLineCount(m.Doc, target) == 0 {
+		offset = 0
+	}
+	initial, editing := findAnnotationFor(m.Sidecar, target, offset)
+	p, cmd := newAnnotationPopup(target, initial, editing, offset)
+	m.Popup = p
+	m.CountBuf = ""
+	m.PendingG = false
+	return m, cmd
+}
+
+// EditAnnotation re-opens the most relevant existing annotation on the
+// cursor block: prefer one matching the current SourceLineCursor; fall back
+// to any block-level annotation; otherwise silent no-op.
+func (m Model) EditAnnotation() (tea.Model, tea.Cmd) {
+	target := m.CursorBlockID
+	if target == "" {
+		return m, nil
+	}
+	offset := clampLineCursor(m.Doc, target, m.SourceLineCursor)
+	if _, ok := findAnnotationFor(m.Sidecar, target, offset); ok {
+		return m.StartLineAnnotation()
+	}
+	if _, ok := findAnnotationFor(m.Sidecar, target, 0); ok {
+		return m.StartBlockAnnotation()
+	}
+	return m, nil
 }
 
 // SubmitAnnotation persists the popup's textarea contents on the target block
@@ -107,13 +138,25 @@ func (m Model) SubmitAnnotation() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	a := persist.Annotation{
-		BlockID:     b.ID,
-		Breadcrumb:  AnnotationBreadcrumb(m.Doc, b.ID),
-		File:        fileOrDoc(m.Doc, b),
-		StartLine:   b.StartLine,
-		EndLine:     b.EndLine,
-		SourceQuote: b.Source,
-		Note:        text,
+		BlockID:    b.ID,
+		Breadcrumb: AnnotationBreadcrumb(m.Doc, b.ID),
+		File:       fileOrDoc(m.Doc, b),
+		LineOffset: p.LineOffset,
+		Note:       text,
+	}
+	if p.LineOffset > 0 && b.StartLine > 0 {
+		ln := b.StartLine + p.LineOffset - 1
+		if ln > b.EndLine {
+			ln = b.EndLine
+		}
+		a.StartLine = ln
+		a.EndLine = ln
+		a.SourceQuote = nthBlockLine(m.Doc, b, p.LineOffset)
+	} else {
+		a.LineOffset = 0
+		a.StartLine = b.StartLine
+		a.EndLine = b.EndLine
+		a.SourceQuote = b.Source
 	}
 	m.Sidecar.Annotations = upsertAnnotation(m.Sidecar.Annotations, a)
 	if err := m.saveSidecar(); err != nil {
@@ -186,14 +229,26 @@ func positionOf(doc *parser.Document, id string) int {
 	return -1
 }
 
-// BeginDelete puts the UI into delete-confirmation state for the cursor
-// block's annotation. Silently no-ops when no annotation exists.
+// BeginDelete puts the UI into delete-confirmation state. Targets the line-
+// pinned annotation matching the SourceLineCursor when one exists; otherwise
+// any block-level annotation on the cursor block. Silent no-op if neither
+// is present.
 func (m Model) BeginDelete() Model {
-	if _, ok := findAnnotation(m.Sidecar, m.CursorBlockID); !ok {
+	target := m.CursorBlockID
+	if target == "" {
 		return m
 	}
-	m.Pending = &PendingDelete{TargetID: m.CursorBlockID}
-	m.Status = ""
+	offset := clampLineCursor(m.Doc, target, m.SourceLineCursor)
+	if _, ok := findAnnotationFor(m.Sidecar, target, offset); ok {
+		m.Pending = &PendingDelete{TargetID: target, LineOffset: offset}
+		m.Status = ""
+		return m
+	}
+	if _, ok := findAnnotationFor(m.Sidecar, target, 0); ok {
+		m.Pending = &PendingDelete{TargetID: target, LineOffset: 0}
+		m.Status = ""
+		return m
+	}
 	return m
 }
 
@@ -204,11 +259,12 @@ func (m Model) ConfirmDelete(yes bool) Model {
 		return m
 	}
 	target := m.Pending.TargetID
+	offset := m.Pending.LineOffset
 	m.Pending = nil
 	if !yes {
 		return m
 	}
-	m.Sidecar.Annotations = removeAnnotation(m.Sidecar.Annotations, target)
+	m.Sidecar.Annotations = removeAnnotation(m.Sidecar.Annotations, target, offset)
 	if err := m.saveSidecar(); err != nil {
 		m.Status = "save failed: " + err.Error()
 	}
@@ -216,7 +272,8 @@ func (m Model) ConfirmDelete(yes bool) Model {
 }
 
 // findAnnotation returns the note text for the first annotation matching
-// id, and a boolean indicating whether one existed.
+// id (any LineOffset), and a boolean indicating whether one existed.
+// Retained as a thin wrapper for callers that don't care about line anchors.
 func findAnnotation(side *persist.Sidecar, id string) (string, bool) {
 	if side == nil {
 		return "", false
@@ -229,11 +286,29 @@ func findAnnotation(side *persist.Sidecar, id string) (string, bool) {
 	return "", false
 }
 
-// upsertAnnotation replaces the annotation on a.BlockID when present, else
-// appends. Order of pre-existing annotations is preserved.
+// findAnnotationFor returns the note matching exactly (blockID, lineOffset).
+// Used by the popup-open path so a `a` on line 3 reuses the existing line-3
+// note if any, while `A` reuses an existing block-level note. Block + line
+// notes coexist on the same block.
+func findAnnotationFor(side *persist.Sidecar, id string, lineOffset int) (string, bool) {
+	if side == nil {
+		return "", false
+	}
+	for _, a := range side.Annotations {
+		if a.BlockID == id && a.LineOffset == lineOffset {
+			return a.Note, true
+		}
+	}
+	return "", false
+}
+
+// upsertAnnotation replaces the annotation matching (BlockID, LineOffset)
+// when present, else appends. Treating the line offset as part of the key
+// lets a block carry one block-level note plus N line-pinned notes side by
+// side without one overwriting another.
 func upsertAnnotation(xs []persist.Annotation, a persist.Annotation) []persist.Annotation {
 	for i, x := range xs {
-		if x.BlockID == a.BlockID {
+		if x.BlockID == a.BlockID && x.LineOffset == a.LineOffset {
 			xs[i] = a
 			return xs
 		}
@@ -241,17 +316,39 @@ func upsertAnnotation(xs []persist.Annotation, a persist.Annotation) []persist.A
 	return append(xs, a)
 }
 
-// removeAnnotation drops the annotation for id, preserving the order of the
-// remaining entries.
-func removeAnnotation(xs []persist.Annotation, id string) []persist.Annotation {
+// removeAnnotation drops the annotation matching (id, lineOffset). Pass
+// lineOffset=0 to remove a block-level annotation; pass the offset to
+// remove a specific line-pinned one.
+func removeAnnotation(xs []persist.Annotation, id string, lineOffset int) []persist.Annotation {
 	out := make([]persist.Annotation, 0, len(xs))
 	for _, x := range xs {
-		if x.BlockID == id {
+		if x.BlockID == id && x.LineOffset == lineOffset {
 			continue
 		}
 		out = append(out, x)
 	}
 	return out
+}
+
+// nthBlockLine returns the n-th source line (1-based) of block b, or "" when
+// out of range. Used to populate the SourceQuote of a line-pinned
+// annotation so the sidecar shows the right one-line snippet.
+func nthBlockLine(doc *parser.Document, b *parser.Block, n int) string {
+	if doc == nil || b == nil || n < 1 {
+		return ""
+	}
+	if b.StartLine == 0 || b.EndLine == 0 {
+		return ""
+	}
+	target := b.StartLine + n - 1
+	if target > b.EndLine {
+		return ""
+	}
+	lines := strings.Split(string(doc.Source), "\n")
+	if target-1 >= len(lines) {
+		return ""
+	}
+	return lines[target-1]
 }
 
 // toggleReviewedList adds id when absent, removes it when present. The

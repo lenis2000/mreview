@@ -28,9 +28,12 @@ type Keymap struct {
 	JumpBack    []string // ctrl+o
 	JumpForward []string // ctrl+i, tab
 
-	// Annotation (Task 12).
-	Annotate         []string // a — current block
-	AnnotateEnv      []string // A — enclosing env
+	// Annotation. `a` is now a *line* annotation pinned to the source line
+	// cursor; `A` is a block annotation on the current cursor block. The old
+	// "annotate enclosing env" feature folded into `A` since the cursor block
+	// is already what the reviewer means most of the time.
+	Annotate         []string // a — line annotation at SourceLineCursor
+	AnnotateEnv      []string // A — block annotation
 	EditAnnotation   []string // e — edit existing annotation
 	DeleteAnnotation []string // d — delete with [y/N] confirm
 	ToggleReviewed   []string // space — toggle reviewed state
@@ -46,6 +49,12 @@ type Keymap struct {
 	// Wrap (w) toggles soft-wrap for the source pane.
 	ToggleLayout []string
 	ToggleWrap   []string
+
+	// Source-line cursor — moves the per-block 1-based line marker that the
+	// `a` (line annotation) key operates on. Independent of pane focus so
+	// keyboard users can drive line nav without leaving the outline pane.
+	SourceLineUp   []string // [ — previous line within block
+	SourceLineDown []string // ] — next line within block
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -78,6 +87,9 @@ func DefaultKeymap() Keymap {
 
 		ToggleLayout: []string{"\\"},
 		ToggleWrap:   []string{"w"},
+
+		SourceLineUp:   []string{"["},
+		SourceLineDown: []string{"]"},
 	}
 }
 

@@ -10,11 +10,14 @@ import (
 )
 
 // AnnotListItem is one row in the `@` popup: a block ID, a breadcrumb, and
-// the first line of the annotation note. Display format:
-// "<breadcrumb> — <first-line>".
+// the first line of the annotation note. LineOffset carries the per-block
+// line anchor (0 = block-level) so e/d/Enter can target the specific
+// annotation the user highlighted, not whichever one shares the block ID.
+// Display format: "<breadcrumb> — <first-line>".
 type AnnotListItem struct {
 	BlockID    string
 	Breadcrumb string
+	LineOffset int
 	FirstLine  string
 }
 
@@ -54,6 +57,7 @@ func BuildAnnotListItems(doc *parser.Document, side *persist.Sidecar) []AnnotLis
 		item := AnnotListItem{
 			BlockID:    a.BlockID,
 			Breadcrumb: a.Breadcrumb,
+			LineOffset: a.LineOffset,
 			FirstLine:  firstNoteLine(a.Note),
 		}
 		if doc != nil && doc.ByID[a.BlockID] != nil {
@@ -115,13 +119,24 @@ func (p *AnnotListPopup) Move(delta int) {
 
 // Selected returns the BlockID of the highlighted row, or "" when empty.
 func (p *AnnotListPopup) Selected() string {
-	if len(p.Items) == 0 {
+	it, ok := p.SelectedItem()
+	if !ok {
 		return ""
+	}
+	return it.BlockID
+}
+
+// SelectedItem returns the full item under the cursor, including its
+// LineOffset so callers can reopen the exact annotation (not just any
+// annotation on the same block).
+func (p *AnnotListPopup) SelectedItem() (AnnotListItem, bool) {
+	if len(p.Items) == 0 {
+		return AnnotListItem{}, false
 	}
 	if p.Cursor < 0 || p.Cursor >= len(p.Items) {
-		return ""
+		return AnnotListItem{}, false
 	}
-	return p.Items[p.Cursor].BlockID
+	return p.Items[p.Cursor], true
 }
 
 // OpenAnnotList opens the `@` popup. Posts a status when the sidecar has no
@@ -159,42 +174,52 @@ func (m Model) jumpFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// editFromAnnotList closes the popup and opens the annotation edit textarea
-// for the selected block.
+// editFromAnnotList closes the popup and opens the edit popup on the exact
+// annotation that was highlighted — block-level or line-pinned according to
+// its LineOffset.
 func (m Model) editFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
-	target := p.Selected()
+	it, ok := p.SelectedItem()
 	m.Popup = nil
-	if target == "" {
+	if !ok {
 		return m, nil
 	}
-	if m.Doc == nil || m.Doc.ByID[target] == nil {
+	if m.Doc == nil || m.Doc.ByID[it.BlockID] == nil {
 		m.Status = "@: annotation's block no longer in document"
 		return m, nil
 	}
-	if target != m.CursorBlockID {
+	if it.BlockID != m.CursorBlockID {
 		m.JumpStack.Push(m.CursorBlockID)
-		m.CursorBlockID = target
+		m.CursorBlockID = it.BlockID
+		m.SourceLineCursor = 1
 	}
-	return m.StartAnnotation(false)
+	if it.LineOffset > 0 {
+		m.SourceLineCursor = clampLineCursor(m.Doc, it.BlockID, it.LineOffset)
+		return m.StartLineAnnotation()
+	}
+	return m.StartBlockAnnotation()
 }
 
 // deleteFromAnnotList closes the popup and begins the [y/N] delete-confirm
-// flow for the selected annotation's block. Honours the existing cursor-
-// based delete path (target = cursor block) so the confirmation prompt
-// wording stays consistent.
+// flow for the highlighted annotation, preserving its line anchor so a
+// line-pinned note doesn't accidentally delete a block-level note on the
+// same block (or vice versa).
 func (m Model) deleteFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
-	target := p.Selected()
+	it, ok := p.SelectedItem()
 	m.Popup = nil
-	if target == "" {
+	if !ok {
 		return m, nil
 	}
-	if m.Doc == nil || m.Doc.ByID[target] == nil {
+	if m.Doc == nil || m.Doc.ByID[it.BlockID] == nil {
 		m.Status = "@: annotation's block no longer in document"
 		return m, nil
 	}
-	if target != m.CursorBlockID {
+	if it.BlockID != m.CursorBlockID {
 		m.JumpStack.Push(m.CursorBlockID)
-		m.CursorBlockID = target
+		m.CursorBlockID = it.BlockID
+		m.SourceLineCursor = 1
+	}
+	if it.LineOffset > 0 {
+		m.SourceLineCursor = clampLineCursor(m.Doc, it.BlockID, it.LineOffset)
 	}
 	return m.BeginDelete(), nil
 }

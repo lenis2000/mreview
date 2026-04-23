@@ -29,6 +29,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			next, cmd = m.updateKey(msg)
 		}
+	case tea.MouseMsg:
+		next = m.handleMouse(msg)
 	default:
 		return m, nil
 	}
@@ -39,6 +41,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	geometryChanged := nm.Width != beforeW || nm.Height != beforeH
 	cursorChanged := nm.CursorBlockID != before
+	if cursorChanged {
+		// Block changed — re-anchor the source line cursor at the top of the
+		// new block so it always points at a real line of the visible source.
+		nm.SourceLineCursor = 1
+	}
 	if (cursorChanged || geometryChanged) && !nm.quitting {
 		if tick := nm.schedulePDFRender(); tick != nil {
 			if cmd == nil {
@@ -124,6 +131,16 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
+	if matches(key, m.Keymap.SourceLineUp) {
+		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor-1)
+		m.CountBuf = ""
+		return m, nil
+	}
+	if matches(key, m.Keymap.SourceLineDown) {
+		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor+1)
+		m.CountBuf = ""
+		return m, nil
+	}
 
 	// Motion-count digit buffering. Bare "0" with an empty buffer resets
 	// (cancels any pending count); other digits accumulate.
@@ -148,9 +165,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case matches(key, m.Keymap.OpenAnnotList):
 		return m.OpenAnnotList()
 	case matches(key, m.Keymap.Annotate):
-		return m.StartAnnotation(false)
+		return m.StartLineAnnotation()
 	case matches(key, m.Keymap.AnnotateEnv):
-		return m.StartAnnotation(true)
+		return m.StartBlockAnnotation()
 	case matches(key, m.Keymap.EditAnnotation):
 		return m.EditAnnotation()
 	case matches(key, m.Keymap.DeleteAnnotation):
@@ -181,6 +198,41 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// from a clean slate.
 	m.CountBuf = ""
 	return m, nil
+}
+
+// blockLineCount returns the number of lines spanned by the cursor block,
+// or 0 when the block has no source range (e.g. the synthetic root). Used
+// by clampLineCursor and the line-annotation handler.
+func blockLineCount(doc *parser.Document, blockID string) int {
+	if doc == nil || blockID == "" {
+		return 0
+	}
+	b := doc.ByID[blockID]
+	if b == nil || b.StartLine == 0 || b.EndLine == 0 {
+		return 0
+	}
+	n := b.EndLine - b.StartLine + 1
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// clampLineCursor keeps SourceLineCursor inside the current block's range
+// [1, blockLineCount]. A zero block count clamps to 1 (the no-op default
+// the annotation key reads).
+func clampLineCursor(doc *parser.Document, blockID string, want int) int {
+	n := blockLineCount(doc, blockID)
+	if n <= 0 {
+		return 1
+	}
+	if want < 1 {
+		return 1
+	}
+	if want > n {
+		return n
+	}
+	return want
 }
 
 // motionFn is the shared signature of NextSibling / PrevSibling / NextInner

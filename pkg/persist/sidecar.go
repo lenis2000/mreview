@@ -24,12 +24,23 @@ import (
 )
 
 // Annotation is a single user note attached to a parser block.
+//
+// LineOffset distinguishes the two anchoring modes:
+//   - 0 (the default) — whole-block annotation; StartLine/EndLine span the
+//     block's range.
+//   - 1..N — line-pinned annotation anchored to the N-th line within the
+//     block (1-based); StartLine == EndLine == block.StartLine+LineOffset-1.
+//
+// Line-pinned annotations survive source edits as long as the block still has
+// at least LineOffset lines; otherwise the remap step falls back to a
+// block-level annotation on the same block.
 type Annotation struct {
 	BlockID     string
 	Breadcrumb  string
 	File        string
 	StartLine   int
 	EndLine     int
+	LineOffset  int
 	SourceQuote string
 	Note        string
 }
@@ -73,7 +84,7 @@ type frontmatter struct {
 // The separator between the breadcrumb and the block-ID is an em-dash (U+2014)
 // surrounded by ASCII spaces — note that the em-dash is multi-byte so we use
 // a character class in the regex.
-var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]*):L(\d+)-L(\d+)\)\s*$`)
+var headingRe = regexp.MustCompile(`^## (.+?) \x{2014} ` + "`" + `([^` + "`" + `]+)` + "`" + ` \(([^()]*):L(\d+)-L(\d+)\)(?: \[line (\d+)\])?\s*$`)
 
 // detachedEscapeRe matches any backslash-escaped variant of the DetachedMarker
 // line (zero or more leading backslashes). It is used both when writing notes
@@ -179,8 +190,12 @@ func Marshal(s *Sidecar) ([]byte, error) {
 // passes false so the LLM receives the user's original text verbatim.
 func formatAnnotation(a Annotation, escape bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## %s — `%s` (%s:L%d-L%d)\n\n",
+	fmt.Fprintf(&b, "## %s — `%s` (%s:L%d-L%d)",
 		a.Breadcrumb, a.BlockID, a.File, a.StartLine, a.EndLine)
+	if a.LineOffset > 0 {
+		fmt.Fprintf(&b, " [line %d]", a.LineOffset)
+	}
+	b.WriteString("\n\n")
 	for _, line := range truncateQuote(a.SourceQuote) {
 		if line == "" {
 			b.WriteString(">\n")
@@ -315,6 +330,9 @@ func parse(data []byte) (*Sidecar, error) {
 		}
 		a.StartLine, _ = strconv.Atoi(m[4])
 		a.EndLine, _ = strconv.Atoi(m[5])
+		if m[6] != "" {
+			a.LineOffset, _ = strconv.Atoi(m[6])
+		}
 		idx++
 
 		// Skip optional blank after heading.

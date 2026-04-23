@@ -11,11 +11,12 @@ import (
 // RenderSource returns the rendered body of the source pane for the current
 // cursor block. It pulls a window of lines from the full document so the
 // cursor block has visible context above and below (dimmed); the block
-// itself is colorised normally.
+// itself is colorised normally and the row addressed by lineCursor (1-based
+// offset within the block) is highlighted as the line cursor.
 //
 // width is the inner pane width; height is the inner pane height. softWrap
 // controls whether long lines wrap to additional rows or get truncated.
-func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool) string {
+func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int) string {
 	if doc == nil || cursor == "" {
 		return styles.OutlineMuted.Render("(no block selected)")
 	}
@@ -63,6 +64,14 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 		bodyWidth = 1
 	}
 
+	cursorLine := 0
+	if lineCursor > 0 {
+		cursorLine = b.StartLine + lineCursor - 1
+		if cursorLine > b.EndLine {
+			cursorLine = b.EndLine
+		}
+	}
+
 	var out strings.Builder
 	rows := 0
 	for ln := startLine; ln <= endLine && rows < height; ln++ {
@@ -71,6 +80,7 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 		}
 		raw := allLines[ln-1]
 		inBlock := ln >= b.StartLine && ln <= b.EndLine
+		isCursor := ln == cursorLine
 		segments := wrapOrClip(raw, bodyWidth, softWrap, inBlock, styles)
 		for i, seg := range segments {
 			if rows >= height {
@@ -82,9 +92,14 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 			} else {
 				gutter = strings.Repeat(" ", gutterW)
 			}
-			out.WriteString(styles.SourceGutter.Render(gutter))
-			out.WriteByte(' ')
-			out.WriteString(seg)
+			gutterStyled := styles.SourceGutter.Render(gutter)
+			rowText := gutterStyled + " " + seg
+			if isCursor {
+				// Re-render the row with the outline-cursor style so the line
+				// the next `a` will annotate stands out at a glance.
+				rowText = styles.OutlineCursor.Width(width).Render(stripANSI(rowText))
+			}
+			out.WriteString(rowText)
 			rows++
 			if rows < height && (i < len(segments)-1 || ln < endLine) {
 				out.WriteByte('\n')

@@ -296,11 +296,10 @@ func TestEnclosingEnv_OnTheoremReturnsSelf(t *testing.T) {
 	assert.Equal(t, thm, EnclosingEnv(doc, thm))
 }
 
-// --- `A` hits enclosing env --------------------------------------------------
+// --- `A` is a block annotation on the cursor block ---------------------------
 
-func TestAnnotate_CapitalA_TargetsEnclosingEnv(t *testing.T) {
+func TestAnnotate_CapitalA_TargetsCursorBlock(t *testing.T) {
 	m, _ := newTestModel(t)
-	// move cursor to a proof step
 	step := firstBlockOfKind(m.Doc, parser.KindProofStep)
 	require.NotEmpty(t, step)
 	m.CursorBlockID = step
@@ -309,8 +308,8 @@ func TestAnnotate_CapitalA_TargetsEnclosingEnv(t *testing.T) {
 	m = res.(Model)
 	p, ok := m.Popup.(*AnnotationPopup)
 	require.True(t, ok)
-	proof := firstBlockOfKind(m.Doc, parser.KindProof)
-	assert.Equal(t, proof, p.TargetID, "A on proof-step should target enclosing proof")
+	assert.Equal(t, step, p.TargetID, "A targets the cursor block (no env walk)")
+	assert.Equal(t, 0, p.LineOffset, "A is block-level: LineOffset 0")
 }
 
 // --- Save path uses persist.Save when no SaveFn ------------------------------

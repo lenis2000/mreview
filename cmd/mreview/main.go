@@ -44,7 +44,11 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 // real TTY). It returns the final model (so the caller can read the sidecar
 // state back out) plus any runtime error.
 var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
-	prog := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(stdout))
+	prog := tea.NewProgram(model,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+		tea.WithOutput(stdout),
+	)
 	return prog.Run()
 }
 

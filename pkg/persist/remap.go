@@ -34,8 +34,24 @@ func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
 			mapped := a
 			mapped.BlockID = b.ID
 			mapped.File = blockFile(b, doc)
-			mapped.StartLine = b.StartLine
-			mapped.EndLine = b.EndLine
+			// Line-pinned annotations retain their offset when the new block
+			// still has enough lines; otherwise they fall back to a whole-
+			// block annotation (LineOffset 0) on the same block so the
+			// reviewer's note is never silently detached.
+			if a.LineOffset > 0 {
+				blockLines := b.EndLine - b.StartLine + 1
+				if blockLines >= a.LineOffset && b.StartLine > 0 {
+					mapped.StartLine = b.StartLine + a.LineOffset - 1
+					mapped.EndLine = mapped.StartLine
+				} else {
+					mapped.LineOffset = 0
+					mapped.StartLine = b.StartLine
+					mapped.EndLine = b.EndLine
+				}
+			} else {
+				mapped.StartLine = b.StartLine
+				mapped.EndLine = b.EndLine
+			}
 			out.Annotations = append(out.Annotations, mapped)
 			continue
 		}
