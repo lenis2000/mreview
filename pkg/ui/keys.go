@@ -34,7 +34,7 @@ type Keymap struct {
 	// is already what the reviewer means most of the time.
 	Annotate         []string // a — line annotation at SourceLineCursor
 	AnnotateEnv      []string // A — block annotation
-	EditAnnotation   []string // e — edit existing annotation
+	EditAnnotation   []string // ctrl+a — edit existing annotation at cursor
 	DeleteAnnotation []string // d — delete with [y/N] confirm
 	ToggleReviewed   []string // space — toggle reviewed state
 
@@ -73,8 +73,8 @@ type Keymap struct {
 	// Edit-in-place. E suspends mreview and runs $EDITOR on paper.tex
 	// positioned at the cursor's absolute source line; on return the
 	// reload pipeline re-parses, rebuilds if necessary, and remaps
-	// annotations. ctrl+e is the lightweight inline-edit mode for
-	// one-line wording fixes.
+	// annotations. e is the lightweight inline-edit mode for one-line
+	// wording fixes.
 	ExternalEdit []string
 	InlineEdit   []string
 
@@ -107,7 +107,7 @@ func DefaultKeymap() Keymap {
 
 		Annotate:         []string{"a"},
 		AnnotateEnv:      []string{"A"},
-		EditAnnotation:   []string{"e"},
+		EditAnnotation:   []string{"ctrl+a"},
 		DeleteAnnotation: []string{"d"},
 		ToggleReviewed:   []string{" ", "space"},
 
@@ -131,7 +131,7 @@ func DefaultKeymap() Keymap {
 		SourceLineDown: []string{"]"},
 
 		ExternalEdit: []string{"E"},
-		InlineEdit:   []string{"ctrl+e"},
+		InlineEdit:   []string{"e"},
 		OCRReport:    []string{"B"},
 
 		FocusOutline: []string{"h"},

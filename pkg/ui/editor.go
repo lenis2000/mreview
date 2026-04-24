@@ -213,7 +213,7 @@ func absoluteCursorLine(m Model) (int, bool) {
 
 // --- Inline single-line edit ------------------------------------------------
 
-// LineEditPopup hosts the inline single-line editor (ctrl+e). Scope is
+// LineEditPopup hosts the inline single-line editor (e). Scope is
 // deliberately one source line so the workflow stays as "minor wording
 // fix without leaving mreview" — structural edits still belong in
 // $EDITOR. AbsoluteLine is the 1-based line we're rewriting on disk;
@@ -235,7 +235,7 @@ func (m Model) StartLineEdit() (tea.Model, tea.Cmd) {
 	}
 	line, ok := absoluteCursorLine(m)
 	if !ok {
-		m.Status = "ctrl+e: cursor has no resolvable source line"
+		m.Status = "e: cursor has no resolvable source line"
 		return m, nil
 	}
 	lines := strings.Split(string(m.Doc.Source), "\n")

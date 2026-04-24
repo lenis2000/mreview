@@ -133,7 +133,7 @@ func TestAnnotation_EditReplaces(t *testing.T) {
 	// first annotation
 	m.Sidecar.Annotations = []persist.Annotation{{BlockID: m.CursorBlockID, Note: "original"}}
 
-	res, _ := m.Update(rkey('e'))
+	res, _ := m.EditAnnotation()
 	m = res.(Model)
 	p := m.Popup.(*AnnotationPopup)
 	assert.Equal(t, "original", p.TA.Value(), "edit should pre-fill existing note")
@@ -150,7 +150,7 @@ func TestAnnotation_EditReplaces(t *testing.T) {
 
 func TestAnnotation_EditWithoutExistingIsNoop(t *testing.T) {
 	m, _ := newTestModel(t)
-	res, cmd := m.Update(rkey('e'))
+	res, cmd := m.EditAnnotation()
 	assert.Nil(t, cmd)
 	assert.Nil(t, res.(Model).Popup)
 }

@@ -598,7 +598,7 @@ func TestEditFallback_RefusesWhenCursorHasNoLine(t *testing.T) {
 	nm, cmd := m.StartLineEdit()
 	assert.Nil(t, cmd)
 	updated := nm.(Model)
-	assert.Nil(t, updated.Popup, "ctrl+e must not open a popup when cursor has no line")
+	assert.Nil(t, updated.Popup, "e must not open a popup when cursor has no line")
 	assert.Contains(t, updated.Status, "no resolvable source line")
 
 	nm2, cmd2 := m.editInExternalEditor()
