@@ -327,7 +327,11 @@ func RenderOutline(rows []OutlineRow, cursor string, width, height int, focused 
 			if !focused {
 				style = styles.OutlineActive
 			}
-			line = style.Width(width).Render(stripRight(line))
+			// Strip inner ANSI so the highlight bg paints the whole row —
+			// otherwise the per-token bg (OutlineIcon/Marker bg=vimBg)
+			// punches black holes through the cursor row and the selection
+			// only shows up on the unstyled text between them.
+			line = style.Width(width).Render(stripANSI(stripRight(line)))
 		}
 		b.WriteString(line)
 		if i < end-1 {

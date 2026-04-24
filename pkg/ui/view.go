@@ -261,14 +261,18 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 	} else {
 		hint = "[INSERT · Enter submit · Esc → normal · Ctrl-C cancel]"
 	}
-	w := innerW
-	if w > 2 {
-		w -= 2
+	// Reserve columns for the "NNNN " gutter prefix (5 visible cells) plus
+	// one for the textinput's trailing cursor cell — without this budget
+	// the TI renders wider than the pane and lipgloss wraps the line,
+	// making the content look like it's being eaten onto a second row.
+	prefix := styles.SourceGutter.Render(fmt.Sprintf("%4d ", p.AbsoluteLine))
+	w := innerW - 6
+	if w < 10 {
+		w = 10
 	}
 	if p.TI.Width != w {
 		p.TI.Width = w
 	}
-	prefix := styles.SourceGutter.Render(fmt.Sprintf("%4d ", p.AbsoluteLine))
 	body := prefix + p.TI.View()
 	_ = innerH
 	return body + "\n\n" + styles.OutlineMuted.Render(hint)

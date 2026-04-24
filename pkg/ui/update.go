@@ -35,7 +35,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	before := m.CursorBlockID
-	beforeLine := m.SourceLineCursor
 	beforeW, beforeH := m.Width, m.Height
 	var next tea.Model
 	var cmd tea.Cmd
@@ -73,14 +72,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	geometryChanged := nm.Width != beforeW || nm.Height != beforeH
 	cursorChanged := nm.CursorBlockID != before
-	if cursorChanged && nm.SourceLineCursor == beforeLine {
-		// Block changed but the handler didn't set a line explicitly —
-		// re-anchor at the top of the new block so it always points at a
-		// real line of the visible source. The equality guard lets handlers
-		// like scrollSource (which crosses block boundaries at a specific
-		// absolute line) keep the line offset they just computed.
-		nm.SourceLineCursor = 1
-	}
 	if (cursorChanged || geometryChanged) && !nm.quitting {
 		if tick := nm.schedulePDFRender(); tick != nil {
 			if cmd == nil {
@@ -164,18 +155,36 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.schedulePDFRender()
 	}
+	// h / l step focus one pane left / right through outline → source →
+	// PDF. Matches the visual left-to-right layout so the muscle memory
+	// is "point at the pane you want".
 	if matches(key, m.Keymap.FocusOutline) {
-		m.Focus = PaneOutline
+		switch m.Focus {
+		case PanePDF:
+			m.Focus = PaneSource
+		default:
+			m.Focus = PaneOutline
+		}
 		m.CountBuf = ""
 		return m, nil
 	}
 	if matches(key, m.Keymap.FocusSource) {
-		m.Focus = PaneSource
+		switch m.Focus {
+		case PaneOutline:
+			m.Focus = PaneSource
+		default:
+			m.Focus = PanePDF
+		}
 		m.CountBuf = ""
 		return m, nil
 	}
 
-	if m.PDFManual {
+	// Focus-aware directional routing in V mode: j/k/up/down follow the
+	// focused pane — PDF nav when the PDF pane is focused, source scroll
+	// when the source pane is focused. Non-directional V-mode keys
+	// (n/p/+/-/2/0/i/space/,/.) still act on the PDF regardless of focus.
+	inVModeDirectional := m.PDFManual && (key == "j" || key == "k" || key == "up" || key == "down")
+	if m.PDFManual && !(inVModeDirectional && m.Focus == PaneSource) {
 		switch {
 		case matches(key, m.Keymap.PDFNextPage):
 			if m.PDF != nil {
@@ -448,8 +457,9 @@ func (m Model) applyMotion(fn motionFn) Model {
 	n := parseCount(m.CountBuf)
 	m.CountBuf = ""
 	id := fn(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, n)
-	if id != "" {
+	if id != "" && id != m.CursorBlockID {
 		m.CursorBlockID = id
+		m.SourceLineCursor = 1
 	}
 	return m
 }
@@ -463,6 +473,7 @@ func (m Model) gotoFirst() Model {
 	}
 	m.JumpStack.Push(m.CursorBlockID)
 	m.CursorBlockID = id
+	m.SourceLineCursor = 1
 	return m
 }
 
@@ -475,6 +486,7 @@ func (m Model) gotoLast() Model {
 	}
 	m.JumpStack.Push(m.CursorBlockID)
 	m.CursorBlockID = id
+	m.SourceLineCursor = 1
 	return m
 }
 
@@ -501,6 +513,7 @@ func (m Model) jumpToRef() Model {
 	}
 	m.JumpStack.Push(m.CursorBlockID)
 	m.CursorBlockID = dst.ID
+	m.SourceLineCursor = 1
 	m.Status = ""
 	return m
 }
@@ -537,7 +550,10 @@ func (m Model) jumpBack() (tea.Model, tea.Cmd) {
 		m.Status = "ctrl-o: jump stack empty"
 		return m, nil
 	}
-	m.CursorBlockID = target
+	if target != m.CursorBlockID {
+		m.CursorBlockID = target
+		m.SourceLineCursor = 1
+	}
 	m.Status = ""
 	return m, nil
 }
@@ -550,7 +566,10 @@ func (m Model) jumpForward() (tea.Model, tea.Cmd) {
 		m.Status = "ctrl-i: no forward jump"
 		return m, nil
 	}
-	m.CursorBlockID = target
+	if target != m.CursorBlockID {
+		m.CursorBlockID = target
+		m.SourceLineCursor = 1
+	}
 	m.Status = ""
 	return m, nil
 }
@@ -587,6 +606,7 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if target != "" && target != m.CursorBlockID {
 				m.JumpStack.Push(m.CursorBlockID)
 				m.CursorBlockID = target
+				m.SourceLineCursor = 1
 			}
 			return m, nil
 		}

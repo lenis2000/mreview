@@ -83,9 +83,10 @@ type Keymap struct {
 	// to .mreview-ocr-reports/ for later investigation.
 	OCRReport []string
 
-	// Pane focus — explicit keyboard alternatives to clicking into a pane.
-	FocusOutline []string // h — focus the outline pane
-	FocusSource  []string // l — focus the source pane
+	// Pane focus — step left / right through the visual pane order
+	// (outline → source → PDF). Keyboard alternative to clicking a pane.
+	FocusOutline []string // h — focus one pane left
+	FocusSource  []string // l — focus one pane right
 }
 
 // DefaultKeymap returns the built-in bindings.

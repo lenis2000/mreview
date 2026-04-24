@@ -97,42 +97,46 @@ func TestCropFitted_ProducesDecodablePNGAtAdaptiveDPI(t *testing.T) {
 	assert.Greater(t, img.Bounds().Dy(), 0)
 }
 
-func TestCropFitted_AdaptiveVpadFillsTallPane(t *testing.T) {
+func TestCropFitted_TightVpadIndependentOfPaneAspect(t *testing.T) {
 	d := openFixture(t)
 	defer d.Close()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
-	// Tiny region, tall pane — vpad should grow up to the cap so the
-	// pane fills cleanly instead of leaving big horizontal bars.
 	r := synctex.Region{
 		Page: 1,
 		X:    float64(bounds.Dx()) / 4,
 		Y:    float64(bounds.Dy()) / 2,
-		W:    float64(bounds.Dx()) / 8,
-		H:    20, // ~one line of body text
+		W:    float64(bounds.Dx()) / 4,
+		H:    15, // ~one line of body text
 	}
-	tall, err := CropFitted(d, r, FitOptions{
-		PaneWidthPx:  300,
-		PaneHeightPx: 1200, // tall pane
-	})
+	// Tall pane and short pane should produce the same (tight) crop
+	// height because vpad no longer grows to match pane aspect. This
+	// trades "pane fills cleanly" for "crop actually shows the block"
+	// — adaptive growth was inflating crops to near-page-size on tiny
+	// regions in two-column papers (OCR bug report for scope-2).
+	tall, err := CropFitted(d, r, FitOptions{PaneWidthPx: 300, PaneHeightPx: 1800})
 	require.NoError(t, err)
-	short, err := CropFitted(d, r, FitOptions{
-		PaneWidthPx:  300,
-		PaneHeightPx: 100, // short pane
-	})
+	short, err := CropFitted(d, r, FitOptions{PaneWidthPx: 300, PaneHeightPx: 200})
 	require.NoError(t, err)
-
-	// Decode and compare aspect ratios — the tall-pane crop should
-	// itself be taller (vpad grew to match pane shape).
 	tallImg, err := png.Decode(bytes.NewReader(tall))
 	require.NoError(t, err)
 	shortImg, err := png.Decode(bytes.NewReader(short))
 	require.NoError(t, err)
-	tallAspect := float64(tallImg.Bounds().Dy()) / float64(tallImg.Bounds().Dx())
-	shortAspect := float64(shortImg.Bounds().Dy()) / float64(shortImg.Bounds().Dx())
-	assert.Greater(t, tallAspect, shortAspect,
-		"tall-pane crop must be taller than short-pane crop (adaptive vpad)")
+	// Accept a small DPI-bucket-driven difference; core property is
+	// that the tall-pane crop no longer dwarfs the short-pane crop.
+	ratio := float64(tallImg.Bounds().Dy()) / float64(shortImg.Bounds().Dy())
+	assert.InDelta(t, 1.0, ratio, 0.35,
+		"tight vpad: crop heights should be similar regardless of pane aspect (got ratio %.2f)", ratio)
+
+	// Upper bound on absolute crop height: 2·VpadPt + r.H ≈ 35 pt, times
+	// fitMaxDPI scale — plenty of slack for DPI bucketing but still far
+	// below the old ~520 pt adaptive ceiling.
+	maxHPt := 2*fitVpadDefault + r.H
+	maxHPx := int(maxHPt*fitMaxDPI/72.0) + 8
+	assert.Less(t, tallImg.Bounds().Dy(), maxHPx,
+		"crop height should stay near 2·VpadPt + r.H (got %d px, want < %d px)",
+		tallImg.Bounds().Dy(), maxHPx)
 }
 
 func TestCropFitted_ColumnModeNarrowsHorizontally(t *testing.T) {

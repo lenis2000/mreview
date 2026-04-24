@@ -28,12 +28,17 @@ type FitOptions struct {
 	// to render the full page width.
 	MultiColumn bool
 
-	// MinVpadPt and MaxVpadPt bound the adaptive vertical padding. The
-	// algorithm aims to grow vpad until the crop's aspect matches the
-	// pane's, but caps to avoid wasting the pane on whitespace (Max) or
-	// presenting a region with no surrounding context (Min). Defaults
-	// applied when zero: Min = 20pt, Max = 250pt.
-	MinVpadPt float64
+	// VpadPt is the fixed vertical padding on each side of the SyncTeX
+	// region — just enough breathing room that descenders on the last
+	// line and tops of the first line don't get shaved off by SyncTeX's
+	// baseline-ish bounds. Default 10 pt when zero. Previously this was
+	// an adaptive min/max that grew toward the pane aspect; that produced
+	// crops indistinguishable from the full page for two-column papers
+	// and tiny regions. Kept as a single knob so the pane letterboxes if
+	// the crop is wide-and-short — honest framing beats fake context.
+	VpadPt float64
+	// MaxVpadPt is retained as a safety ceiling for callers that pass a
+	// very large VpadPt. Default 250 pt when zero.
 	MaxVpadPt float64
 
 	// HpadPt is the horizontal padding around a column-cropped region.
@@ -42,16 +47,17 @@ type FitOptions struct {
 }
 
 const (
-	// fitMinVpadDefault keeps a small breathing room around the SyncTeX
-	// region even when the pane is very tight; below this the cursor
-	// block ends up flush against the pane border.
-	fitMinVpadDefault = 20.0
-	// fitMaxVpadDefault stops adaptive vpad from giving an entire pane
-	// to whitespace when the region is short and the pane is tall.
+	// fitVpadDefault is the small fixed vpad applied around the SyncTeX
+	// region. Enough breathing room that glyph extrema survive the crop
+	// without pulling in surrounding paragraphs.
+	fitVpadDefault = 10.0
+	// fitMaxVpadDefault ceilings any explicit VpadPt the caller passes.
+	// Retained so a caller asking for a wildly large vpad doesn't blow
+	// the crop out to the whole page by accident.
 	fitMaxVpadDefault = 250.0
 	// fitHpadDefault is the column-crop horizontal margin — wide enough
 	// to keep `\item` bullets and inline-math overhang inside the crop.
-	fitHpadDefault = 20.0
+	fitHpadDefault = 10.0
 	// fitMinDPI floors the chosen DPI; below ~100 fitz's font hinting
 	// produces visibly blurry text even when the pane is tiny.
 	fitMinDPI = 100.0
@@ -119,14 +125,17 @@ func CropFitted(d *Doc, r synctex.Region, opts FitOptions) ([]byte, error) {
 	if !HasExtent(r) {
 		return nil, fmt.Errorf("pdf: region has zero extent")
 	}
-	if opts.MinVpadPt <= 0 {
-		opts.MinVpadPt = fitMinVpadDefault
+	if opts.VpadPt <= 0 {
+		opts.VpadPt = fitVpadDefault
 	}
 	if opts.MaxVpadPt <= 0 {
 		opts.MaxVpadPt = fitMaxVpadDefault
 	}
 	if opts.HpadPt <= 0 {
 		opts.HpadPt = fitHpadDefault
+	}
+	if opts.VpadPt > opts.MaxVpadPt {
+		opts.VpadPt = opts.MaxVpadPt
 	}
 
 	// Page bounds in points (= big points; PDF user space).
@@ -157,23 +166,10 @@ func CropFitted(d *Doc, r synctex.Region, opts FitOptions) ([]byte, error) {
 		return nil, fmt.Errorf("pdf: degenerate horizontal crop (%.2f pt)", cropWPt)
 	}
 
-	// Adaptive vpad — aim for crop aspect = pane aspect so the pane
-	// fills cleanly. When PaneWidthPx/PaneHeightPx are unset, fall back
-	// to a fixed 80 pt context (matches the legacy CropWithContext
-	// default so nothing regresses for callers who haven't plumbed
-	// pane dimensions yet).
-	vpad := 80.0
-	if opts.PaneWidthPx > 0 && opts.PaneHeightPx > 0 {
-		paneAspect := float64(opts.PaneHeightPx) / float64(opts.PaneWidthPx)
-		desiredCropHPt := cropWPt * paneAspect
-		vpad = (desiredCropHPt - r.H) / 2.0
-		if vpad < opts.MinVpadPt {
-			vpad = opts.MinVpadPt
-		}
-		if vpad > opts.MaxVpadPt {
-			vpad = opts.MaxVpadPt
-		}
-	}
+	// Fixed vpad — crop tightly around the SyncTeX region. Letting the
+	// pane letterbox a wide-and-short crop is preferable to inflating
+	// vpad to "fill" the pane with surrounding paragraphs.
+	vpad := opts.VpadPt
 
 	// Vertical extent in points, with clamp rebalancing.
 	cropY0Pt := r.Y - vpad

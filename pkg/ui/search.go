@@ -227,5 +227,6 @@ func (m Model) submitSearch() (tea.Model, tea.Cmd) {
 	}
 	m.JumpStack.Push(m.CursorBlockID)
 	m.CursorBlockID = target
+	m.SourceLineCursor = 1
 	return m, nil
 }

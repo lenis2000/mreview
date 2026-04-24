@@ -45,7 +45,7 @@ func HelpRows() []HelpRow {
 		{"/", "fuzzy search"},
 		{"@", "annotation list"},
 		{"f", "cycle filter (all / unreviewed / annotated / issues)"},
-		{"h / l", "focus outline / source pane"},
+		{"h / l", "focus pane left / right (outline ↔ source ↔ PDF)"},
 		{"?", "toggle this help overlay"},
 		{"q", "quit and emit annotations"},
 	}

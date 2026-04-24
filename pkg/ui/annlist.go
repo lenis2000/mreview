@@ -193,6 +193,10 @@ func (m Model) jumpFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 	if it.BlockID != m.CursorBlockID {
 		m.JumpStack.Push(m.CursorBlockID)
 		m.CursorBlockID = it.BlockID
+		m.SourceLineCursor = 1
+	}
+	if it.LineOffset > 0 {
+		m.SourceLineCursor = clampLineCursor(m.Doc, it.BlockID, it.LineOffset)
 	}
 	return m, nil
 }

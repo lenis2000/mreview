@@ -219,6 +219,7 @@ func (m Model) ToggleReviewed() (tea.Model, tea.Cmd) {
 		next := advanceAfterReview(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID)
 		if next != "" && next != m.CursorBlockID {
 			m.CursorBlockID = next
+			m.SourceLineCursor = 1
 		}
 	}
 	return m, nil
