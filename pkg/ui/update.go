@@ -155,10 +155,13 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.schedulePDFRender()
 	}
-	// h / l step focus one pane left / right through outline → source →
-	// PDF. Matches the visual left-to-right layout so the muscle memory
-	// is "point at the pane you want".
-	if matches(key, m.Keymap.FocusOutline) {
+	// h / l (and left/right) step focus one pane left / right through
+	// outline → source → PDF. Matches the visual left-to-right layout
+	// so the muscle memory is "point at the pane you want". Arrow keys
+	// are skipped while manual PDF mode is active so they keep their
+	// docviewer-style page-nav meaning there.
+	isArrow := key == "left" || key == "right"
+	if matches(key, m.Keymap.FocusOutline) && !(isArrow && m.PDFManual) {
 		switch m.Focus {
 		case PanePDF:
 			m.Focus = PaneSource
@@ -168,7 +171,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
-	if matches(key, m.Keymap.FocusSource) {
+	if matches(key, m.Keymap.FocusSource) && !(isArrow && m.PDFManual) {
 		switch m.Focus {
 		case PaneOutline:
 			m.Focus = PaneSource
@@ -283,13 +286,19 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if matches(key, m.Keymap.SourceLineUp) {
-		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor-1)
+		n := parseCount(m.CountBuf)
 		m.CountBuf = ""
+		for i := 0; i < n; i++ {
+			m = m.scrollSource(-1)
+		}
 		return m, nil
 	}
 	if matches(key, m.Keymap.SourceLineDown) {
-		m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor+1)
+		n := parseCount(m.CountBuf)
 		m.CountBuf = ""
+		for i := 0; i < n; i++ {
+			m = m.scrollSource(+1)
+		}
 		return m, nil
 	}
 	if matches(key, m.Keymap.ExternalEdit) {
@@ -303,6 +312,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if matches(key, m.Keymap.OCRReport) {
 		m.CountBuf = ""
 		return m.startOCRReport()
+	}
+	if matches(key, m.Keymap.OpenInSkim) {
+		m.CountBuf = ""
+		return m.openInSkim()
 	}
 
 	// When the source pane has focus, hijack the standard sibling-nav
@@ -714,6 +727,21 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 	case "e":
 		for i := 0; i < n; i++ {
 			pos = motionWordEnd(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "W":
+		for i := 0; i < n; i++ {
+			pos = motionWORDForward(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "B":
+		for i := 0; i < n; i++ {
+			pos = motionWORDBackward(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "E":
+		for i := 0; i < n; i++ {
+			pos = motionWORDEnd(runes, pos)
 		}
 		p.TI.SetCursor(pos)
 	case "h":

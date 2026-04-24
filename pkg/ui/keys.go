@@ -67,8 +67,8 @@ type Keymap struct {
 	// Source-line cursor — moves the per-block 1-based line marker that the
 	// `a` (line annotation) key operates on. Independent of pane focus so
 	// keyboard users can drive line nav without leaving the outline pane.
-	SourceLineUp   []string // [ — previous line within block
-	SourceLineDown []string // ] — next line within block
+	SourceLineUp   []string // [ — previous source line (spills into prev block at boundary)
+	SourceLineDown []string // ] — next source line (spills into next block at boundary)
 
 	// Edit-in-place. E suspends mreview and runs $EDITOR on paper.tex
 	// positioned at the cursor's absolute source line; on return the
@@ -87,6 +87,10 @@ type Keymap struct {
 	// (outline → source → PDF). Keyboard alternative to clicking a pane.
 	FocusOutline []string // h — focus one pane left
 	FocusSource  []string // l — focus one pane right
+
+	// Open the current PDF externally in Skim.app, jumping to the line
+	// under the cursor via Skim's `displayline` SyncTeX helper.
+	OpenInSkim []string // S
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -135,8 +139,10 @@ func DefaultKeymap() Keymap {
 		InlineEdit:   []string{"e"},
 		OCRReport:    []string{"B"},
 
-		FocusOutline: []string{"h"},
-		FocusSource:  []string{"l"},
+		FocusOutline: []string{"h", "left"},
+		FocusSource:  []string{"l", "right"},
+
+		OpenInSkim: []string{"S"},
 	}
 }
 

@@ -430,6 +430,77 @@ func motionWordBackward(runes []rune, pos int) int {
 	return i
 }
 
+// motionWORDForward advances one vim-`W`: a WORD is any run of
+// non-whitespace, so punctuation-boundary transitions are ignored.
+// Useful for stepping over `\command{arg}` as a single unit.
+func motionWORDForward(runes []rune, pos int) int {
+	n := len(runes)
+	if pos >= n {
+		return n
+	}
+	i := pos
+	if !isSpace(runes[i]) {
+		for i < n && !isSpace(runes[i]) {
+			i++
+		}
+	}
+	for i < n && isSpace(runes[i]) {
+		i++
+	}
+	if i == pos {
+		i++
+	}
+	return i
+}
+
+// motionWORDBackward steps one vim-`B`: skip trailing whitespace,
+// then walk to the start of the current non-whitespace run.
+func motionWORDBackward(runes []rune, pos int) int {
+	if pos <= 0 {
+		return 0
+	}
+	i := pos - 1
+	for i > 0 && isSpace(runes[i]) {
+		i--
+	}
+	if isSpace(runes[i]) {
+		return 0
+	}
+	for i > 0 && !isSpace(runes[i-1]) {
+		i--
+	}
+	return i
+}
+
+// motionWORDEnd advances one vim-`E`: land on the last rune of the
+// current WORD, or of the next WORD if already there.
+func motionWORDEnd(runes []rune, pos int) int {
+	n := len(runes)
+	if pos >= n-1 {
+		if n == 0 {
+			return 0
+		}
+		return n - 1
+	}
+	i := pos + 1
+	for i < n && isSpace(runes[i]) {
+		i++
+	}
+	if i >= n {
+		return n - 1
+	}
+	for i+1 < n && !isSpace(runes[i+1]) {
+		i++
+	}
+	return i
+}
+
+// isSpace is the WORD-motion separator: only ASCII whitespace counts,
+// mirroring vim's default behaviour for W/B/E.
+func isSpace(r rune) bool {
+	return r == ' ' || r == '\t'
+}
+
 // motionWordEnd advances one vim-`e`: land on the last rune of the
 // current word, or of the next word if already there. Returns the
 // last index (n-1) when there is no further word end.
