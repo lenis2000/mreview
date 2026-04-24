@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"math"
 
 	"mreview/pkg/pdf"
 )
@@ -31,7 +32,7 @@ type manualRenderInputs struct {
 	CellWidthPx  float64
 	CellHeightPx float64
 	Dual         string // "" | "horizontal" | "vertical"
-	Dark         bool
+	Dark         string // "" | "smart" | "invert"
 	CropT        float64
 	CropB        float64
 	CropL        float64
@@ -137,7 +138,10 @@ func renderSinglePage(d *pdf.Doc, pageIdx int, in manualRenderInputs, dpi float6
 	if in.Zoom > 0 {
 		cropped = zoomCrop(cropped, in.Zoom)
 	}
-	if in.Dark {
+	switch in.Dark {
+	case "smart":
+		cropped = smartInvert(cropped)
+	case "invert":
 		cropped = invertColors(cropped)
 	}
 	return cropped, nil
@@ -206,24 +210,117 @@ func subImage(img image.Image, rect image.Rectangle) image.Image {
 	return dst
 }
 
-// invertColors returns a copy of img with RGB inverted and alpha
-// preserved. Kept simple (matches docviewer's "D" simple-invert mode); no
-// hue-preserving smart invert yet.
+// invertColors returns a copy of img with RGB inverted, remapped into a
+// dark-gray background range (255→30, 0→255) with alpha preserved.
+// Matches docviewer's "D" simple-invert mode.
 func invertColors(img image.Image) image.Image {
 	b := img.Bounds()
 	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			r, g, bl, a := img.At(x, y).RGBA()
+			r8 := uint32(r >> 8)
+			g8 := uint32(g >> 8)
+			b8 := uint32(bl >> 8)
 			dst.Set(x-b.Min.X, y-b.Min.Y, color.RGBA{
-				R: uint8(255 - (r >> 8)),
-				G: uint8(255 - (g >> 8)),
-				B: uint8(255 - (bl >> 8)),
+				R: uint8(30 + (255-r8)*225/255),
+				G: uint8(30 + (255-g8)*225/255),
+				B: uint8(30 + (255-b8)*225/255),
 				A: uint8(a >> 8),
 			})
 		}
 	}
 	return dst
+}
+
+// smartInvert inverts lightness while preserving hue and saturation, so
+// white backgrounds become near-black, dark text becomes light, and tinted
+// figures keep their colour identity. Matches docviewer's "i" mode.
+func smartInvert(img image.Image) image.Image {
+	b := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			r8 := float64(r>>8) / 255.0
+			g8 := float64(g>>8) / 255.0
+			b8 := float64(bl>>8) / 255.0
+			h, s, l := rgbToHSL(r8, g8, b8)
+			l = 0.12 + (1.0-l)*0.88
+			nr, ng, nb := hslToRGB(h, s, l)
+			dst.Set(x-b.Min.X, y-b.Min.Y, color.RGBA{
+				R: uint8(nr * 255),
+				G: uint8(ng * 255),
+				B: uint8(nb * 255),
+				A: uint8(a >> 8),
+			})
+		}
+	}
+	return dst
+}
+
+func rgbToHSL(r, g, b float64) (h, s, l float64) {
+	maxv := math.Max(r, math.Max(g, b))
+	minv := math.Min(r, math.Min(g, b))
+	l = (maxv + minv) / 2
+	if maxv == minv {
+		return 0, 0, l
+	}
+	d := maxv - minv
+	if l > 0.5 {
+		s = d / (2.0 - maxv - minv)
+	} else {
+		s = d / (maxv + minv)
+	}
+	switch maxv {
+	case r:
+		h = (g - b) / d
+		if g < b {
+			h += 6
+		}
+	case g:
+		h = (b-r)/d + 2
+	case b:
+		h = (r-g)/d + 4
+	}
+	h /= 6
+	return
+}
+
+func hslToRGB(h, s, l float64) (r, g, b float64) {
+	if s == 0 {
+		return l, l, l
+	}
+	var q float64
+	if l < 0.5 {
+		q = l * (1 + s)
+	} else {
+		q = l + s - l*s
+	}
+	p := 2*l - q
+	r = hueToRGB(p, q, h+1.0/3.0)
+	g = hueToRGB(p, q, h)
+	b = hueToRGB(p, q, h-1.0/3.0)
+	return
+}
+
+func hueToRGB(p, q, t float64) float64 {
+	if t < 0 {
+		t++
+	}
+	if t > 1 {
+		t--
+	}
+	if t < 1.0/6.0 {
+		return p + (q-p)*6*t
+	}
+	if t < 1.0/2.0 {
+		return q
+	}
+	if t < 2.0/3.0 {
+		return p + (q-p)*(2.0/3.0-t)*6
+	}
+	return p
 }
 
 // composeDual stitches two page images into one image, either side-by-

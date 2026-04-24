@@ -28,17 +28,19 @@ type FitOptions struct {
 	// to render the full page width.
 	MultiColumn bool
 
-	// VpadPt is the fixed vertical padding on each side of the SyncTeX
+	// VpadPt is the minimum vertical padding on each side of the SyncTeX
 	// region — just enough breathing room that descenders on the last
 	// line and tops of the first line don't get shaved off by SyncTeX's
-	// baseline-ish bounds. Default 10 pt when zero. Previously this was
-	// an adaptive min/max that grew toward the pane aspect; that produced
-	// crops indistinguishable from the full page for two-column papers
-	// and tiny regions. Kept as a single knob so the pane letterboxes if
-	// the crop is wide-and-short — honest framing beats fake context.
+	// baseline-ish bounds. Default 10 pt when zero. For single-column
+	// crops the actual vpad may grow beyond this so the crop aspect
+	// matches the pane aspect (no letterboxing of short regions into
+	// big panes); for multi-column crops the vpad stays tight because
+	// growing it vertically in a narrow column pulls in unrelated
+	// material from adjacent paragraphs.
 	VpadPt float64
-	// MaxVpadPt is retained as a safety ceiling for callers that pass a
-	// very large VpadPt. Default 250 pt when zero.
+	// MaxVpadPt ceilings the adaptive vpad so a small region in a
+	// short-aspect pane can't inflate the crop to near-page-size.
+	// Default 250 pt when zero.
 	MaxVpadPt float64
 
 	// HpadPt is the horizontal padding around a column-cropped region.
@@ -166,10 +168,25 @@ func CropFitted(d *Doc, r synctex.Region, opts FitOptions) ([]byte, error) {
 		return nil, fmt.Errorf("pdf: degenerate horizontal crop (%.2f pt)", cropWPt)
 	}
 
-	// Fixed vpad — crop tightly around the SyncTeX region. Letting the
-	// pane letterbox a wide-and-short crop is preferable to inflating
-	// vpad to "fill" the pane with surrounding paragraphs.
+	// Adaptive vpad — single-column crops grow vertical context so the
+	// crop aspect approaches the pane aspect, filling the pane instead
+	// of letterboxing a thin strip. Multi-column crops keep the minimum
+	// vpad since growing vertically in a narrow column pulls in
+	// unrelated material from the same column above/below.
 	vpad := opts.VpadPt
+	if !opts.MultiColumn && opts.PaneWidthPx > 0 && opts.PaneHeightPx > 0 {
+		paneAspect := float64(opts.PaneWidthPx) / float64(opts.PaneHeightPx)
+		if paneAspect > 0 {
+			targetH := cropWPt / paneAspect
+			wantVpad := (targetH - r.H) / 2
+			if wantVpad > vpad {
+				vpad = wantVpad
+			}
+			if vpad > opts.MaxVpadPt {
+				vpad = opts.MaxVpadPt
+			}
+		}
+	}
 
 	// Vertical extent in points, with clamp rebalancing.
 	cropY0Pt := r.Y - vpad

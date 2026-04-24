@@ -150,7 +150,7 @@ type Model struct {
 	ManualPDFPage int    // 0-based page index
 	ManualPDFZoom int    // 0 = fit, +N = zoom in one step per N
 	ManualPDFDual string // "" | "vertical" | "horizontal" — side-by-side/stacked
-	ManualPDFDark bool   // simple-invert dark mode
+	ManualPDFDark string // "" | "smart" | "invert" — matches docviewer's two dark modes
 	ManualPDFCropT float64
 	ManualPDFCropB float64
 	ManualPDFCropL float64

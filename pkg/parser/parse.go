@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // TheoremEnv describes a theorem-like environment — either discovered via
@@ -356,17 +357,15 @@ func (p *parser) attachLabel(target string) {
 	p.doc.ByLabel[target] = b
 }
 
-// segmentRootProse handles documents whose body is just running prose with no
-// sections, theorems, or display math — typically short opinion letters or
-// referee reports. It splits the body (between \begin{document} and
-// \end{document}) into KindParagraph blocks at blank-line boundaries so the
-// review TUI has something to attach annotations to. Skipped when the doc
-// already has top-level structural children, to avoid noisy paragraphs around
-// \title/\maketitle in normal papers.
+// segmentRootProse creates KindParagraph blocks for prose that lives at the
+// root level — either because the doc has no structural children at all
+// (opinion letters, referee reports) or because the doc has structural
+// children but also has free-floating prose in the gaps before/between/after
+// them (e.g. an intro paragraph between \maketitle and the first \section).
+// Spans whose lines are all TeX metadata commands (\title, \maketitle,
+// \medskip, …) are skipped so the outline doesn't fill up with title-block
+// noise.
 func (p *parser) segmentRootProse() {
-	if len(p.doc.Root.ChildIDs) > 0 {
-		return
-	}
 	var docStart, docEnd int
 	for _, tk := range p.tokens {
 		if tk.Kind == TokBeginEnv && tk.EnvName == "document" && docStart == 0 {
@@ -385,29 +384,191 @@ func (p *parser) segmentRootProse() {
 	if docEnd < docStart {
 		return
 	}
-	i := docStart
-	for i <= docEnd {
-		for i <= docEnd && p.lineIsBlank(i) {
-			i++
+
+	// Determine the [start,end] ranges at the root that are NOT covered by
+	// an existing structural child. When the root has no children this is
+	// simply [docStart, docEnd].
+	type gap struct{ s, e int }
+	kids := append([]string(nil), p.doc.Root.ChildIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		return p.doc.ByID[kids[i]].StartLine < p.doc.ByID[kids[j]].StartLine
+	})
+	var gaps []gap
+	cursor := docStart
+	for _, cid := range kids {
+		c := p.doc.ByID[cid]
+		if c.StartLine > cursor {
+			gaps = append(gaps, gap{cursor, c.StartLine - 1})
 		}
-		if i > docEnd {
+		if c.EndLine+1 > cursor {
+			cursor = c.EndLine + 1
+		}
+	}
+	if cursor <= docEnd {
+		gaps = append(gaps, gap{cursor, docEnd})
+	}
+
+	for _, g := range gaps {
+		for _, sp := range p.paragraphSpans(g.s, g.e) {
+			if !p.spanHasProse(sp[0], sp[1]) {
+				continue
+			}
+			b := &Block{
+				ID:        p.newID(),
+				Kind:      KindParagraph,
+				StartLine: sp[0],
+				EndLine:   sp[1],
+				ParentID:  p.doc.Root.ID,
+			}
+			b.Source = p.extractSource(sp[0], sp[1])
+			p.doc.Blocks = append(p.doc.Blocks, b)
+			p.doc.ByID[b.ID] = b
+			p.doc.Root.ChildIDs = append(p.doc.Root.ChildIDs, b.ID)
+		}
+	}
+
+	// Re-sort root children so inserted paragraphs land in document order.
+	sort.SliceStable(p.doc.Root.ChildIDs, func(i, j int) bool {
+		return p.doc.ByID[p.doc.Root.ChildIDs[i]].StartLine < p.doc.ByID[p.doc.Root.ChildIDs[j]].StartLine
+	})
+}
+
+// rootMetadataCommands are the TeX commands that we treat as pure metadata
+// at the root of the document — spans consisting only of these don't become
+// outline entries.
+var rootMetadataCommands = []string{
+	"title", "author", "date", "maketitle", "thanks", "address", "email",
+	"medskip", "smallskip", "bigskip",
+	"vspace", "hspace", "vfill", "hfill",
+	"newpage", "pagebreak", "clearpage",
+	"tableofcontents", "bibliographystyle", "bibliography",
+	"noindent", "indent", "par",
+}
+
+// spanHasProse returns true if [s,e] contains prose content — i.e. text that
+// isn't just TeX metadata command invocations. Lines are joined before the
+// check so that a multi-line argument like "\title{a\\\nb}" is consumed as
+// one command.
+func (p *parser) spanHasProse(s, e int) bool {
+	var buf strings.Builder
+	for ln := s; ln <= e; ln++ {
+		if ln > s {
+			buf.WriteByte('\n')
+		}
+		buf.WriteString(p.lineText(ln))
+	}
+	return !textIsRootMetadataOnly(buf.String())
+}
+
+// lineText returns the raw source of a single line without trailing newline.
+func (p *parser) lineText(line int) string {
+	if line < 1 || line > p.totalLines {
+		return ""
+	}
+	from := p.lineStarts[line-1]
+	var to int
+	if line >= p.totalLines {
+		to = len(p.src)
+	} else {
+		to = p.lineStarts[line]
+	}
+	raw := p.src[from:to]
+	raw = bytes.TrimRight(raw, "\r\n")
+	return string(raw)
+}
+
+// textIsRootMetadataOnly reports whether s consists entirely of TeX metadata
+// commands from rootMetadataCommands (plus their possibly multi-line args).
+// "\noindent Dear Alex," has "Dear Alex," left after stripping and returns
+// false; "\title{a\\\nb}\n\maketitle" returns true.
+func textIsRootMetadataOnly(s string) bool {
+	for {
+		s = trimTexSpace(s)
+		if s == "" {
+			return true
+		}
+		if s[0] != '\\' {
+			return false
+		}
+		j := 1
+		for j < len(s) && isAsciiLetter(s[j]) {
+			j++
+		}
+		if j == 1 {
+			return false
+		}
+		if !isRootMetadataCommand(s[1:j]) {
+			return false
+		}
+		s = s[j:]
+		for {
+			s = trimTexSpace(s)
+			if strings.HasPrefix(s, "*") {
+				s = s[1:]
+				continue
+			}
+			if strings.HasPrefix(s, "[") {
+				rest, ok := stripBalanced(s, '[', ']')
+				if !ok {
+					return true
+				}
+				s = rest
+				continue
+			}
+			if strings.HasPrefix(s, "{") {
+				rest, ok := stripBalanced(s, '{', '}')
+				if !ok {
+					return true
+				}
+				s = rest
+				continue
+			}
 			break
 		}
-		s := i
-		for i <= docEnd && !p.lineIsBlank(i) {
-			i++
-		}
-		e := i - 1
-		b := &Block{
-			ID:        p.newID(),
-			Kind:      KindParagraph,
-			StartLine: s,
-			EndLine:   e,
-		}
-		b.Source = p.extractSource(s, e)
-		p.pushBlock(b)
-		p.popBlock(e)
 	}
+}
+
+func trimTexSpace(s string) string {
+	return strings.TrimLeft(s, " \t\n\r")
+}
+
+func isAsciiLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
+func isRootMetadataCommand(name string) bool {
+	for _, c := range rootMetadataCommands {
+		if c == name {
+			return true
+		}
+	}
+	return false
+}
+
+// stripBalanced consumes a balanced bracketed group starting at s[0] and
+// returns the remainder. Braces inside are honoured (single level of nesting
+// handled correctly via depth counter).
+func stripBalanced(s string, open, close byte) (string, bool) {
+	if len(s) == 0 || s[0] != open {
+		return s, false
+	}
+	depth := 1
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if i+1 < len(s) {
+				i++
+			}
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return s[i+1:], true
+			}
+		}
+	}
+	return s, false
 }
 
 // segmentProofs turns each KindProof block's flat child list into a tree of

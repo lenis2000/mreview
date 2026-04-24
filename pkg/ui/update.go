@@ -248,7 +248,20 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Status = manualPDFStatusHint(m)
 			return m, m.schedulePDFRender()
 		case matches(key, m.Keymap.PDFDarkMode):
-			m.ManualPDFDark = !m.ManualPDFDark
+			if m.ManualPDFDark == "smart" {
+				m.ManualPDFDark = ""
+			} else {
+				m.ManualPDFDark = "smart"
+			}
+			m.CountBuf = ""
+			m.Status = manualPDFStatusHint(m)
+			return m, m.schedulePDFRender()
+		case matches(key, m.Keymap.PDFDarkSimple):
+			if m.ManualPDFDark == "invert" {
+				m.ManualPDFDark = ""
+			} else {
+				m.ManualPDFDark = "invert"
+			}
 			m.CountBuf = ""
 			m.Status = manualPDFStatusHint(m)
 			return m, m.schedulePDFRender()
@@ -417,10 +430,10 @@ func manualPDFStatusHint(m Model) string {
 		dual = m.ManualPDFDual
 	}
 	dark := "off"
-	if m.ManualPDFDark {
-		dark = "on"
+	if m.ManualPDFDark != "" {
+		dark = m.ManualPDFDark
 	}
-	return fmt.Sprintf("PDF manual · pg %s%s · zoom %d · dual:%s · dark:%s · n/p +/- 2 i V",
+	return fmt.Sprintf("PDF manual · pg %s%s · zoom %d · dual:%s · dark:%s · n/p +/- 2 i D V",
 		page, total, m.ManualPDFZoom, dual, dark)
 }
 

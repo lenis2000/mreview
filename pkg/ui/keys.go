@@ -60,9 +60,10 @@ type Keymap struct {
 	PDFPrevPage  []string // p / k
 	PDFZoomIn    []string // + / =
 	PDFZoomOut   []string // -
-	PDFDualPage  []string // 2 — off / vertical / horizontal
-	PDFDarkMode  []string // i
-	PDFGotoStart []string // 0 — first page / reset zoom
+	PDFDualPage   []string // 2 — off / vertical / horizontal
+	PDFDarkMode   []string // i — smart invert (preserves hue)
+	PDFDarkSimple []string // D — simple invert (gray-bg RGB invert)
+	PDFGotoStart  []string // 0 — first page / reset zoom
 
 	// Source-line cursor — moves the per-block 1-based line marker that the
 	// `a` (line annotation) key operates on. Independent of pane focus so
@@ -128,9 +129,10 @@ func DefaultKeymap() Keymap {
 		PDFPrevPage:  []string{"p", "k", "up", "left", ","},
 		PDFZoomIn:    []string{"+", "="},
 		PDFZoomOut:   []string{"-", "_"},
-		PDFDualPage:  []string{"2"},
-		PDFDarkMode:  []string{"i"},
-		PDFGotoStart: []string{"0"},
+		PDFDualPage:   []string{"2"},
+		PDFDarkMode:   []string{"i"},
+		PDFDarkSimple: []string{"D"},
+		PDFGotoStart:  []string{"0"},
 
 		SourceLineUp:   []string{"["},
 		SourceLineDown: []string{"]"},
