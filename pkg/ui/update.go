@@ -613,15 +613,137 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		_ = p
 		return m, nil
 	case *LineEditPopup:
-		switch msg.Type {
-		case tea.KeyEnter, tea.KeyCtrlS:
-			return m.SubmitLineEdit()
-		case tea.KeyEsc, tea.KeyCtrlC:
-			return m.CancelLineEdit()
+		return m.updateLineEditPopup(p, msg)
+	}
+	return m, nil
+}
+
+// updateLineEditPopup routes keys for the inline single-line editor.
+// Insert mode is the default and forwards keys to the textinput; Esc
+// promotes to a minimal vim-style normal mode where w/b/e/h/l/0/$
+// (with count prefixes) move the cursor. Enter submits from either
+// mode; Ctrl-C always cancels; in normal mode Esc/q also cancel.
+func (m Model) updateLineEditPopup(p *LineEditPopup, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyEnter || msg.Type == tea.KeyCtrlS {
+		return m.SubmitLineEdit()
+	}
+	if msg.Type == tea.KeyCtrlC {
+		return m.CancelLineEdit()
+	}
+	if p.NormalMode {
+		return m.updateLineEditNormal(p, msg)
+	}
+	if msg.Type == tea.KeyEsc {
+		p.NormalMode = true
+		p.Count = ""
+		return m, nil
+	}
+	var cmd tea.Cmd
+	p.TI, cmd = p.TI.Update(msg)
+	return m, cmd
+}
+
+// updateLineEditNormal handles keys while the inline editor is in
+// vim normal mode. Digit keys build up a count; a motion key consumes
+// the count (defaulting to 1) and moves the textinput cursor. i/a/I/A
+// return to insert mode. Esc or q cancels the whole edit — consistent
+// with the first Esc→normal, second Esc→cancel flow users asked for.
+func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyEsc {
+		return m.CancelLineEdit()
+	}
+	s := msg.String()
+	// Digit accumulator: leading 0 is the "start of line" motion, not a
+	// count, matching vim.
+	if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		p.Count += s
+		return m, nil
+	}
+	if len(s) == 1 && s[0] == '0' && p.Count != "" {
+		p.Count += s
+		return m, nil
+	}
+	n := 1
+	if p.Count != "" {
+		parsed := 0
+		for _, r := range p.Count {
+			parsed = parsed*10 + int(r-'0')
+			if parsed > 10000 {
+				parsed = 10000
+				break
+			}
 		}
-		var cmd tea.Cmd
-		p.TI, cmd = p.TI.Update(msg)
-		return m, cmd
+		if parsed > 0 {
+			n = parsed
+		}
+	}
+	p.Count = ""
+	runes := []rune(p.TI.Value())
+	pos := p.TI.Position()
+	switch s {
+	case "w":
+		for i := 0; i < n; i++ {
+			pos = motionWordForward(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "b":
+		for i := 0; i < n; i++ {
+			pos = motionWordBackward(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "e":
+		for i := 0; i < n; i++ {
+			pos = motionWordEnd(runes, pos)
+		}
+		p.TI.SetCursor(pos)
+	case "h":
+		p.TI.SetCursor(pos - n)
+	case "l":
+		p.TI.SetCursor(pos + n)
+	case "0":
+		p.TI.CursorStart()
+	case "$":
+		p.TI.CursorEnd()
+	case "^":
+		i := 0
+		for i < len(runes) && wordClass(runes[i]) == 0 {
+			i++
+		}
+		p.TI.SetCursor(i)
+	case "i":
+		p.NormalMode = false
+	case "a":
+		p.TI.SetCursor(pos + 1)
+		p.NormalMode = false
+	case "I":
+		i := 0
+		for i < len(runes) && wordClass(runes[i]) == 0 {
+			i++
+		}
+		p.TI.SetCursor(i)
+		p.NormalMode = false
+	case "A":
+		p.TI.CursorEnd()
+		p.NormalMode = false
+	case "x":
+		// Forward-delete under cursor, count times. Implemented via
+		// SetValue since textinput has no public delete-char helper.
+		if len(runes) == 0 {
+			return m, nil
+		}
+		end := pos + n
+		if end > len(runes) {
+			end = len(runes)
+		}
+		newRunes := append([]rune{}, runes[:pos]...)
+		newRunes = append(newRunes, runes[end:]...)
+		p.TI.SetValue(string(newRunes))
+		if pos > len(newRunes) {
+			pos = len(newRunes)
+		}
+		p.TI.SetCursor(pos)
+	case "q":
+		return m.CancelLineEdit()
 	}
 	return m, nil
 }

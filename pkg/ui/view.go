@@ -251,7 +251,16 @@ func annotationPaneTitle(doc *parser.Document, p *AnnotationPopup) string {
 // navigation, so clearing the pane keeps the user focused on exactly
 // what they're rewriting.
 func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) string {
-	hint := "[Enter submit · Esc cancel]"
+	var hint string
+	if p.NormalMode {
+		tail := ""
+		if p.Count != "" {
+			tail = " · " + p.Count
+		}
+		hint = "[NORMAL · w/b/e/0/$/h/l · i/a insert · Enter submit · Esc cancel" + tail + "]"
+	} else {
+		hint = "[INSERT · Enter submit · Esc → normal · Ctrl-C cancel]"
+	}
 	w := innerW
 	if w > 2 {
 		w -= 2

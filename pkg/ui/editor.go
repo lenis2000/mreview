@@ -218,10 +218,18 @@ func absoluteCursorLine(m Model) (int, bool) {
 // fix without leaving mreview" — structural edits still belong in
 // $EDITOR. AbsoluteLine is the 1-based line we're rewriting on disk;
 // Original holds the pre-edit content so cancel can confirm no change.
+//
+// NormalMode toggles a minimal vim-style modal editor on top of the
+// textinput: false means insert (default, keys type through), true
+// means normal (w/b/e/h/l/0/$ with count prefixes like 5b). Count
+// accumulates digit presses in normal mode until a motion consumes
+// them.
 type LineEditPopup struct {
 	TI           textinput.Model
 	AbsoluteLine int
 	Original     string
+	NormalMode   bool
+	Count        string
 }
 
 func (*LineEditPopup) popup() {}
@@ -340,4 +348,109 @@ func writeSourceLine(path string, n int, newContent string) error {
 		return err
 	}
 	return nil
+}
+
+// isWordRune mirrors vim's default `iskeyword` for the word motions
+// (w/b/e): letters, digits, and underscore count as word characters;
+// everything else (punctuation, backslash, braces, whitespace) is a
+// separator. LaTeX-aware tweaks (treating `\foo` as one word) are
+// deliberately skipped — the stock vim rule is what muscle memory
+// expects.
+func isWordRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z':
+		return true
+	case r >= 'A' && r <= 'Z':
+		return true
+	case r >= '0' && r <= '9':
+		return true
+	case r == '_':
+		return true
+	}
+	return false
+}
+
+// wordClass returns 0 for whitespace, 1 for word runes, 2 for other
+// (punctuation). Vim's w/b/e treat a transition between classes 1 and
+// 2 as a word boundary, which is why `foo.bar` has three "words".
+func wordClass(r rune) int {
+	switch {
+	case r == ' ' || r == '\t':
+		return 0
+	case isWordRune(r):
+		return 1
+	default:
+		return 2
+	}
+}
+
+// motionWordForward advances one vim-`w`: from the current position,
+// skip the rest of the current run, then skip any whitespace, landing
+// on the first rune of the next word. Returns len(runes) if there is
+// no next word.
+func motionWordForward(runes []rune, pos int) int {
+	n := len(runes)
+	if pos >= n {
+		return n
+	}
+	start := wordClass(runes[pos])
+	i := pos
+	if start != 0 {
+		for i < n && wordClass(runes[i]) == start {
+			i++
+		}
+	}
+	for i < n && wordClass(runes[i]) == 0 {
+		i++
+	}
+	if i == pos {
+		i++
+	}
+	return i
+}
+
+// motionWordBackward steps one vim-`b`: from pos, skip whitespace
+// leftward, then step back to the start of the current run. Returns 0
+// when already at or before the first word.
+func motionWordBackward(runes []rune, pos int) int {
+	if pos <= 0 {
+		return 0
+	}
+	i := pos - 1
+	for i > 0 && wordClass(runes[i]) == 0 {
+		i--
+	}
+	cls := wordClass(runes[i])
+	if cls == 0 {
+		return 0
+	}
+	for i > 0 && wordClass(runes[i-1]) == cls {
+		i--
+	}
+	return i
+}
+
+// motionWordEnd advances one vim-`e`: land on the last rune of the
+// current word, or of the next word if already there. Returns the
+// last index (n-1) when there is no further word end.
+func motionWordEnd(runes []rune, pos int) int {
+	n := len(runes)
+	if pos >= n-1 {
+		if n == 0 {
+			return 0
+		}
+		return n - 1
+	}
+	i := pos + 1
+	for i < n && wordClass(runes[i]) == 0 {
+		i++
+	}
+	if i >= n {
+		return n - 1
+	}
+	cls := wordClass(runes[i])
+	for i+1 < n && wordClass(runes[i+1]) == cls {
+		i++
+	}
+	return i
 }
