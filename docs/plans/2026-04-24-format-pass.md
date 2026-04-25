@@ -268,98 +268,98 @@ The `pdfverify` build tag enables Phase D goldens (slow, requires latex toolchai
 
 ### Task 1: Skeleton — `pkg/parser/spans.go` + `pkg/format/` scaffold
 
-- Create `pkg/parser/spans.go`. Reuse the existing `skipEnvs` map and `%`-comment logic from `tokenizer.go` (factor a small private helper if needed). **Add new code** for inline `\verb<delim>…<delim>`, `\verb*<delim>…<delim>`, `\lstinline<delim>…<delim>` — these are NOT currently in the tokenizer; `handleCommand` has no `verb` case. The new detection lives in spans.go and is independent of `Tokenize`.
-- Public API: `ProtectedSpans(src) []ProtectedSpan`, `LineOffsets(src) []int`, `OverlapsProtected(s, e, spans) bool`.
-- Tests in `spans_test.go`: nominal text (no protected spans), nested `verbatim`, `\verb|…|` with various delimiters (`|`, `+`, `!`), `\verb*+x+`, `\lstinline{x}`, `% line comment`, `\begin{lstlisting}`, `\begin{comment}`, mixed.
-- Verify existing parser tests still pass — Task 1 must not regress `pkg/parser/`.
-- Create `pkg/format/{types.go, registry.go, format.go}` with empty `Registry`, the types from "Technical Details" above, and a no-op `Apply(ctx) Result`.
-- `go test ./...` passes. `make install` runs cleanly (no behavior change in the binary; install just keeps `~/bin/mreview` current).
+- [x] Create `pkg/parser/spans.go`. Reuse the existing `skipEnvs` map and `%`-comment logic from `tokenizer.go` (factor a small private helper if needed). **Add new code** for inline `\verb<delim>…<delim>`, `\verb*<delim>…<delim>`, `\lstinline<delim>…<delim>` — these are NOT currently in the tokenizer; `handleCommand` has no `verb` case. The new detection lives in spans.go and is independent of `Tokenize`.
+- [x] Public API: `ProtectedSpans(src) []ProtectedSpan`, `LineOffsets(src) []int`, `OverlapsProtected(s, e, spans) bool`.
+- [x] Tests in `spans_test.go`: nominal text (no protected spans), nested `verbatim`, `\verb|…|` with various delimiters (`|`, `+`, `!`), `\verb*+x+`, `\lstinline{x}`, `% line comment`, `\begin{lstlisting}`, `\begin{comment}`, mixed.
+- [x] Verify existing parser tests still pass — Task 1 must not regress `pkg/parser/`.
+- [x] Create `pkg/format/{types.go, registry.go, format.go}` with empty `Registry`, the types from "Technical Details" above, and a no-op `Apply(ctx) Result`.
+- [x] `go test ./...` passes. `make install` runs cleanly (no behavior change in the binary; install just keeps `~/bin/mreview` current).
 
 ### Task 2: Tier-1 safe rules
 
-- Implement `space.trailing`, `space.blank-runs`, `space.tabs`, `display.style` in `rules_safe.go`. All consult `ctx.Protected` before any rewrite.
-- `format_test.go` table-driven tests, ≥5 rows per rule including the four protected-span "no-rewrite" cases (inside `verbatim`, inside `\verb|…|`, inside `% comment`, inside `lstlisting`).
-- Register all four rules in `Registry` with `Tier: Safe`.
-- Verify the pipeline's stale-state recompute fires after rules that change newlines — add a pipeline test that runs `space.blank-runs` before `display.style` on input with line shifts and confirms `display.style` sees correct line numbers.
+- [ ] Implement `space.trailing`, `space.blank-runs`, `space.tabs`, `display.style` in `rules_safe.go`. All consult `ctx.Protected` before any rewrite.
+- [ ] `format_test.go` table-driven tests, ≥5 rows per rule including the four protected-span "no-rewrite" cases (inside `verbatim`, inside `\verb|…|`, inside `% comment`, inside `lstlisting`).
+- [ ] Register all four rules in `Registry` with `Tier: Safe`.
+- [ ] Verify the pipeline's stale-state recompute fires after rules that change newlines — add a pipeline test that runs `space.blank-runs` before `display.style` on input with line shifts and confirms `display.style` sees correct line numbers.
 
 ### Task 3: CLI subcommand `mreview fmt`
 
-- `cmd/mreview/fmt.go` defines the subcommand parser using the same `jessevdk/go-flags` library as the main CLI. Flags: `--diff`, `--check`, `--pdf-fix`, `--rule=<id>` (repeatable), `--no-verify`, `--verify-pdf=visual`, `--report`, `--allow-dirty`.
-- `cmd/mreview/main.go` dispatches when `os.Args[1] == "fmt"`. Other args fall through to the existing review-UI path.
-- For Task 3, only `--diff`, `--check`, `--rule=`, and the dirty-tree precondition are functional; `--no-verify` is a no-op (verifier not built yet — Task 4); writes go straight through with no PDF check, behind a temporary stderr warning so a user doesn't think verification ran.
-- Add `--diff` formatting via `pmezard/go-difflib`.
-- Manual end-to-end: `mreview fmt --diff testdata/sample.tex` prints a unified diff. `mreview fmt testdata/sample.tex` writes the rewritten file (after dirty-tree check).
+- [ ] `cmd/mreview/fmt.go` defines the subcommand parser using the same `jessevdk/go-flags` library as the main CLI. Flags: `--diff`, `--check`, `--pdf-fix`, `--rule=<id>` (repeatable), `--no-verify`, `--verify-pdf=visual`, `--report`, `--allow-dirty`.
+- [ ] `cmd/mreview/main.go` dispatches when `os.Args[1] == "fmt"`. Other args fall through to the existing review-UI path.
+- [ ] For Task 3, only `--diff`, `--check`, `--rule=`, and the dirty-tree precondition are functional; `--no-verify` is a no-op (verifier not built yet — Task 4); writes go straight through with no PDF check, behind a temporary stderr warning so a user doesn't think verification ran.
+- [ ] Add `--diff` formatting via `pmezard/go-difflib`.
+- [ ] Manual end-to-end: `mreview fmt --diff testdata/sample.tex` prints a unified diff. `mreview fmt testdata/sample.tex` writes the rewritten file (after dirty-tree check).
 
 ### Task 4: Verifier — text-layer (default)
 
-- `verify.go`: `Verify(buildInputs Tree, beforeSrc, afterSrc []byte, hits []Hit, rules []Rule, syncMap *synctex.Index) (ok bool, unexpected []Diff, warnings []string, err error)`.
-- **Tempdir copy.** `Tree` describes the build inputs (`paper.tex`, `latexmkrc`, `*.cls`, `*.sty`, `*.bib`, `*.bbl`, figures, `\input` children — discovered by walking from `paper.tex`). Verifier copies the full set into `/tmp/mr-fmt-XXX/before/` and `/tmp/mr-fmt-XXX/after/`. **No symlinks** — `lmkf` runs against the original tree and shares aux files, which would collide. Document the tempdir lifecycle: kept until next run; `mreview fmt --clean-tempdir` removes them.
-- **Build.** Reuse `pkg/build.RunWith(opts)` against each tempdir copy. Hard-fail if `latexmk` is missing.
-- **Compare.** `pdftotext` (default mode, NOT `-layout`) on each PDF. Whitespace-normalize each line (strip trailing, collapse internal runs of `\s+` to single space). Diff line-by-line. Page-count via `pdfinfo` is a precondition: page-count mismatch is hard-fail without consulting any whitelist.
-- **Whitelist via synctex.** Load `before.synctex.gz` via `pkg/synctex`. For each `Hit{RuleID, Line}`, look up `(page, bbox)` of that source line; identify the corresponding line(s) in the `pdftotext` output for that page (by Y-coordinate ordering). Diffs that fall on whitelisted PDF lines are tolerated; diffs anywhere else cause refusal.
-- **Tier-1 rules**: emit Hits with `ExpectedDiffSourceLines == nil`. No diffs allowed at all; whitespace-normalized `pdftotext` must be identical.
-- **No-op detection.** After applying the whitelist, scan whitelisted regions: if a Tier-2 rule's expected-diff region shows zero diff, append a warning (`<rule-id> hit at L<n> produced no PDF change`) to `warnings`. Rule still applies; warning lands in the report.
-- **No caching** — see Verifier section. Always rebuild before/after. Machine is fast.
-- `cmd/mreview/fmt.go`: wire verifier into the write path. `--no-verify` skips it. On regression, do not write; print unexpected diffs and warnings to stderr; exit 1. Leave tempdir intact for inspection.
-- `verify_test.go`: golden round-trip on `testdata/sample.tex` with all Tier-1 rules.
+- [ ] `verify.go`: `Verify(buildInputs Tree, beforeSrc, afterSrc []byte, hits []Hit, rules []Rule, syncMap *synctex.Index) (ok bool, unexpected []Diff, warnings []string, err error)`.
+- [ ] **Tempdir copy.** `Tree` describes the build inputs (`paper.tex`, `latexmkrc`, `*.cls`, `*.sty`, `*.bib`, `*.bbl`, figures, `\input` children — discovered by walking from `paper.tex`). Verifier copies the full set into `/tmp/mr-fmt-XXX/before/` and `/tmp/mr-fmt-XXX/after/`. **No symlinks** — `lmkf` runs against the original tree and shares aux files, which would collide. Document the tempdir lifecycle: kept until next run; `mreview fmt --clean-tempdir` removes them.
+- [ ] **Build.** Reuse `pkg/build.RunWith(opts)` against each tempdir copy. Hard-fail if `latexmk` is missing.
+- [ ] **Compare.** `pdftotext` (default mode, NOT `-layout`) on each PDF. Whitespace-normalize each line (strip trailing, collapse internal runs of `\s+` to single space). Diff line-by-line. Page-count via `pdfinfo` is a precondition: page-count mismatch is hard-fail without consulting any whitelist.
+- [ ] **Whitelist via synctex.** Load `before.synctex.gz` via `pkg/synctex`. For each `Hit{RuleID, Line}`, look up `(page, bbox)` of that source line; identify the corresponding line(s) in the `pdftotext` output for that page (by Y-coordinate ordering). Diffs that fall on whitelisted PDF lines are tolerated; diffs anywhere else cause refusal.
+- [ ] **Tier-1 rules**: emit Hits with `ExpectedDiffSourceLines == nil`. No diffs allowed at all; whitespace-normalized `pdftotext` must be identical.
+- [ ] **No-op detection.** After applying the whitelist, scan whitelisted regions: if a Tier-2 rule's expected-diff region shows zero diff, append a warning (`<rule-id> hit at L<n> produced no PDF change`) to `warnings`. Rule still applies; warning lands in the report.
+- [ ] **No caching** — see Verifier section. Always rebuild before/after. Machine is fast.
+- [ ] `cmd/mreview/fmt.go`: wire verifier into the write path. `--no-verify` skips it. On regression, do not write; print unexpected diffs and warnings to stderr; exit 1. Leave tempdir intact for inspection.
+- [ ] `verify_test.go`: golden round-trip on `testdata/sample.tex` with all Tier-1 rules.
 
 ### Task 5: Tier-2 rules (closes Stage 1)
 
 Two rules, registered together:
 
 **`math.paragraph-suppress`:**
-- `rules_pdf_fix.go`: implement per the default-drop heuristic in "Solution Overview". Region detection includes chains-of-equations.
-- Each emitted `Hit` populates `ExpectedDiffSourceLines` with the source line of the prose immediately following the rewritten display-math close. Harness translates via synctex.
-- `format_test.go`: ≥12 table rows covering: continuation above (drop), continuation below (drop), default case with neither strong signal (drop — the new aggressive default), strong paragraph signal (leave alone), chain of two equations (collapse all gaps), chain of three equations (collapse all gaps), trailing display followed by section header (leave alone), `\[…\]` form, starred envs, `align*`, inside protected span (no rewrite), zero-blank-line input (no-op).
+- [ ] `rules_pdf_fix.go`: implement per the default-drop heuristic in "Solution Overview". Region detection includes chains-of-equations.
+- [ ] Each emitted `Hit` populates `ExpectedDiffSourceLines` with the source line of the prose immediately following the rewritten display-math close. Harness translates via synctex.
+- [ ] `format_test.go`: ≥12 table rows covering: continuation above (drop), continuation below (drop), default case with neither strong signal (drop — the new aggressive default), strong paragraph signal (leave alone), chain of two equations (collapse all gaps), chain of three equations (collapse all gaps), trailing display followed by section header (leave alone), `\[…\]` form, starred envs, `align*`, inside protected span (no rewrite), zero-blank-line input (no-op).
 
 **`env.spacing`:**
-- Walk tokens for `TokBeginEnv` matching the env list (`theorem|lemma|proposition|corollary|definition|conjecture|figure|abstract`) and `TokSection` for section-like commands. For each, check the source bytes between the previous non-blank line and the env's start line: if zero blank lines, insert one. If ≥1 blank line, leave alone (no collapsing here — `space.blank-runs` already collapsed).
-- Each emitted `Hit` populates `ExpectedDiffSourceLines` with `[N-1, N]` where `N` is the env's source line. The line above (whose paragraph may now end) and the env line (whose vertical spacing may change) are both legitimately different in the PDF.
-- `format_test.go`: ≥8 table rows: insertion needed before `theorem`, `figure`, `section`, `subsection`; insertion not needed (already had blank); env in a protected span (no-op); env at start of file (no-op, no line above); chain of consecutive theorem envs.
+- [ ] Walk tokens for `TokBeginEnv` matching the env list (`theorem|lemma|proposition|corollary|definition|conjecture|figure|abstract`) and `TokSection` for section-like commands. For each, check the source bytes between the previous non-blank line and the env's start line: if zero blank lines, insert one. If ≥1 blank line, leave alone (no collapsing here — `space.blank-runs` already collapsed).
+- [ ] Each emitted `Hit` populates `ExpectedDiffSourceLines` with `[N-1, N]` where `N` is the env's source line. The line above (whose paragraph may now end) and the env line (whose vertical spacing may change) are both legitimately different in the PDF.
+- [ ] `format_test.go`: ≥8 table rows: insertion needed before `theorem`, `figure`, `section`, `subsection`; insertion not needed (already had blank); env in a protected span (no-op); env at start of file (no-op, no line above); chain of consecutive theorem envs.
 
 **Both rules:**
-- Register with `Tier: PDFFix`. CLI flags `--pdf-fix` and `--rule=<id>` enable them.
-- Run Phase A, B, C on `main_pnas.tex` manually. Record the rewrite counts and verifier surprises in `docs/plans/2026-04-24-format-pass.notes.md` (sibling file, NOT this plan body — this plan moves to `completed/` after Task 10 and shouldn't carry execution scribbles).
+- [ ] Register with `Tier: PDFFix`. CLI flags `--pdf-fix` and `--rule=<id>` enable them.
+- [ ] Run Phase A, B, C on `main_pnas.tex` manually. Record the rewrite counts and verifier surprises in `docs/plans/2026-04-24-format-pass.notes.md` (sibling file, NOT this plan body — this plan moves to `completed/` after Task 10 and shouldn't carry execution scribbles).
 
 ### Task 6: Tier-3 diagnostics
 
-- `rules_diag.go`: implement the 10 diagnostics. They run during the format pipeline but only emit `Diags`; never rewrite.
-- Cross-ref diagnostics consume `ctx.Doc.ByLabel`, `ctx.Doc.ByID`, and `ctx.Doc.BibEntries` directly — no new index machinery.
-- `lint.thm-no-proof` walks the parser's outer-sibling chain.
-- `lint.todo-marker`: regex pass over `src` (consulting `ctx.Protected`) for `\\colorbox\{[^}]+\}\{\\parbox\{[^}]+\}\{...\}\}`. Match nested-brace–aware (use spans.go helpers). Extract the `<comment>` body for the diag message. Tokenizer extension is unnecessary — pure-regex over byte-protected regions.
-- Per-rule tests; cross-check on `main_pnas.tex` to confirm the diagnostic counts are reasonable (no thousands of false positives).
+- [ ] `rules_diag.go`: implement the 10 diagnostics. They run during the format pipeline but only emit `Diags`; never rewrite.
+- [ ] Cross-ref diagnostics consume `ctx.Doc.ByLabel`, `ctx.Doc.ByID`, and `ctx.Doc.BibEntries` directly — no new index machinery.
+- [ ] `lint.thm-no-proof` walks the parser's outer-sibling chain.
+- [ ] `lint.todo-marker`: regex pass over `src` (consulting `ctx.Protected`) for `\\colorbox\{[^}]+\}\{\\parbox\{[^}]+\}\{...\}\}`. Match nested-brace–aware (use spans.go helpers). Extract the `<comment>` body for the diag message. Tokenizer extension is unnecessary — pure-regex over byte-protected regions.
+- [ ] Per-rule tests; cross-check on `main_pnas.tex` to confirm the diagnostic counts are reasonable (no thousands of false positives).
 
 ### Task 7: Report file + mreview `issues` filter integration
 
-- `pkg/format/report.go`: write `paper.tex.fmt-report.md` when `--report` is set. Include rewrites grouped by rule, diagnostics grouped by rule, verifier warnings (e.g. no-op rule firings).
-- `pkg/format/report.go`: also expose `LoadReport(path string) (*Report, error)` for the UI side.
-- `pkg/ui/` integration is non-trivial (the existing `FilterIssues` surfaces parser-level unresolved-ref diagnostics built into the block tree, per `outline_test.go:147`):
-  - Add a `ExternalIssues map[blockID][]Diag` field to the UI's outline state.
-  - On model init: if `<paper>.tex.fmt-report.md` exists alongside `<paper>.tex`, call `format.LoadReport`. Map each `Diag.Line` → owning block via the parser's line-to-block index (or build one if not present).
-  - Extend `BuildOutline` (or wrap it) so `FilterIssues` surfaces both built-in and external diagnostics. Add a glyph distinguishing them (e.g. `⚠` for built-in, `🔧` for fmt-report) — confirm with LP whether to differentiate visually.
-  - Add tests in `pkg/ui/outline_test.go` paralleling `TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs`.
-- Budget for UI integration: ~150 LOC in `pkg/ui/` plus tests.
+- [ ] `pkg/format/report.go`: write `paper.tex.fmt-report.md` when `--report` is set. Include rewrites grouped by rule, diagnostics grouped by rule, verifier warnings (e.g. no-op rule firings).
+- [ ] `pkg/format/report.go`: also expose `LoadReport(path string) (*Report, error)` for the UI side.
+- [ ] `pkg/ui/` integration is non-trivial (the existing `FilterIssues` surfaces parser-level unresolved-ref diagnostics built into the block tree, per `outline_test.go:147`):
+  - [ ] Add a `ExternalIssues map[blockID][]Diag` field to the UI's outline state.
+  - [ ] On model init: if `<paper>.tex.fmt-report.md` exists alongside `<paper>.tex`, call `format.LoadReport`. Map each `Diag.Line` → owning block via the parser's line-to-block index (or build one if not present).
+  - [ ] Extend `BuildOutline` (or wrap it) so `FilterIssues` surfaces both built-in and external diagnostics. Add a glyph distinguishing them (e.g. `⚠` for built-in, `🔧` for fmt-report) — confirm with LP whether to differentiate visually.
+  - [ ] Add tests in `pkg/ui/outline_test.go` paralleling `TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs`.
+- [ ] Budget for UI integration: ~150 LOC in `pkg/ui/` plus tests.
 
 ### Task 8: Paranoid verifier mode
 
-- `verify.go` (build tag `pdfverify`): page-count check via `pdfinfo`; pixel diff via `diff-pdf --output-diff=…`. Page-count mismatch is hard-fail. Pixel diff produces a diff PDF saved to `/tmp/mr-fmt-XXX/diff.pdf`.
-- `--verify-pdf=visual` exposes the paranoid path on the CLI.
-- Document `diff-pdf` install instructions in README (brew/apt).
+- [ ] `verify.go` (build tag `pdfverify`): page-count check via `pdfinfo`; pixel diff via `diff-pdf --output-diff=…`. Page-count mismatch is hard-fail. Pixel diff produces a diff PDF saved to `/tmp/mr-fmt-XXX/diff.pdf`.
+- [ ] `--verify-pdf=visual` exposes the paranoid path on the CLI.
+- [ ] Document `diff-pdf` install instructions in README (brew/apt).
 
 ### Task 9: PNAS goldens
 
-- `testdata/pnas-fixture/main_pnas.tex` (frozen input copy, plus `latexmkrc`, `.cls`, `.sty`, `.bbl`, figures — minimal set needed to build).
-- `testdata/pnas-fixture/main_pnas.expected.tex` (frozen Tier-1+Tier-2 output).
-- `testdata/pnas-fixture/main_pnas.expected.txt` (frozen whitespace-normalized `pdftotext` (default mode) output of the expected PDF).
-- `golden_test.go` under build tag `pdfverify`: runs the pipeline, diffs source byte-for-byte against expected, then runs paranoid verifier against the frozen text.
-- Bump procedure (when a rule changes intentionally): regenerate fixtures via a helper `make pnas-fixture` that re-runs the pipeline + freezes the output. Document in `docs/plans/2026-04-24-format-pass.notes.md` (sibling notes file), not this plan body.
+- [ ] `testdata/pnas-fixture/main_pnas.tex` (frozen input copy, plus `latexmkrc`, `.cls`, `.sty`, `.bbl`, figures — minimal set needed to build).
+- [ ] `testdata/pnas-fixture/main_pnas.expected.tex` (frozen Tier-1+Tier-2 output).
+- [ ] `testdata/pnas-fixture/main_pnas.expected.txt` (frozen whitespace-normalized `pdftotext` (default mode) output of the expected PDF).
+- [ ] `golden_test.go` under build tag `pdfverify`: runs the pipeline, diffs source byte-for-byte against expected, then runs paranoid verifier against the frozen text.
+- [ ] Bump procedure (when a rule changes intentionally): regenerate fixtures via a helper `make pnas-fixture` that re-runs the pipeline + freezes the output. Document in `docs/plans/2026-04-24-format-pass.notes.md` (sibling notes file), not this plan body.
 
 ### Task 10: Acceptance + documentation
 
-- Run Phases A → D on `main_pnas.tex` and `si_pnas.tex`. Phase D may require a second fixture for SI.
-- Update `README.md`: add "Source normalization" section with CLI examples and the rule-tier table.
-- `make install`. Manual smoke: `mreview fmt --pdf-fix --report ~/local_git/Schubert_simulations/PNAS/main_pnas.tex` produces a clean diff and a non-empty report.
-- Move this plan to `docs/plans/completed/`.
+- [ ] Run Phases A → D on `main_pnas.tex` and `si_pnas.tex`. Phase D may require a second fixture for SI.
+- [ ] Update `README.md`: add "Source normalization" section with CLI examples and the rule-tier table.
+- [ ] `make install`. Manual smoke: `mreview fmt --pdf-fix --report ~/local_git/Schubert_simulations/PNAS/main_pnas.tex` produces a clean diff and a non-empty report.
+- [ ] Move this plan to `docs/plans/completed/`.
 
 ## Known issues / open questions (deferred, not blocking)
 
