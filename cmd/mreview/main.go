@@ -100,6 +100,11 @@ func main() {
 // run parses args, dispatches commands, and returns an exit code.
 // 0 = success, 1 = error, 2 = usage error.
 func run(args []string, stdout, stderr io.Writer) int {
+	// Dispatch subcommands before main flags parsing.
+	if len(args) > 0 && args[0] == "fmt" {
+		return runFmt(args[1:], stdout, stderr)
+	}
+
 	var o opts
 	flagParser := flags.NewParser(&o, flags.HelpFlag|flags.PassDoubleDash)
 	flagParser.Name = "mreview"

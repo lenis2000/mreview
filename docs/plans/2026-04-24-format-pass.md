@@ -284,11 +284,11 @@ The `pdfverify` build tag enables Phase D goldens (slow, requires latex toolchai
 
 ### Task 3: CLI subcommand `mreview fmt`
 
-- [ ] `cmd/mreview/fmt.go` defines the subcommand parser using the same `jessevdk/go-flags` library as the main CLI. Flags: `--diff`, `--check`, `--pdf-fix`, `--rule=<id>` (repeatable), `--no-verify`, `--verify-pdf=visual`, `--report`, `--allow-dirty`.
-- [ ] `cmd/mreview/main.go` dispatches when `os.Args[1] == "fmt"`. Other args fall through to the existing review-UI path.
-- [ ] For Task 3, only `--diff`, `--check`, `--rule=`, and the dirty-tree precondition are functional; `--no-verify` is a no-op (verifier not built yet — Task 4); writes go straight through with no PDF check, behind a temporary stderr warning so a user doesn't think verification ran.
-- [ ] Add `--diff` formatting via `pmezard/go-difflib`.
-- [ ] Manual end-to-end: `mreview fmt --diff testdata/sample.tex` prints a unified diff. `mreview fmt testdata/sample.tex` writes the rewritten file (after dirty-tree check).
+- [x] `cmd/mreview/fmt.go` defines the subcommand parser using the same `jessevdk/go-flags` library as the main CLI. Flags: `--diff`, `--check`, `--pdf-fix`, `--rule=<id>` (repeatable), `--no-verify`, `--verify-pdf=visual`, `--report`, `--allow-dirty`.
+- [x] `cmd/mreview/main.go` dispatches when `os.Args[1] == "fmt"`. Other args fall through to the existing review-UI path.
+- [x] For Task 3, only `--diff`, `--check`, `--rule=`, and the dirty-tree precondition are functional; `--no-verify` is a no-op (verifier not built yet — Task 4); writes go straight through with no PDF check, behind a temporary stderr warning so a user doesn't think verification ran.
+- [x] Add `--diff` formatting via `pmezard/go-difflib`.
+- [x] Manual end-to-end: `mreview fmt --diff testdata/sample.tex` prints a unified diff. `mreview fmt testdata/sample.tex` writes the rewritten file (after dirty-tree check).
 
 ### Task 4: Verifier — text-layer (default)
 
