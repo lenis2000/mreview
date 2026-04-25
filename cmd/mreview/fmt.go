@@ -99,11 +99,18 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	// Write report early — both --check and no-changes paths benefit.
 	writeReportIfNeeded := func(verifyResult *format.VerifyResult) {
-		if !o.Report || len(result.Diags) == 0 && len(result.Hits) == 0 {
+		if !o.Report {
+			return
+		}
+		reportPath := format.ReportPath(paperPath)
+		if len(result.Diags) == 0 && len(result.Hits) == 0 {
+			// Clean up stale report so the UI doesn't show outdated diagnostics.
+			if rmErr := os.Remove(reportPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				fmt.Fprintf(stderr, "mreview fmt: remove stale report: %v\n", rmErr)
+			}
 			return
 		}
 		rpt := format.BuildReport(filepath.Base(paperPath), opts, result, verifyResult)
-		reportPath := format.ReportPath(paperPath)
 		if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
 			fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
 			return

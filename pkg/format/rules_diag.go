@@ -109,10 +109,14 @@ func diagLabelUnused(ctx *Ctx) Result {
 	if ctx.Doc == nil {
 		return Result{Src: ctx.Src}
 	}
-	// Collect all referenced targets.
+	// Collect all referenced targets (excluding cites — those are bibliography
+	// keys, not label references).
 	referenced := make(map[string]bool)
 	for _, b := range ctx.Doc.Blocks {
 		for _, ref := range b.RefsOut {
+			if ref.Kind == "cite" {
+				continue
+			}
 			referenced[ref.Target] = true
 		}
 	}

@@ -74,6 +74,13 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 
 	// Copy all build inputs to both tempdirs.
 	for _, rel := range tree.Files {
+		// Defense-in-depth: reject paths that would escape the root or tempdir.
+		// Use ".." + separator prefix (not bare "..") to avoid false positives
+		// on valid filenames like "..paper.tex".
+		cleaned := filepath.Clean(rel)
+		if filepath.IsAbs(rel) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("verify: rejecting out-of-tree path %q", rel)
+		}
 		srcPath := filepath.Join(tree.Root, rel)
 		data, readErr := os.ReadFile(srcPath)
 		if readErr != nil {
@@ -92,6 +99,10 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 
 	// Overwrite paper.tex in each tempdir with the correct version.
 	paperRel := tree.Paper
+	cleanedPaper := filepath.Clean(paperRel)
+	if filepath.IsAbs(paperRel) || cleanedPaper == ".." || strings.HasPrefix(cleanedPaper, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("verify: rejecting out-of-tree paper path %q", paperRel)
+	}
 	if err := os.WriteFile(filepath.Join(beforeDir, paperRel), beforeSrc, 0o644); err != nil {
 		return nil, fmt.Errorf("verify: write before paper: %w", err)
 	}
