@@ -6,6 +6,7 @@ import (
 
 	"github.com/mattn/go-runewidth"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -52,9 +53,13 @@ type OutlineRow struct {
 // block in the document has a region — in that case SyncTeX is
 // unavailable session-wide (e.g. no .synctex.gz), and decorating every
 // non-section row would be noise rather than signal.
-func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter) []OutlineRow {
+func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter, extIssues ...map[string][]format.ReportDiag) []OutlineRow {
 	if doc == nil || doc.Root == nil {
 		return nil
+	}
+	var ext map[string][]format.ReportDiag
+	if len(extIssues) > 0 {
+		ext = extIssues[0]
 	}
 	syncAvailable := anyBlockHasRegion(doc)
 	rows := make([]OutlineRow, 0, len(doc.Blocks))
@@ -64,13 +69,13 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter) []
 		if b == nil {
 			return
 		}
-		if blockMatchesFilter(b, side, filter) {
+		if blockMatchesFilter(b, side, filter, ext) {
 			rows = append(rows, OutlineRow{
 				BlockID: b.ID,
 				Depth:   depth,
 				Icon:    iconFor(b.Kind),
 				Title:   titleFor(b),
-				Markers: markersFor(b, side, syncAvailable),
+				Markers: markersFor(b, side, syncAvailable, ext),
 			})
 		}
 		for _, c := range b.ChildIDs {
@@ -257,7 +262,7 @@ func truncateToWidth(s string, width int) string {
 // marker is noise (every non-section block would carry it), so we only
 // emit it when SyncTeX *did* load but this particular block couldn't be
 // located.
-func markersFor(b *parser.Block, side *persist.Sidecar, syncAvailable bool) string {
+func markersFor(b *parser.Block, side *persist.Sidecar, syncAvailable bool, ext ...map[string][]format.ReportDiag) string {
 	var parts []string
 	if hasAnnotation(side, b.ID) {
 		parts = append(parts, MarkerAnnotated)
@@ -267,6 +272,9 @@ func markersFor(b *parser.Block, side *persist.Sidecar, syncAvailable bool) stri
 	}
 	if blockHasUnresolved(b) {
 		parts = append(parts, MarkerUnresolved)
+	}
+	if len(ext) > 0 && blockHasExternalIssue(ext[0], b.ID) {
+		parts = append(parts, MarkerExternal)
 	}
 	if syncAvailable && b.PDFRegion == nil && b.Kind != parser.KindSection && b.ID != "root" {
 		parts = append(parts, MarkerNoRegion)

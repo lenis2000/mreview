@@ -153,7 +153,7 @@ func (m Model) renderOutlinePane(width, height int) string {
 		innerH = 1
 	}
 	title := m.Styles.PaneTitle.Render("Outline")
-	rows := BuildOutline(m.Doc, m.Sidecar, m.Filter)
+	rows := BuildOutline(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues)
 	// Reserve 2 inner rows for the title + blank separator; the rest is rows.
 	bodyH := innerH - 1
 	if bodyH < 1 {

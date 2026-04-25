@@ -331,14 +331,14 @@ Two rules, registered together:
 
 ### Task 7: Report file + mreview `issues` filter integration
 
-- [ ] `pkg/format/report.go`: write `paper.tex.fmt-report.md` when `--report` is set. Include rewrites grouped by rule, diagnostics grouped by rule, verifier warnings (e.g. no-op rule firings).
-- [ ] `pkg/format/report.go`: also expose `LoadReport(path string) (*Report, error)` for the UI side.
-- [ ] `pkg/ui/` integration is non-trivial (the existing `FilterIssues` surfaces parser-level unresolved-ref diagnostics built into the block tree, per `outline_test.go:147`):
-  - [ ] Add a `ExternalIssues map[blockID][]Diag` field to the UI's outline state.
-  - [ ] On model init: if `<paper>.tex.fmt-report.md` exists alongside `<paper>.tex`, call `format.LoadReport`. Map each `Diag.Line` → owning block via the parser's line-to-block index (or build one if not present).
-  - [ ] Extend `BuildOutline` (or wrap it) so `FilterIssues` surfaces both built-in and external diagnostics. Add a glyph distinguishing them (e.g. `⚠` for built-in, `🔧` for fmt-report) — confirm with LP whether to differentiate visually.
-  - [ ] Add tests in `pkg/ui/outline_test.go` paralleling `TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs`.
-- [ ] Budget for UI integration: ~150 LOC in `pkg/ui/` plus tests.
+- [x] `pkg/format/report.go`: write `paper.tex.fmt-report.md` when `--report` is set. Include rewrites grouped by rule, diagnostics grouped by rule, verifier warnings (e.g. no-op rule firings).
+- [x] `pkg/format/report.go`: also expose `LoadReport(path string) (*Report, error)` for the UI side.
+- [x] `pkg/ui/` integration is non-trivial (the existing `FilterIssues` surfaces parser-level unresolved-ref diagnostics built into the block tree, per `outline_test.go:147`):
+  - [x] Add a `ExternalIssues map[blockID][]Diag` field to the UI's outline state.
+  - [x] On model init: if `<paper>.tex.fmt-report.md` exists alongside `<paper>.tex`, call `format.LoadReport`. Map each `Diag.Line` → owning block via the parser's line-to-block index (or build one if not present).
+  - [x] Extend `BuildOutline` (or wrap it) so `FilterIssues` surfaces both built-in and external diagnostics. Add a glyph distinguishing them (e.g. `⚠` for built-in, `🔧` for fmt-report) — confirm with LP whether to differentiate visually.
+  - [x] Add tests in `pkg/ui/outline_test.go` paralleling `TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs`.
+- [x] Budget for UI integration: ~150 LOC in `pkg/ui/` plus tests.
 
 ### Task 8: Paranoid verifier mode
 

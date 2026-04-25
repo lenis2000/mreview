@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -32,7 +33,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 		switch pane {
 		case PaneOutline:
 			bodyH := outlinePaneInnerH(m.Height, m.Layout)
-			if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, bodyH, innerY); id != "" {
+			if id := outlineRowAt(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues, m.CursorBlockID, bodyH, innerY); id != "" {
 				if id != m.CursorBlockID {
 					m.CursorBlockID = id
 					m.SourceLineCursor = 1
@@ -229,11 +230,11 @@ func paneInnerY(y, paneH int) int {
 // cursor would otherwise fall off the bottom of the visible window.
 // Clicks on a scrolled-out-of-view row therefore land on the right
 // block instead of the unscrolled first row.
-func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, cursor string, bodyH, row int) string {
+func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, ext map[string][]format.ReportDiag, cursor string, bodyH, row int) string {
 	if row < 0 {
 		return ""
 	}
-	rows := BuildOutline(doc, side, filter)
+	rows := BuildOutline(doc, side, filter, ext)
 	offset := outlineScrollOffset(rows, cursor, bodyH)
 	idx := offset + row
 	if idx < 0 || idx >= len(rows) {

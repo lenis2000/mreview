@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -29,7 +30,7 @@ func DefaultFilter(side *persist.Sidecar) Filter {
 // The filter is purely per-block: ancestors do not force children to be
 // shown, and a filtered-out parent still contributes depth to any visible
 // descendants.
-func blockMatchesFilter(b *parser.Block, side *persist.Sidecar, f Filter) bool {
+func blockMatchesFilter(b *parser.Block, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) bool {
 	if b == nil {
 		return false
 	}
@@ -41,7 +42,13 @@ func blockMatchesFilter(b *parser.Block, side *persist.Sidecar, f Filter) bool {
 	case FilterAnnotated:
 		return hasAnnotation(side, b.ID)
 	case FilterIssues:
-		return blockHasIssue(b)
+		if blockHasIssue(b) {
+			return true
+		}
+		if len(ext) > 0 && blockHasExternalIssue(ext[0], b.ID) {
+			return true
+		}
+		return false
 	}
 	return true
 }

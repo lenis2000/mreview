@@ -84,6 +84,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	opts := format.Options{
 		PDFFix: o.PDFFix,
 		Rules:  o.Rule,
+		Diag:   o.Report, // enable diagnostics when --report is set
 	}
 
 	result := format.Apply(src, opts)
@@ -91,6 +92,18 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	// No changes?
 	if string(result.Src) == string(src) {
 		if o.Check {
+			return 0
+		}
+		// Write report even when no rewrites — diagnostics are still useful.
+		if o.Report && len(result.Diags) > 0 {
+			rpt := format.BuildReport(filepath.Base(paperPath), opts, result, nil)
+			reportPath := format.ReportPath(paperPath)
+			if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
+				fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
+				return 1
+			}
+			fmt.Fprintf(stderr, "mreview fmt: no changes; wrote %s (%d diagnostics)\n",
+				filepath.Base(reportPath), len(result.Diags))
 			return 0
 		}
 		fmt.Fprintln(stderr, "mreview fmt: no changes")
@@ -121,6 +134,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Verify: build before/after PDFs and compare text layer.
+	var verifyResult *format.VerifyResult
 	if !o.NoVerify {
 		tree, treeErr := format.DiscoverTree(paperPath)
 		if treeErr != nil {
@@ -146,12 +160,24 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "mreview fmt: warning: %s\n", w)
 		}
 		fmt.Fprintln(stderr, "mreview fmt: verification ok")
+		verifyResult = vr
 	}
 
 	// Write the rewritten source.
 	if writeErr := os.WriteFile(paperPath, result.Src, 0o644); writeErr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: write %q: %v\n", paperPath, writeErr)
 		return 1
+	}
+
+	// Write report if --report is set.
+	if o.Report {
+		rpt := format.BuildReport(filepath.Base(paperPath), opts, result, verifyResult)
+		reportPath := format.ReportPath(paperPath)
+		if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
+			return 1
+		}
+		fmt.Fprintf(stderr, "mreview fmt: wrote %s\n", filepath.Base(reportPath))
 	}
 
 	// Summary.

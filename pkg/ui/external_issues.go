@@ -1,0 +1,72 @@
+package ui
+
+import (
+	"os"
+
+	"mreview/pkg/format"
+	"mreview/pkg/parser"
+)
+
+// MarkerExternal is the outline marker for blocks with fmt-report diagnostics.
+const MarkerExternal = "🔧"
+
+// LoadExternalIssues loads a fmt-report.md file and maps its diagnostics
+// to owning blocks by line number. Returns nil (not an error) when the
+// report file does not exist.
+func LoadExternalIssues(reportPath string, doc *parser.Document) (map[string][]format.ReportDiag, error) {
+	if _, err := os.Stat(reportPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+	rpt, err := format.LoadReport(reportPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(rpt.Diags) == 0 {
+		return nil, nil
+	}
+	return mapDiagsToBlocks(rpt.Diags, doc), nil
+}
+
+// mapDiagsToBlocks maps each ReportDiag to the block whose [StartLine, EndLine]
+// range contains the diagnostic's line. Diagnostics that don't fall in any
+// block are mapped to the root block.
+func mapDiagsToBlocks(diags []format.ReportDiag, doc *parser.Document) map[string][]format.ReportDiag {
+	if doc == nil {
+		return nil
+	}
+	m := make(map[string][]format.ReportDiag)
+	for _, d := range diags {
+		bid := findOwningBlock(d.Line, doc)
+		m[bid] = append(m[bid], d)
+	}
+	return m
+}
+
+// findOwningBlock returns the ID of the deepest block whose line range
+// contains line. Returns "root" if no block matches.
+func findOwningBlock(line int, doc *parser.Document) string {
+	if doc == nil || line <= 0 {
+		return "root"
+	}
+	// Walk all blocks and find the narrowest (deepest) one containing line.
+	bestID := "root"
+	bestSpan := int(^uint(0) >> 1) // max int
+	for _, b := range doc.Blocks {
+		if b == nil || b.ID == "root" {
+			continue
+		}
+		if b.StartLine <= line && line <= b.EndLine {
+			span := b.EndLine - b.StartLine
+			if span < bestSpan {
+				bestSpan = span
+				bestID = b.ID
+			}
+		}
+	}
+	return bestID
+}
+
+// blockHasExternalIssue reports whether the block has any fmt-report diagnostics.
+func blockHasExternalIssue(issues map[string][]format.ReportDiag, id string) bool {
+	return len(issues[id]) > 0
+}

@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
@@ -125,6 +126,10 @@ type Model struct {
 	// block on the same page reuses the decision instead of paying for
 	// the median-region-width computation on each render.
 	pageLayout *pageLayoutCache
+
+	// ExternalIssues maps block IDs to format-report diagnostics loaded from
+	// a paper.tex.fmt-report.md file. Populated by LoadExternalIssues.
+	ExternalIssues map[string][]format.ReportDiag
 
 	// Config holds the merged TOML configuration. nil-safe: DefaultConfig()
 	// populates it when New is called.
