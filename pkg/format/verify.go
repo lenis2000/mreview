@@ -144,8 +144,10 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 	beforePages2 := splitPages(beforeNorm)
 	afterPages2 := splitPages(afterNorm)
 
-	// Build the whitelist from synctex + hits.
-	whitelist, syncErr := buildWhitelist(beforeRes.SyncTeXPath, tree.Paper, hits)
+	// Build the whitelist from synctex + hits. We use the AFTER synctex because
+	// Hits' ExpectedDiffSourceLines are computed from the post-modification source
+	// (Tier-1 rules may have shifted line numbers before Tier-2 rules ran).
+	whitelist, syncErr := buildWhitelist(afterRes.SyncTeXPath, tree.Paper, hits)
 	if syncErr != nil {
 		// If synctex fails and there are Tier-2 hits, that's an error — the
 		// whitelist is load-bearing. If only Tier-1 hits, no whitelist needed.
