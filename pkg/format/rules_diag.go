@@ -418,8 +418,7 @@ func diagTodoMarker(ctx *Ctx) Result {
 			continue
 		}
 		// Extract the parbox content: \parbox{WIDTH}{COMMENT}
-		ppos := bytes.Index(trimmed, []byte(`\parbox`))
-		cursor := ppos + len(`\parbox`)
+		cursor := len(`\parbox`)
 		// Skip optional *
 		if cursor < len(trimmed) && trimmed[cursor] == '*' {
 			cursor++

@@ -1,8 +1,6 @@
 package format
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -426,17 +424,20 @@ func runPdftotext(pdfPath string) ([]byte, error) {
 // collapse internal runs of whitespace to single space, strip trailing
 // whitespace per line. Returns the normalized text as a single string.
 func normalizeTextLines(raw []byte) string {
+	s := string(raw)
+	// Remove trailing newline so Split doesn't produce a spurious empty element.
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return ""
+	}
 	var buf strings.Builder
-	sc := bufio.NewScanner(bytes.NewReader(raw))
-	first := true
-	for sc.Scan() {
-		line := sc.Text()
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
 		norm := collapseSpaces(strings.TrimRight(line, " \t"))
-		if !first {
+		if i > 0 {
 			buf.WriteByte('\n')
 		}
 		buf.WriteString(norm)
-		first = false
 	}
 	return buf.String()
 }

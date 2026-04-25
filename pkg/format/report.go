@@ -106,6 +106,9 @@ func BuildReport(file string, opts Options, result PipelineResult, verifyResult 
 	} else {
 		rpt.Tier = "safe"
 	}
+	if opts.Diag {
+		rpt.Tier += "+diag"
+	}
 
 	// Verify label.
 	if verifyResult != nil {
