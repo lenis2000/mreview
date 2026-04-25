@@ -142,30 +142,47 @@ func applyMathParagraphSuppress(ctx *Ctx) Result {
 	// The content line above (or the display-math close line below) already
 	// has its own \n, so removing the blank-line bytes joins the lines
 	// with exactly one \n between them.
+	//
+	// Track the output byte position corresponding to each r.end so we can
+	// compute ExpectedDiffSourceLines using the AFTER-rule line table.
+	// The verifier resolves these line numbers against the AFTER synctex.
 	var out []byte
-	var hits []Hit
+	type hitInfo struct {
+		srcLine    int
+		outBytePos int // position of r.end content in output
+	}
+	var hitInfos []hitInfo
 	prev := 0
 	for _, r := range removals {
 		if r.start < prev {
 			continue // overlapping removal, skip
 		}
 		out = append(out, ctx.Src[prev:r.start]...)
+		outPos := len(out) // byte position in output where r.end content begins
 		prev = r.end
 
-		// The expected-diff source line is the prose line immediately following
-		// the display-math close (its indentation status changes in the PDF).
-		expectedLine := lineAt(ctx.Lines, r.end)
+		hitInfos = append(hitInfos, hitInfo{
+			srcLine:    r.srcLine,
+			outBytePos: outPos,
+		})
+	}
+	out = append(out, ctx.Src[prev:]...)
+
+	// Recompute expected-diff lines using the output's line offsets.
+	outLines := parser.LineOffsets(out)
+	var hits []Hit
+	for _, hi := range hitInfos {
+		expectedLine := lineAt(outLines, hi.outBytePos)
 		if expectedLine < 1 {
 			expectedLine = 1
 		}
 		hits = append(hits, Hit{
 			RuleID:                  "math.paragraph-suppress",
-			Line:                    r.srcLine,
+			Line:                    hi.srcLine,
 			ExpectedDiffSourceLines: []int{expectedLine},
 			Excerpt:                 "collapsed blank lines around display math",
 		})
 	}
-	out = append(out, ctx.Src[prev:]...)
 
 	return Result{Src: out, Hits: hits}
 }
@@ -555,23 +572,48 @@ func applyEnvSpacing(ctx *Ctx) Result {
 		insertions[j+1] = key
 	}
 
-	// Build output with insertions.
+	// Build output with insertions. Track output byte positions so we
+	// can compute ExpectedDiffSourceLines using the AFTER-rule line table.
+	// The verifier resolves these line numbers against the AFTER synctex.
 	var out []byte
-	var hits []Hit
+	type insInfo struct {
+		srcLine    int
+		outBytePos int // position of the env/section line in output (after the inserted \n)
+	}
+	var insInfos []insInfo
 	prev := 0
 	for _, ins := range insertions {
 		out = append(out, ctx.Src[prev:ins.offset]...)
 		out = append(out, '\n') // insert blank line
+		outPos := len(out)      // byte position of the env/section line in output
 		prev = ins.offset
 
-		hits = append(hits, Hit{
-			RuleID:                  "env.spacing",
-			Line:                    ins.srcLine,
-			ExpectedDiffSourceLines: []int{ins.srcLine - 1, ins.srcLine},
-			Excerpt:                 "inserted blank line above env/section",
+		insInfos = append(insInfos, insInfo{
+			srcLine:    ins.srcLine,
+			outBytePos: outPos,
 		})
 	}
 	out = append(out, ctx.Src[prev:]...)
+
+	// Recompute expected-diff lines using the output's line offsets.
+	outLines := parser.LineOffsets(out)
+	var hits []Hit
+	for _, ii := range insInfos {
+		envLine := lineAt(outLines, ii.outBytePos)
+		if envLine < 1 {
+			envLine = 1
+		}
+		aboveLine := envLine - 1
+		if aboveLine < 1 {
+			aboveLine = 1
+		}
+		hits = append(hits, Hit{
+			RuleID:                  "env.spacing",
+			Line:                    ii.srcLine,
+			ExpectedDiffSourceLines: []int{aboveLine, envLine},
+			Excerpt:                 "inserted blank line above env/section",
+		})
+	}
 
 	return Result{Src: out, Hits: hits}
 }

@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -74,9 +75,13 @@ func (s *JumpStack) Redo(current string) (string, bool) {
 
 // visibleOrder walks the document tree in pre-order and returns the IDs of
 // blocks passing the filter. Root is not emitted.
-func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter) []string {
+func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) []string {
 	if doc == nil || doc.Root == nil {
 		return nil
+	}
+	var extMap map[string][]format.ReportDiag
+	if len(ext) > 0 {
+		extMap = ext[0]
 	}
 	out := make([]string, 0, len(doc.Blocks))
 	var walk func(id string)
@@ -85,7 +90,7 @@ func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter) []strin
 		if b == nil {
 			return
 		}
-		if blockMatchesFilter(b, side, f) {
+		if blockMatchesFilter(b, side, f, extMap) {
 			out = append(out, b.ID)
 		}
 		for _, c := range b.ChildIDs {
@@ -114,8 +119,8 @@ func isInnerBlock(doc *parser.Document, b *parser.Block) bool {
 }
 
 // outerOrder is visibleOrder with inner blocks filtered out.
-func outerOrder(doc *parser.Document, side *persist.Sidecar, f Filter) []string {
-	order := visibleOrder(doc, side, f)
+func outerOrder(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) []string {
+	order := visibleOrder(doc, side, f, ext...)
 	out := order[:0:0]
 	for _, id := range order {
 		b := doc.ByID[id]
@@ -173,11 +178,11 @@ func step(ids []string, i, delta int) string {
 
 // NextSibling moves n outer-level rows forward from cur. When cur is inner,
 // the motion anchors at the nearest outer ancestor.
-func NextSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func NextSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := outerOrder(doc, side, f)
+	order := outerOrder(doc, side, f, ext...)
 	anchor := outerAnchor(doc, cur)
 	if id := step(order, indexOf(order, anchor), n); id != "" {
 		return id
@@ -186,11 +191,11 @@ func NextSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur stri
 }
 
 // PrevSibling moves n outer-level rows backward from cur.
-func PrevSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func PrevSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := outerOrder(doc, side, f)
+	order := outerOrder(doc, side, f, ext...)
 	anchor := outerAnchor(doc, cur)
 	if id := step(order, indexOf(order, anchor), -n); id != "" {
 		return id
@@ -199,11 +204,11 @@ func PrevSibling(doc *parser.Document, side *persist.Sidecar, f Filter, cur stri
 }
 
 // NextInner walks forward through every visible block in DFS order.
-func NextInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func NextInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := visibleOrder(doc, side, f)
+	order := visibleOrder(doc, side, f, ext...)
 	if id := step(order, indexOf(order, cur), n); id != "" {
 		return id
 	}
@@ -211,11 +216,11 @@ func NextInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string
 }
 
 // PrevInner walks backward through every visible block in DFS order.
-func PrevInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func PrevInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := visibleOrder(doc, side, f)
+	order := visibleOrder(doc, side, f, ext...)
 	if id := step(order, indexOf(order, cur), -n); id != "" {
 		return id
 	}
@@ -223,11 +228,11 @@ func PrevInner(doc *parser.Document, side *persist.Sidecar, f Filter, cur string
 }
 
 // NextSection moves n sections forward in visible order. Clamps at last.
-func NextSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func NextSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := visibleOrder(doc, side, f)
+	order := visibleOrder(doc, side, f, ext...)
 	i := indexOf(order, cur)
 	if i < 0 {
 		return cur
@@ -248,11 +253,11 @@ func NextSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur stri
 }
 
 // PrevSection moves n sections backward.
-func PrevSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string {
+func PrevSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string {
 	if n < 1 {
 		n = 1
 	}
-	order := visibleOrder(doc, side, f)
+	order := visibleOrder(doc, side, f, ext...)
 	i := indexOf(order, cur)
 	if i < 0 {
 		return cur
@@ -273,8 +278,8 @@ func PrevSection(doc *parser.Document, side *persist.Sidecar, f Filter, cur stri
 }
 
 // FirstVisible returns the first visible block ID, or "" when none exists.
-func FirstVisible(doc *parser.Document, side *persist.Sidecar, f Filter) string {
-	order := visibleOrder(doc, side, f)
+func FirstVisible(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) string {
+	order := visibleOrder(doc, side, f, ext...)
 	if len(order) == 0 {
 		return ""
 	}
@@ -282,8 +287,8 @@ func FirstVisible(doc *parser.Document, side *persist.Sidecar, f Filter) string 
 }
 
 // LastVisible returns the last visible block ID, or "" when none exists.
-func LastVisible(doc *parser.Document, side *persist.Sidecar, f Filter) string {
-	order := visibleOrder(doc, side, f)
+func LastVisible(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) string {
+	order := visibleOrder(doc, side, f, ext...)
 	if len(order) == 0 {
 		return ""
 	}

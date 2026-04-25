@@ -56,7 +56,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 		case PaneSource:
 			m = m.scrollSource(-1)
 		case PaneOutline:
-			id := PrevSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+			id := PrevSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
 			if id != "" {
 				m.CursorBlockID = id
 				m.SourceLineCursor = 1
@@ -67,7 +67,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 		case PaneSource:
 			m = m.scrollSource(+1)
 		case PaneOutline:
-			id := NextSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1)
+			id := NextSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
 			if id != "" {
 				m.CursorBlockID = id
 				m.SourceLineCursor = 1

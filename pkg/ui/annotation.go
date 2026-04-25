@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -228,8 +229,8 @@ func (m Model) ToggleReviewed() (tea.Model, tea.Cmd) {
 // advanceAfterReview picks the next visible block after the current one under
 // the given filter. Used after `space` in the unreviewed view, where the
 // current block has just been filtered out.
-func advanceAfterReview(doc *parser.Document, side *persist.Sidecar, f Filter, cur string) string {
-	order := visibleOrder(doc, side, f)
+func advanceAfterReview(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, ext ...map[string][]format.ReportDiag) string {
+	order := visibleOrder(doc, side, f, ext...)
 	if len(order) == 0 {
 		return ""
 	}

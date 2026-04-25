@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/persist"
 )
@@ -474,7 +475,7 @@ func clampLineCursor(doc *parser.Document, blockID string, want int) int {
 
 // motionFn is the shared signature of NextSibling / PrevSibling / NextInner
 // and their kin in nav.go.
-type motionFn func(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int) string
+type motionFn func(doc *parser.Document, side *persist.Sidecar, f Filter, cur string, n int, ext ...map[string][]format.ReportDiag) string
 
 // applyMotion parses the pending count, invokes fn, and updates the cursor.
 // j/k/J/K and {/} are "movements", not "jumps"; they do not push the jump
@@ -482,7 +483,7 @@ type motionFn func(doc *parser.Document, side *persist.Sidecar, f Filter, cur st
 func (m Model) applyMotion(fn motionFn) Model {
 	n := parseCount(m.CountBuf)
 	m.CountBuf = ""
-	id := fn(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, n)
+	id := fn(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, n, m.ExternalIssues)
 	if id != "" && id != m.CursorBlockID {
 		m.CursorBlockID = id
 		m.SourceLineCursor = 1
@@ -493,7 +494,7 @@ func (m Model) applyMotion(fn motionFn) Model {
 // gotoFirst jumps to the first visible block. Pushes the jump stack.
 func (m Model) gotoFirst() Model {
 	m.CountBuf = ""
-	id := FirstVisible(m.Doc, m.Sidecar, m.Filter)
+	id := FirstVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues)
 	if id == "" || id == m.CursorBlockID {
 		return m
 	}
@@ -506,7 +507,7 @@ func (m Model) gotoFirst() Model {
 // gotoLast jumps to the last visible block. Pushes the jump stack.
 func (m Model) gotoLast() Model {
 	m.CountBuf = ""
-	id := LastVisible(m.Doc, m.Sidecar, m.Filter)
+	id := LastVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues)
 	if id == "" || id == m.CursorBlockID {
 		return m
 	}
