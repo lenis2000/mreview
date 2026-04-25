@@ -166,6 +166,19 @@ func TestProtectedSpans_MultipleVerbOnOneLine(t *testing.T) {
 	assert.Equal(t, `\verb|b|`, string(src[spans[1].Start:spans[1].End]))
 }
 
+func TestProtectedSpans_CommentedOutBeginVerbatim(t *testing.T) {
+	// A commented-out \begin{verbatim} should NOT start a verbatim span.
+	src := []byte("% \\begin{verbatim}\nThis should be formatted.\n\\end{verbatim}\n")
+	spans := ProtectedSpans(src)
+	// The only spans should be the comment-line on line 1.
+	// There should be no verbatim span because the \begin is inside a comment.
+	for _, sp := range spans {
+		if sp.Kind == "verbatim" {
+			t.Fatalf("commented-out \\begin{verbatim} should not create a verbatim span, got span [%d,%d)", sp.Start, sp.End)
+		}
+	}
+}
+
 func TestProtectedSpans_NestedVerbatim(t *testing.T) {
 	// A verbatim inside verbatim is impossible in LaTeX, but make sure our
 	// scanner handles the string \begin{verbatim} inside a verbatim block

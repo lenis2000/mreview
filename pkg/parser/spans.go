@@ -34,7 +34,9 @@ func ProtectedSpans(src []byte) []ProtectedSpan {
 	}
 
 	// Pass 2: multi-line skip-envs (verbatim, lstlisting, comment).
-	spans = append(spans, scanSkipEnvs(src)...)
+	// Pass the comment/inline spans from pass-1 so that scanSkipEnvs skips
+	// \begin{verbatim} markers that fall inside %-comment lines.
+	spans = append(spans, scanSkipEnvs(src, spans)...)
 	sortSpans(spans)
 	return spans
 }
@@ -207,8 +209,10 @@ func scanInlineVerb(src []byte, pos, lineEnd int) (ProtectedSpan, int, bool) {
 }
 
 // scanSkipEnvs finds all \begin{env}...\end{env} pairs for environments in
-// skipEnvs and returns a span covering each pair.
-func scanSkipEnvs(src []byte) []ProtectedSpan {
+// skipEnvs and returns a span covering each pair. The existing spans
+// (from pass-1) are consulted so that \begin markers inside %-comment
+// lines are ignored.
+func scanSkipEnvs(src []byte, existing []ProtectedSpan) []ProtectedSpan {
 	var spans []ProtectedSpan
 	pos := 0
 	for pos < len(src) {
@@ -230,6 +234,12 @@ func scanSkipEnvs(src []byte) []ProtectedSpan {
 		afterBegin := nameEnd + 1
 
 		if !skipEnvs[envName] {
+			pos = afterBegin
+			continue
+		}
+
+		// Skip \begin markers that fall inside a comment line (pass-1 span).
+		if OverlapsProtected(beginPos, afterBegin, existing) {
 			pos = afterBegin
 			continue
 		}

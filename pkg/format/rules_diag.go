@@ -488,6 +488,8 @@ func readBracketGroupBytes(buf []byte, pos int) ([]byte, int, bool) {
 	start := pos
 	for i := pos; i < len(buf); i++ {
 		switch buf[i] {
+		case '\\':
+			i++ // skip escaped char
 		case '[':
 			depth++
 		case ']':
