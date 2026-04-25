@@ -426,9 +426,11 @@ func normalizeTextLines(raw []byte) string {
 	return buf.String()
 }
 
-var multiSpaceRe = regexp.MustCompile(`\s+`)
+var multiSpaceRe = regexp.MustCompile(`[ \t\r]+`)
 
-// collapseSpaces replaces all runs of whitespace with a single space.
+// collapseSpaces replaces runs of horizontal whitespace (spaces, tabs,
+// carriage returns) with a single space. Form-feed characters are preserved
+// because splitPages uses them as page separators.
 func collapseSpaces(s string) string {
 	return multiSpaceRe.ReplaceAllString(s, " ")
 }

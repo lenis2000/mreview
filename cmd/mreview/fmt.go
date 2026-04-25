@@ -124,6 +124,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	// --diff: print unified diff to stdout, no write.
 	if o.Diff {
+		writeReportIfNeeded(nil)
 		return printDiff(stdout, paperPath, src, result.Src)
 	}
 

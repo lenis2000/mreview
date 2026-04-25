@@ -219,6 +219,14 @@ func diagCiteUndefined(ctx *Ctx) Result {
 	if ctx.Doc == nil {
 		return Result{Src: ctx.Src}
 	}
+	// If no .bbl entries have been loaded, every cite ref has
+	// Resolved==false (parser hardcodes this). Skip the rule entirely to
+	// avoid a flood of false positives. The format pipeline does not
+	// currently wire .bbl resolution; this guard prevents misleading output
+	// until it does.
+	if len(ctx.Doc.BibEntries) == 0 {
+		return Result{Src: ctx.Src}
+	}
 	var diags []Diag
 	for _, b := range ctx.Doc.Blocks {
 		for _, ref := range b.RefsOut {

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"testing"
 
+	"mreview/pkg/parser"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -955,6 +957,7 @@ func TestDiagCiteUndefined(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
+		bibKeys   []string // keys present in BibEntries (simulates loaded .bbl)
 		wantDiags int
 	}{
 		{
@@ -963,6 +966,7 @@ func TestDiagCiteUndefined(t *testing.T) {
 \cite{missing2020}
 \end{document}
 `,
+			bibKeys:   []string{"other2020"}, // bbl loaded with a different key
 			wantDiags: 1,
 		},
 		{
@@ -971,13 +975,42 @@ func TestDiagCiteUndefined(t *testing.T) {
 \cite{a} and \cite{b}
 \end{document}
 `,
+			bibKeys:   []string{"c"}, // bbl loaded, but cited keys not present
 			wantDiags: 2,
+		},
+		{
+			name: "no bbl loaded - skip rule",
+			input: `\begin{document}
+\cite{foo}
+\end{document}
+`,
+			bibKeys:   nil,
+			wantDiags: -1, // sentinel: test without ApplyBBL, expect 0 diags
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res := Apply([]byte(tt.input), diagOpts("lint.cite-undefined"))
+			src := []byte(tt.input)
+			ctx := newCtx(src)
+			doc, _ := parser.Parse(src)
+			ctx.Doc = doc
+
+			if tt.wantDiags == -1 {
+				// Do NOT call ApplyBBL — BibEntries stays empty (no .bbl loaded).
+				res := diagCiteUndefined(ctx)
+				assert.Equal(t, 0, len(res.Diags), "diag count when bbl not loaded")
+				return
+			}
+
+			// Simulate a loaded .bbl by calling ApplyBBL (makes BibEntries non-nil).
+			var entries []parser.BibEntry
+			for _, k := range tt.bibKeys {
+				entries = append(entries, parser.BibEntry{Key: k})
+			}
+			parser.ApplyBBL(doc, entries)
+
+			res := diagCiteUndefined(ctx)
 			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
 			for _, d := range res.Diags {
 				assert.Equal(t, "lint.cite-undefined", d.RuleID)
