@@ -27,7 +27,8 @@ type PipelineResult struct {
 // (possibly rewritten) source together with all hits and diagnostics.
 //
 // The pipeline recomputes token/span/line indices after any rule that changes
-// the number of newlines (to avoid stale-offset bugs in subsequent rules).
+// the source bytes (Protected spans and Lines are byte-offset-based, so any
+// byte-level change — even one that preserves newline count — invalidates them).
 // The Document (ctx.Doc) is parsed once before the first non-Safe rule that
 // needs it (Tier-2 and Tier-3 rules reason about envs, labels, and refs).
 func Apply(src []byte, opts Options) PipelineResult {
@@ -50,12 +51,14 @@ func Apply(src []byte, opts Options) PipelineResult {
 		allDiags = append(allDiags, result.Diags...)
 
 		if !bytes.Equal(result.Src, ctx.Src) {
-			// Source changed — check whether newlines shifted.
 			nlBefore := bytes.Count(ctx.Src, []byte{'\n'})
 			nlAfter := bytes.Count(result.Src, []byte{'\n'})
 			ctx.Src = result.Src
+			// Always reindex: Protected spans and Lines are byte-offset-based,
+			// so any source change (even tab→spaces with same newline count)
+			// invalidates them.
+			reindex(ctx)
 			if nlBefore != nlAfter {
-				reindex(ctx)
 				// Invalidate Doc so it gets re-parsed with correct
 				// line numbers before the next tier that needs it.
 				ctx.Doc = nil
