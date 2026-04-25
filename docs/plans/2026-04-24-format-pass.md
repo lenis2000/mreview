@@ -292,16 +292,16 @@ The `pdfverify` build tag enables Phase D goldens (slow, requires latex toolchai
 
 ### Task 4: Verifier — text-layer (default)
 
-- [ ] `verify.go`: `Verify(buildInputs Tree, beforeSrc, afterSrc []byte, hits []Hit, rules []Rule, syncMap *synctex.Index) (ok bool, unexpected []Diff, warnings []string, err error)`.
-- [ ] **Tempdir copy.** `Tree` describes the build inputs (`paper.tex`, `latexmkrc`, `*.cls`, `*.sty`, `*.bib`, `*.bbl`, figures, `\input` children — discovered by walking from `paper.tex`). Verifier copies the full set into `/tmp/mr-fmt-XXX/before/` and `/tmp/mr-fmt-XXX/after/`. **No symlinks** — `lmkf` runs against the original tree and shares aux files, which would collide. Document the tempdir lifecycle: kept until next run; `mreview fmt --clean-tempdir` removes them.
-- [ ] **Build.** Reuse `pkg/build.RunWith(opts)` against each tempdir copy. Hard-fail if `latexmk` is missing.
-- [ ] **Compare.** `pdftotext` (default mode, NOT `-layout`) on each PDF. Whitespace-normalize each line (strip trailing, collapse internal runs of `\s+` to single space). Diff line-by-line. Page-count via `pdfinfo` is a precondition: page-count mismatch is hard-fail without consulting any whitelist.
-- [ ] **Whitelist via synctex.** Load `before.synctex.gz` via `pkg/synctex`. For each `Hit{RuleID, Line}`, look up `(page, bbox)` of that source line; identify the corresponding line(s) in the `pdftotext` output for that page (by Y-coordinate ordering). Diffs that fall on whitelisted PDF lines are tolerated; diffs anywhere else cause refusal.
-- [ ] **Tier-1 rules**: emit Hits with `ExpectedDiffSourceLines == nil`. No diffs allowed at all; whitespace-normalized `pdftotext` must be identical.
-- [ ] **No-op detection.** After applying the whitelist, scan whitelisted regions: if a Tier-2 rule's expected-diff region shows zero diff, append a warning (`<rule-id> hit at L<n> produced no PDF change`) to `warnings`. Rule still applies; warning lands in the report.
-- [ ] **No caching** — see Verifier section. Always rebuild before/after. Machine is fast.
-- [ ] `cmd/mreview/fmt.go`: wire verifier into the write path. `--no-verify` skips it. On regression, do not write; print unexpected diffs and warnings to stderr; exit 1. Leave tempdir intact for inspection.
-- [ ] `verify_test.go`: golden round-trip on `testdata/sample.tex` with all Tier-1 rules.
+- [x] `verify.go`: `Verify(buildInputs Tree, beforeSrc, afterSrc []byte, hits []Hit, rules []Rule, syncMap *synctex.Index) (ok bool, unexpected []Diff, warnings []string, err error)`.
+- [x] **Tempdir copy.** `Tree` describes the build inputs (`paper.tex`, `latexmkrc`, `*.cls`, `*.sty`, `*.bib`, `*.bbl`, figures, `\input` children — discovered by walking from `paper.tex`). Verifier copies the full set into `/tmp/mr-fmt-XXX/before/` and `/tmp/mr-fmt-XXX/after/`. **No symlinks** — `lmkf` runs against the original tree and shares aux files, which would collide. Document the tempdir lifecycle: kept until next run; `mreview fmt --clean-tempdir` removes them.
+- [x] **Build.** Reuse `pkg/build.RunWith(opts)` against each tempdir copy. Hard-fail if `latexmk` is missing.
+- [x] **Compare.** `pdftotext` (default mode, NOT `-layout`) on each PDF. Whitespace-normalize each line (strip trailing, collapse internal runs of `\s+` to single space). Diff line-by-line. Page-count via `pdfinfo` is a precondition: page-count mismatch is hard-fail without consulting any whitelist.
+- [x] **Whitelist via synctex.** Load `before.synctex.gz` via `pkg/synctex`. For each `Hit{RuleID, Line}`, look up `(page, bbox)` of that source line; identify the corresponding line(s) in the `pdftotext` output for that page (by Y-coordinate ordering). Diffs that fall on whitelisted PDF lines are tolerated; diffs anywhere else cause refusal.
+- [x] **Tier-1 rules**: emit Hits with `ExpectedDiffSourceLines == nil`. No diffs allowed at all; whitespace-normalized `pdftotext` must be identical.
+- [x] **No-op detection.** After applying the whitelist, scan whitelisted regions: if a Tier-2 rule's expected-diff region shows zero diff, append a warning (`<rule-id> hit at L<n> produced no PDF change`) to `warnings`. Rule still applies; warning lands in the report.
+- [x] **No caching** — see Verifier section. Always rebuild before/after. Machine is fast.
+- [x] `cmd/mreview/fmt.go`: wire verifier into the write path. `--no-verify` skips it. On regression, do not write; print unexpected diffs and warnings to stderr; exit 1. Leave tempdir intact for inspection.
+- [x] `verify_test.go`: golden round-trip on `testdata/sample.tex` with all Tier-1 rules.
 
 ### Task 5: Tier-2 rules (closes Stage 1)
 

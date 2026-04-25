@@ -17,14 +17,15 @@ import (
 
 // fmtOpts holds flags for the "mreview fmt" subcommand.
 type fmtOpts struct {
-	Diff       bool     `long:"diff" description:"show unified diff to stdout, do not write"`
-	Check      bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
-	PDFFix     bool     `long:"pdf-fix" description:"enable Tier-2 PDF-fixing rules"`
-	Rule       []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
-	AllowDirty bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
-	NoVerify   bool     `long:"no-verify" description:"skip PDF verification"`
-	VerifyPDF  string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode"`
-	Report     bool     `long:"report" description:"write paper.tex.fmt-report.md"`
+	Diff         bool     `long:"diff" description:"show unified diff to stdout, do not write"`
+	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
+	PDFFix       bool     `long:"pdf-fix" description:"enable Tier-2 PDF-fixing rules"`
+	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
+	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
+	NoVerify     bool     `long:"no-verify" description:"skip PDF verification"`
+	VerifyPDF    string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode"`
+	Report       bool     `long:"report" description:"write paper.tex.fmt-report.md"`
+	CleanTempdir bool     `long:"clean-tempdir" description:"remove all mr-fmt-* verification tempdirs"`
 }
 
 // runFmt implements "mreview fmt [FLAGS] paper.tex".
@@ -43,6 +44,16 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
 		return 2
+	}
+
+	// --clean-tempdir: remove all verification tempdirs and exit.
+	if o.CleanTempdir {
+		if err := format.CleanTempDirs(); err != nil {
+			fmt.Fprintf(stderr, "mreview fmt: clean tempdirs: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stderr, "mreview fmt: cleaned verification tempdirs")
+		return 0
 	}
 
 	if len(rest) == 0 {
@@ -109,9 +120,32 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Verifier not built yet (Task 4). Warn that verification was skipped.
+	// Verify: build before/after PDFs and compare text layer.
 	if !o.NoVerify {
-		fmt.Fprintln(stderr, "mreview fmt: warning: PDF verification not yet implemented; writing without verify")
+		tree, treeErr := format.DiscoverTree(paperPath)
+		if treeErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: discover build inputs: %v\n", treeErr)
+			return 1
+		}
+
+		fmt.Fprintln(stderr, "mreview fmt: verifying PDF text layer...")
+		vr, verifyErr := format.Verify(*tree, src, result.Src, result.Hits)
+		if verifyErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: verification error: %v\n", verifyErr)
+			fmt.Fprintf(stderr, "hint: pass --no-verify to skip, or inspect %s\n", format.LastTempDir())
+			return 1
+		}
+		if !vr.OK {
+			fmt.Fprintln(stderr, "mreview fmt: verification FAILED — unexpected PDF text diffs:")
+			format.FormatDiffs(stderr, vr.Unexpected)
+			fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
+			fmt.Fprintln(stderr, "hint: pass --no-verify to skip verification")
+			return 1
+		}
+		for _, w := range vr.Warnings {
+			fmt.Fprintf(stderr, "mreview fmt: warning: %s\n", w)
+		}
+		fmt.Fprintln(stderr, "mreview fmt: verification ok")
 	}
 
 	// Write the rewritten source.
