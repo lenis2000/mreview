@@ -348,11 +348,11 @@ Two rules, registered together:
 
 ### Task 9: PNAS goldens
 
-- [ ] `testdata/pnas-fixture/main_pnas.tex` (frozen input copy, plus `latexmkrc`, `.cls`, `.sty`, `.bbl`, figures — minimal set needed to build).
-- [ ] `testdata/pnas-fixture/main_pnas.expected.tex` (frozen Tier-1+Tier-2 output).
-- [ ] `testdata/pnas-fixture/main_pnas.expected.txt` (frozen whitespace-normalized `pdftotext` (default mode) output of the expected PDF).
-- [ ] `golden_test.go` under build tag `pdfverify`: runs the pipeline, diffs source byte-for-byte against expected, then runs paranoid verifier against the frozen text.
-- [ ] Bump procedure (when a rule changes intentionally): regenerate fixtures via a helper `make pnas-fixture` that re-runs the pipeline + freezes the output. Document in `docs/plans/2026-04-24-format-pass.notes.md` (sibling notes file), not this plan body.
+- [x] `testdata/pnas-fixture/main_pnas.tex` (frozen input copy, plus `latexmkrc`, `.cls`, `.sty`, `.bbl`, figures — minimal set needed to build).
+- [x] `testdata/pnas-fixture/main_pnas.expected.tex` (frozen Tier-1+Tier-2 output).
+- [x] `testdata/pnas-fixture/main_pnas.expected.txt` (frozen whitespace-normalized `pdftotext` (default mode) output of the expected PDF).
+- [x] `golden_test.go` under build tag `pdfverify`: runs the pipeline, diffs source byte-for-byte against expected, then runs paranoid verifier against the frozen text.
+- [x] Bump procedure (when a rule changes intentionally): regenerate fixtures via a helper `make pnas-fixture` that re-runs the pipeline + freezes the output. Document in `docs/plans/2026-04-24-format-pass.notes.md` (sibling notes file), not this plan body.
 
 ### Task 10: Acceptance + documentation
 
