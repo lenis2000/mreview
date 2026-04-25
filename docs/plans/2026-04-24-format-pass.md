@@ -277,10 +277,10 @@ The `pdfverify` build tag enables Phase D goldens (slow, requires latex toolchai
 
 ### Task 2: Tier-1 safe rules
 
-- [ ] Implement `space.trailing`, `space.blank-runs`, `space.tabs`, `display.style` in `rules_safe.go`. All consult `ctx.Protected` before any rewrite.
-- [ ] `format_test.go` table-driven tests, ≥5 rows per rule including the four protected-span "no-rewrite" cases (inside `verbatim`, inside `\verb|…|`, inside `% comment`, inside `lstlisting`).
-- [ ] Register all four rules in `Registry` with `Tier: Safe`.
-- [ ] Verify the pipeline's stale-state recompute fires after rules that change newlines — add a pipeline test that runs `space.blank-runs` before `display.style` on input with line shifts and confirms `display.style` sees correct line numbers.
+- [x] Implement `space.trailing`, `space.blank-runs`, `space.tabs`, `display.style` in `rules_safe.go`. All consult `ctx.Protected` before any rewrite.
+- [x] `format_test.go` table-driven tests, ≥5 rows per rule including the four protected-span "no-rewrite" cases (inside `verbatim`, inside `\verb|…|`, inside `% comment`, inside `lstlisting`).
+- [x] Register all four rules in `Registry` with `Tier: Safe`.
+- [x] Verify the pipeline's stale-state recompute fires after rules that change newlines — add a pipeline test that runs `space.blank-runs` before `display.style` on input with line shifts and confirms `display.style` sees correct line numbers.
 
 ### Task 3: CLI subcommand `mreview fmt`
 
