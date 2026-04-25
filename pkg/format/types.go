@@ -70,3 +70,10 @@ type Diag struct {
 	Line    int
 	Message string
 }
+
+// ParanoidResult holds the outcome of a pixel-level diff-pdf verification.
+type ParanoidResult struct {
+	OK          bool
+	Message     string
+	DiffPDFPath string // path to the diff PDF (empty when OK or unavailable)
+}

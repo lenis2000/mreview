@@ -342,9 +342,9 @@ Two rules, registered together:
 
 ### Task 8: Paranoid verifier mode
 
-- [ ] `verify.go` (build tag `pdfverify`): page-count check via `pdfinfo`; pixel diff via `diff-pdf --output-diff=…`. Page-count mismatch is hard-fail. Pixel diff produces a diff PDF saved to `/tmp/mr-fmt-XXX/diff.pdf`.
-- [ ] `--verify-pdf=visual` exposes the paranoid path on the CLI.
-- [ ] Document `diff-pdf` install instructions in README (brew/apt).
+- [x] `verify.go` (build tag `pdfverify`): page-count check via `pdfinfo`; pixel diff via `diff-pdf --output-diff=…`. Page-count mismatch is hard-fail. Pixel diff produces a diff PDF saved to `/tmp/mr-fmt-XXX/diff.pdf`.
+- [x] `--verify-pdf=visual` exposes the paranoid path on the CLI.
+- [x] Document `diff-pdf` install instructions in README (brew/apt).
 
 ### Task 9: PNAS goldens
 

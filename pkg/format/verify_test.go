@@ -308,4 +308,114 @@ func TestVerifyIntegration_Tier1(t *testing.T) {
 	// Tier-1 rules should produce identical PDF text.
 	assert.True(t, vr.OK, "Tier-1 rewrites should not change PDF text; unexpected diffs: %v", vr.Unexpected)
 	assert.Empty(t, vr.Unexpected)
+
+	// Verify that PDF paths are populated.
+	assert.NotEmpty(t, vr.BeforePDF, "BeforePDF should be set")
+	assert.NotEmpty(t, vr.AfterPDF, "AfterPDF should be set")
+}
+
+// ---------------------------------------------------------------------------
+// ParanoidAvailable (stub check)
+// ---------------------------------------------------------------------------
+
+func TestParanoidAvailable(t *testing.T) {
+	// In a normal (non-pdfverify) build, ParanoidAvailable should be false.
+	// In a pdfverify build, it should be true.
+	// We just verify the constant is accessible and consistent with VerifyParanoid.
+	if ParanoidAvailable {
+		t.Log("pdfverify build tag is active — paranoid verifier available")
+	} else {
+		t.Log("pdfverify build tag not active — paranoid verifier is a stub")
+		// Calling the stub should return an error.
+		_, err := VerifyParanoid("/nonexistent/before.pdf", "/nonexistent/after.pdf")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not available")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VerifyParanoid integration
+// ---------------------------------------------------------------------------
+
+func TestVerifyParanoidIntegration(t *testing.T) {
+	if !ParanoidAvailable {
+		t.Skip("skipping: pdfverify build tag not set")
+	}
+
+	// Check diff-pdf is available.
+	if _, err := exec.LookPath("diff-pdf"); err != nil {
+		t.Skip("skipping: diff-pdf not available")
+	}
+
+	// Check pdfinfo is available.
+	if _, err := exec.LookPath("pdfinfo"); err != nil {
+		t.Skip("skipping: pdfinfo not available")
+	}
+
+	// Also need latexmk and pdftotext for the full pipeline.
+	for _, tool := range []string{"latexmk", "pdftotext"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("skipping: %s not available", tool)
+		}
+	}
+
+	// Use testdata/sample.tex.
+	samplePath := filepath.Join("..", "..", "testdata", "sample.tex")
+	if _, err := os.Stat(samplePath); err != nil {
+		t.Skipf("skipping: sample.tex not found at %s", samplePath)
+	}
+
+	src, err := os.ReadFile(samplePath)
+	require.NoError(t, err)
+
+	// Apply Tier-1 rules.
+	result := Apply(src, Options{})
+
+	// Discover tree and verify with text layer first.
+	tree, err := DiscoverTree(samplePath)
+	require.NoError(t, err)
+
+	vr, err := Verify(*tree, src, result.Src, result.Hits)
+	require.NoError(t, err)
+	require.True(t, vr.OK, "text-layer verification should pass")
+
+	// Now run paranoid verification on the same PDFs.
+	pr, err := VerifyParanoid(vr.BeforePDF, vr.AfterPDF)
+	require.NoError(t, err)
+	assert.True(t, pr.OK, "paranoid verification should pass for Tier-1 rewrites: %s", pr.Message)
+}
+
+// ---------------------------------------------------------------------------
+// VerifyResult.BeforePDF / AfterPDF populated by Verify
+// ---------------------------------------------------------------------------
+
+func TestVerifyResult_PDFPaths(t *testing.T) {
+	// Just verify the struct fields exist and are typed correctly.
+	vr := &VerifyResult{
+		OK:        true,
+		BeforePDF: "/tmp/test/before/paper.pdf",
+		AfterPDF:  "/tmp/test/after/paper.pdf",
+	}
+	assert.Equal(t, "/tmp/test/before/paper.pdf", vr.BeforePDF)
+	assert.Equal(t, "/tmp/test/after/paper.pdf", vr.AfterPDF)
+}
+
+// ---------------------------------------------------------------------------
+// ParanoidResult type
+// ---------------------------------------------------------------------------
+
+func TestParanoidResult(t *testing.T) {
+	// Test the type is usable.
+	pr := &ParanoidResult{
+		OK:          false,
+		Message:     "pixel diff detected",
+		DiffPDFPath: "/tmp/mr-fmt-xxx/diff.pdf",
+	}
+	assert.False(t, pr.OK)
+	assert.Equal(t, "pixel diff detected", pr.Message)
+	assert.Equal(t, "/tmp/mr-fmt-xxx/diff.pdf", pr.DiffPDFPath)
+
+	pr2 := &ParanoidResult{OK: true, Message: "pixel-identical"}
+	assert.True(t, pr2.OK)
+	assert.Empty(t, pr2.DiffPDFPath)
 }

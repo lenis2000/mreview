@@ -159,8 +159,31 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		for _, w := range vr.Warnings {
 			fmt.Fprintf(stderr, "mreview fmt: warning: %s\n", w)
 		}
-		fmt.Fprintln(stderr, "mreview fmt: verification ok")
+		fmt.Fprintln(stderr, "mreview fmt: verification ok (text layer)")
 		verifyResult = vr
+
+		// Paranoid mode: pixel-level diff-pdf comparison.
+		if o.VerifyPDF == "visual" {
+			if !format.ParanoidAvailable {
+				fmt.Fprintln(stderr, "mreview fmt: paranoid verifier not available — rebuild with -tags=pdfverify")
+				return 1
+			}
+			fmt.Fprintln(stderr, "mreview fmt: running paranoid pixel-level verification...")
+			pr, prErr := format.VerifyParanoid(vr.BeforePDF, vr.AfterPDF)
+			if prErr != nil {
+				fmt.Fprintf(stderr, "mreview fmt: paranoid verification error: %v\n", prErr)
+				return 1
+			}
+			if !pr.OK {
+				fmt.Fprintf(stderr, "mreview fmt: paranoid verification FAILED — %s\n", pr.Message)
+				if pr.DiffPDFPath != "" {
+					fmt.Fprintf(stderr, "diff PDF saved to %s\n", pr.DiffPDFPath)
+				}
+				fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
+				return 1
+			}
+			fmt.Fprintln(stderr, "mreview fmt: paranoid verification ok (pixel-identical)")
+		}
 	}
 
 	// Write the rewritten source.

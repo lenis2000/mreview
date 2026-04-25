@@ -41,6 +41,10 @@ type VerifyResult struct {
 	OK         bool
 	Unexpected []Diff
 	Warnings   []string
+	// BeforePDF and AfterPDF are the paths to the PDFs built by the verifier
+	// in the tempdir. Available for paranoid (pixel-level) verification.
+	BeforePDF string
+	AfterPDF  string
 }
 
 // Verify builds before/after PDFs in isolated tempdirs, extracts text via
@@ -213,6 +217,8 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 		OK:         len(unexpected) == 0,
 		Unexpected: unexpected,
 		Warnings:   warnings,
+		BeforePDF:  beforeRes.PDFPath,
+		AfterPDF:   afterRes.PDFPath,
 	}, nil
 }
 

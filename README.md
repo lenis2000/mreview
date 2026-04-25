@@ -29,6 +29,24 @@ System deps used by the PDF pane:
 - MuPDF (bundled via `gen2brain/go-fitz`)
 - kitty graphics protocol (via `blacktop/go-termimg`)
 
+Optional deps for `mreview fmt` verification:
+
+- `pdftotext` and `pdfinfo` (from poppler-utils) — required for text-layer verification
+- `diff-pdf` — required only for paranoid pixel-level verification (`--verify-pdf=visual`).
+  Build with `go build -tags=pdfverify` to enable.
+
+  Install `diff-pdf`:
+
+  ```
+  # macOS
+  brew install diff-pdf
+
+  # Debian / Ubuntu
+  sudo apt-get install diff-pdf
+
+  # From source: https://github.com/vslavik/diff-pdf
+  ```
+
 ## Usage
 
 ```
