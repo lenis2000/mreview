@@ -8,4 +8,5 @@ var Registry []Rule
 func init() {
 	registerSafeRules()
 	registerPDFFixRules()
+	registerDiagRules()
 }

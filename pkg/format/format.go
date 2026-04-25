@@ -28,6 +28,8 @@ type PipelineResult struct {
 //
 // The pipeline recomputes token/span/line indices after any rule that changes
 // the number of newlines (to avoid stale-offset bugs in subsequent rules).
+// The Document (ctx.Doc) is parsed once before the first non-Safe rule that
+// needs it (Tier-2 and Tier-3 rules reason about envs, labels, and refs).
 func Apply(src []byte, opts Options) PipelineResult {
 	var allHits []Hit
 	var allDiags []Diag
@@ -36,6 +38,12 @@ func Apply(src []byte, opts Options) PipelineResult {
 
 	enabled := enabledRules(opts)
 	for _, rule := range enabled {
+		// Parse the Document before the first rule that needs it.
+		if rule.Tier >= PDFFix && ctx.Doc == nil {
+			doc, _ := parser.Parse(ctx.Src)
+			ctx.Doc = doc
+		}
+
 		result := rule.Apply(ctx)
 
 		allHits = append(allHits, result.Hits...)

@@ -323,11 +323,11 @@ Two rules, registered together:
 
 ### Task 6: Tier-3 diagnostics
 
-- [ ] `rules_diag.go`: implement the 10 diagnostics. They run during the format pipeline but only emit `Diags`; never rewrite.
-- [ ] Cross-ref diagnostics consume `ctx.Doc.ByLabel`, `ctx.Doc.ByID`, and `ctx.Doc.BibEntries` directly — no new index machinery.
-- [ ] `lint.thm-no-proof` walks the parser's outer-sibling chain.
-- [ ] `lint.todo-marker`: regex pass over `src` (consulting `ctx.Protected`) for `\\colorbox\{[^}]+\}\{\\parbox\{[^}]+\}\{...\}\}`. Match nested-brace–aware (use spans.go helpers). Extract the `<comment>` body for the diag message. Tokenizer extension is unnecessary — pure-regex over byte-protected regions.
-- [ ] Per-rule tests; cross-check on `main_pnas.tex` to confirm the diagnostic counts are reasonable (no thousands of false positives).
+- [x] `rules_diag.go`: implement the 10 diagnostics. They run during the format pipeline but only emit `Diags`; never rewrite.
+- [x] Cross-ref diagnostics consume `ctx.Doc.ByLabel`, `ctx.Doc.ByID`, and `ctx.Doc.BibEntries` directly — no new index machinery.
+- [x] `lint.thm-no-proof` walks the parser's outer-sibling chain.
+- [x] `lint.todo-marker`: regex pass over `src` (consulting `ctx.Protected`) for `\\colorbox\{[^}]+\}\{\\parbox\{[^}]+\}\{...\}\}`. Match nested-brace–aware (use spans.go helpers). Extract the `<comment>` body for the diag message. Tokenizer extension is unnecessary — pure-regex over byte-protected regions.
+- [x] Per-rule tests; cross-check on `main_pnas.tex` to confirm the diagnostic counts are reasonable (no thousands of false positives).
 
 ### Task 7: Report file + mreview `issues` filter integration
 

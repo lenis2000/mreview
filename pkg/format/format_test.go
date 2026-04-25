@@ -398,6 +398,16 @@ func TestRegistryOrder(t *testing.T) {
 		"display.style",
 		"math.paragraph-suppress",
 		"env.spacing",
+		"lint.ref-undefined",
+		"lint.label-unused",
+		"lint.label-duplicate",
+		"lint.ref-should-eqref",
+		"lint.cite-undefined",
+		"lint.thm-unlabeled",
+		"lint.thm-orphan-proof",
+		"lint.thm-no-proof",
+		"lint.todo-marker",
+		"lint.block-too-long",
 	}, ids)
 }
 
@@ -714,4 +724,598 @@ func TestPdfFixEnabled(t *testing.T) {
 	res := Apply([]byte(input), Options{PDFFix: true})
 	assert.NotEqual(t, input, string(res.Src), "Tier-2 rules should run with PDFFix")
 	assert.True(t, len(res.Hits) > 0, "should have hits")
+}
+
+// ---------------------------------------------------------------------------
+// Tier-3 diagnostic tests
+// ---------------------------------------------------------------------------
+
+// diagOpts returns Options that enable a single diagnostic rule.
+func diagOpts(ruleID string) Options {
+	return Options{Rules: []string{ruleID}}
+}
+
+// ---------------------------------------------------------------------------
+// lint.ref-undefined
+// ---------------------------------------------------------------------------
+
+func TestDiagRefUndefined(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "undefined ref",
+			input: `\begin{document}
+\ref{missing}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "resolved ref",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:main}
+Statement.
+\end{theorem}
+See \ref{thm:main}.
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "cite is ignored by this rule",
+			input: `\begin{document}
+\cite{smith2020}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "multiple undefined refs",
+			input: `\begin{document}
+\ref{a} and \ref{b}
+\end{document}
+`,
+			wantDiags: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.ref-undefined"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.ref-undefined", d.RuleID)
+			}
+			assert.Equal(t, tt.input, string(res.Src), "source must not change")
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.label-unused
+// ---------------------------------------------------------------------------
+
+func TestDiagLabelUnused(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "unused label",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:unused}
+Statement.
+\end{theorem}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "used label",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:used}
+Statement.
+\end{theorem}
+See \ref{thm:used}.
+\end{document}
+`,
+			wantDiags: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.label-unused"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.label-unused", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.label-duplicate
+// ---------------------------------------------------------------------------
+
+func TestDiagLabelDuplicate(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "duplicate labels",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:x}
+A.
+\end{theorem}
+\begin{theorem}
+\label{thm:x}
+B.
+\end{theorem}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "no duplicates",
+			input: `\begin{document}
+\label{eq:a}
+\label{eq:b}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.label-duplicate"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.label-duplicate", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.ref-should-eqref
+// ---------------------------------------------------------------------------
+
+func TestDiagRefShouldEqref(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "ref to display math",
+			input: `\begin{document}
+\begin{equation}
+\label{eq:main}
+x = 1
+\end{equation}
+See \ref{eq:main}.
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "eqref to display math (ok)",
+			input: `\begin{document}
+\begin{equation}
+\label{eq:main}
+x = 1
+\end{equation}
+See \eqref{eq:main}.
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "ref to theorem (ok)",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:main}
+Statement.
+\end{theorem}
+See \ref{thm:main}.
+\end{document}
+`,
+			wantDiags: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.ref-should-eqref"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.ref-should-eqref", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.cite-undefined
+// ---------------------------------------------------------------------------
+
+func TestDiagCiteUndefined(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "undefined cite",
+			input: `\begin{document}
+\cite{missing2020}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "multiple undefined cites",
+			input: `\begin{document}
+\cite{a} and \cite{b}
+\end{document}
+`,
+			wantDiags: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.cite-undefined"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.cite-undefined", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.thm-unlabeled
+// ---------------------------------------------------------------------------
+
+func TestDiagThmUnlabeled(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "unlabeled theorem",
+			input: `\begin{document}
+\begin{theorem}
+No label here.
+\end{theorem}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "labeled theorem",
+			input: `\begin{document}
+\begin{theorem}
+\label{thm:good}
+Has label.
+\end{theorem}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "unlabeled lemma",
+			input: `\begin{document}
+\begin{lemma}
+No label.
+\end{lemma}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.thm-unlabeled"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.thm-unlabeled", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.thm-orphan-proof
+// ---------------------------------------------------------------------------
+
+func TestDiagThmOrphanProof(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "orphan proof (no preceding theorem)",
+			input: `\begin{document}
+\begin{proof}
+Some argument.
+\end{proof}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "proof after theorem (ok)",
+			input: `\begin{document}
+\begin{theorem}
+Statement.
+\end{theorem}
+\begin{proof}
+Some argument.
+\end{proof}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "proof after section (orphan)",
+			input: `\begin{document}
+\section{Intro}
+\begin{proof}
+Orphan.
+\end{proof}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.thm-orphan-proof"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.thm-orphan-proof", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.thm-no-proof
+// ---------------------------------------------------------------------------
+
+func TestDiagThmNoProof(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "theorem without proof",
+			input: `\begin{document}
+\section{Main}
+\begin{theorem}
+\label{thm:main}
+Statement.
+\end{theorem}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+		{
+			name: "theorem with proof immediately after",
+			input: `\begin{document}
+\section{Main}
+\begin{theorem}
+\label{thm:main}
+Statement.
+\end{theorem}
+\begin{proof}
+The proof.
+\end{proof}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "definition (no proof needed)",
+			input: `\begin{document}
+\begin{definition}
+A def.
+\end{definition}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "remark (no proof needed)",
+			input: `\begin{document}
+\begin{remark}
+A remark.
+\end{remark}
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name: "lemma without proof",
+			input: `\begin{document}
+\section{Results}
+\begin{lemma}
+Statement.
+\end{lemma}
+\end{document}
+`,
+			wantDiags: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.thm-no-proof"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.thm-no-proof", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.todo-marker
+// ---------------------------------------------------------------------------
+
+func TestDiagTodoMarker(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name:      "colorbox+parbox TODO marker",
+			input:     `\colorbox{yellow}{\parbox{0.9\textwidth}{Fix this lemma}}` + "\n",
+			wantDiags: 1,
+		},
+		{
+			name:      "no colorbox",
+			input:     "Normal text.\n",
+			wantDiags: 0,
+		},
+		{
+			name:      "colorbox without parbox",
+			input:     `\colorbox{red}{just text}` + "\n",
+			wantDiags: 0,
+		},
+		{
+			name:      "inside verbatim (skip)",
+			input:     "\\begin{verbatim}\n\\colorbox{yellow}{\\parbox{0.9\\textwidth}{todo}}\n\\end{verbatim}\n",
+			wantDiags: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.todo-marker"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.todo-marker", d.RuleID)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// lint.block-too-long
+// ---------------------------------------------------------------------------
+
+func TestDiagBlockTooLong(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantDiags int
+	}{
+		{
+			name: "short paragraph (ok)",
+			input: `\begin{document}
+Short text.
+\end{document}
+`,
+			wantDiags: 0,
+		},
+		{
+			name:      "long paragraph (50 lines)",
+			input:     makeLongParagraph(50),
+			wantDiags: 1,
+		},
+		{
+			name:      "exactly 40 lines (ok, not over)",
+			input:     makeLongParagraph(40),
+			wantDiags: 0,
+		},
+		{
+			name:      "41 lines (over threshold)",
+			input:     makeLongParagraph(41),
+			wantDiags: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), diagOpts("lint.block-too-long"))
+			assert.Equal(t, tt.wantDiags, len(res.Diags), "diag count")
+			for _, d := range res.Diags {
+				assert.Equal(t, "lint.block-too-long", d.RuleID)
+			}
+		})
+	}
+}
+
+// makeLongParagraph generates a document with a root-level paragraph block
+// of n lines. Lines don't end in sentence terminators so the parser won't
+// split them further. Root-level prose becomes KindParagraph via
+// segmentRootProse.
+func makeLongParagraph(n int) string {
+	var b bytes.Buffer
+	b.WriteString("\\begin{document}\n")
+	for i := 0; i < n; i++ {
+		b.WriteString("and we continue with more text here\n")
+	}
+	b.WriteString("\\end{document}\n")
+	return b.String()
+}
+
+// ---------------------------------------------------------------------------
+// Tier-3 pipeline integration
+// ---------------------------------------------------------------------------
+
+// TestDiagNotRunByDefault verifies Tier-3 rules don't run unless Diag is set.
+func TestDiagNotRunByDefault(t *testing.T) {
+	input := `\begin{document}
+\ref{missing}
+\end{document}
+`
+	res := Apply([]byte(input), Options{})
+	assert.Empty(t, res.Diags, "Tier-3 rules should not run by default")
+}
+
+// TestDiagEnabledByFlag verifies Tier-3 rules run when Diag=true.
+func TestDiagEnabledByFlag(t *testing.T) {
+	input := `\begin{document}
+\ref{missing}
+\end{document}
+`
+	res := Apply([]byte(input), Options{Diag: true})
+	assert.True(t, len(res.Diags) > 0, "should have diags with Diag=true")
+}
+
+// TestDiagDoesNotRewrite verifies that diagnostic rules never modify the source.
+func TestDiagDoesNotRewrite(t *testing.T) {
+	input := `\begin{document}
+\begin{theorem}
+No label here.
+\end{theorem}
+\ref{missing}
+\cite{undefined}
+\end{document}
+`
+	res := Apply([]byte(input), Options{Diag: true})
+	assert.Equal(t, input, string(res.Src), "diagnostic rules must not rewrite source")
+	assert.True(t, len(res.Diags) > 0, "should have diagnostics")
 }
