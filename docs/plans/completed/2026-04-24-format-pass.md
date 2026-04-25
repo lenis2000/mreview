@@ -356,10 +356,10 @@ Two rules, registered together:
 
 ### Task 10: Acceptance + documentation
 
-- [ ] Run Phases A → D on `main_pnas.tex` and `si_pnas.tex`. Phase D may require a second fixture for SI.
-- [ ] Update `README.md`: add "Source normalization" section with CLI examples and the rule-tier table.
-- [ ] `make install`. Manual smoke: `mreview fmt --pdf-fix --report ~/local_git/Schubert_simulations/PNAS/main_pnas.tex` produces a clean diff and a non-empty report.
-- [ ] Move this plan to `docs/plans/completed/`.
+- [x] Run Phases A → D on `main_pnas.tex` and `si_pnas.tex`. Phase D may require a second fixture for SI.
+- [x] Update `README.md`: add "Source normalization" section with CLI examples and the rule-tier table.
+- [x] `make install`. Manual smoke: `mreview fmt --pdf-fix --report ~/local_git/Schubert_simulations/PNAS/main_pnas.tex` produces a clean diff and a non-empty report.
+- [x] Move this plan to `docs/plans/completed/`.
 
 ## Known issues / open questions (deferred, not blocking)
 

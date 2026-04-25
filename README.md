@@ -81,6 +81,75 @@ mreview paper.tex > review.md
 mreview --stdout json paper.tex | jq .
 ```
 
+## Source normalization (`mreview fmt`)
+
+`mreview fmt` rewrites a paper's `.tex` source to normalize whitespace, fix
+common formatting issues, and run diagnostics — while verifying the rendered
+PDF is preserved. Modeled on `gofmt` / `cargo fmt`: source rewrites are
+git-visible, never a hidden side effect.
+
+```
+mreview fmt paper.tex                      # Tier 1 (safe), verify, write in place
+mreview fmt --diff paper.tex               # show unified diff, no write
+mreview fmt --check paper.tex              # exit 1 if changes needed (CI)
+mreview fmt --pdf-fix paper.tex            # Tier 1 + Tier 2, verify, write
+mreview fmt --rule=math.paragraph-suppress paper.tex  # one rule only
+mreview fmt --no-verify paper.tex          # skip PDF rebuild
+mreview fmt --verify-pdf=visual paper.tex  # paranoid pixel-level check
+mreview fmt --report paper.tex             # also write paper.tex.fmt-report.md
+mreview fmt --allow-dirty paper.tex        # bypass dirty-tree check
+mreview fmt --clean-tempdir                # remove verification tempdirs
+```
+
+Refuses to overwrite a dirty working tree by default (safety net is `git diff`
+/ `git checkout`). Pass `--allow-dirty` to override.
+
+### Rule tiers
+
+**Tier 1 — Safe (PDF byte-identical):**
+
+| ID | What it does |
+|---|---|
+| `space.trailing` | Strip trailing whitespace per line |
+| `space.blank-runs` | Collapse 3+ consecutive blank lines to one blank line |
+| `space.tabs` | Tabs → 4 spaces outside protected regions |
+| `display.style` | `$$…$$` → `\[…\]` |
+
+**Tier 2 — PDF-fixing (off by default; `--pdf-fix` or `--rule=<id>`):**
+
+| ID | What it does |
+|---|---|
+| `math.paragraph-suppress` | Remove blank lines around display-math envs that cause unwanted paragraph breaks/indentation |
+| `env.spacing` | Ensure one blank line above theorem-like envs and section commands |
+
+**Tier 3 — Diagnostics (no rewrite; emitted to report and `issues` filter):**
+
+| ID | What it checks |
+|---|---|
+| `lint.ref-undefined` | `\ref{X}` with no matching `\label{X}` |
+| `lint.label-unused` | `\label{X}` referenced nowhere |
+| `lint.label-duplicate` | Same `\label{X}` declared twice |
+| `lint.ref-should-eqref` | `\ref` targeting display math (suggest `\eqref`) |
+| `lint.cite-undefined` | `\cite{X}` not in `.bbl` |
+| `lint.thm-unlabeled` | Theorem-like block with no `\label` |
+| `lint.thm-orphan-proof` | Proof not preceded by a theorem-like block |
+| `lint.thm-no-proof` | Theorem with no proof in next 5 sibling blocks |
+| `lint.todo-marker` | `\colorbox{…}{\parbox{…}{…}}` TODO patterns |
+| `lint.block-too-long` | Paragraph block exceeding 40 source lines |
+
+### Verification
+
+The verifier rebuilds before/after PDFs in an isolated tempdir and compares
+`pdftotext` output (whitespace-normalized). Tier-2 rules declare expected-diff
+regions via synctex source-line mapping; diffs outside those regions cause
+refusal. `--verify-pdf=visual` adds pixel-level `diff-pdf` comparison on top.
+
+### Report file
+
+`--report` writes `paper.tex.fmt-report.md` listing all rewrites, diagnostics,
+and verifier warnings. The mreview review UI loads this file automatically and
+surfaces diagnostics in the `issues` filter.
+
 ## Keybindings
 
 Navigation
@@ -160,8 +229,9 @@ make fmt           # gofmt + goimports
 Module layout:
 
 ```
-cmd/mreview/       entry + CLI flags
+cmd/mreview/       entry + CLI flags (including fmt subcommand)
 pkg/parser/        LaTeX tokenizer, block model, label/ref index, .aux/.bbl
+pkg/format/        fmt pipeline: rules, verifier, report writer
 pkg/build/         latexmk runner
 pkg/synctex/       .synctex.gz parser: (file, line) -> (page, bbox)
 pkg/persist/       sidecar load/save, stale remap, stdout emit

@@ -79,3 +79,37 @@ Pipeline output: 244 lines, 40 hits total:
 - display.style: 3
 - math.paragraph-suppress: 16
 - env.spacing: 5
+
+## Task 10: Acceptance testing
+
+### Container-based acceptance (2026-04-25)
+
+Ran acceptance tests in CI/build container:
+
+- `TestGoldenPNASSource`: PASS (source comparison + idempotency)
+- All format tests: PASS (95 tests)
+- All parser tests: PASS
+- All build/synctex/persist tests: PASS
+- `go vet ./...`: clean
+- Verifier integration tests: SKIP (pdftotext not available in container)
+- Paranoid verifier tests: SKIP (diff-pdf not available; pdfverify tag not set)
+
+### Manual Phases A-D (pending LP's machine)
+
+Phase D (full paranoid golden with PDF build) requires latexmk, pdftotext,
+diff-pdf on the host machine. Run after `make install`:
+
+```sh
+# Phase A — Tier-1 baseline
+mreview fmt --diff ~/local_git/Schubert_simulations/PNAS/main_pnas.tex
+mreview fmt --diff ~/local_git/Schubert_simulations/PNAS/si_pnas.tex
+
+# Phase B — Tier-2 dry run
+mreview fmt --pdf-fix --diff ~/local_git/Schubert_simulations/PNAS/main_pnas.tex
+
+# Phase C — Tier-2 commit
+mreview fmt --pdf-fix --report ~/local_git/Schubert_simulations/PNAS/main_pnas.tex
+
+# Phase D — paranoid golden (build with pdfverify tag)
+go test -tags=pdfverify ./pkg/format -run TestGoldenPNAS -v
+```
