@@ -308,18 +308,18 @@ The `pdfverify` build tag enables Phase D goldens (slow, requires latex toolchai
 Two rules, registered together:
 
 **`math.paragraph-suppress`:**
-- [ ] `rules_pdf_fix.go`: implement per the default-drop heuristic in "Solution Overview". Region detection includes chains-of-equations.
-- [ ] Each emitted `Hit` populates `ExpectedDiffSourceLines` with the source line of the prose immediately following the rewritten display-math close. Harness translates via synctex.
-- [ ] `format_test.go`: ≥12 table rows covering: continuation above (drop), continuation below (drop), default case with neither strong signal (drop — the new aggressive default), strong paragraph signal (leave alone), chain of two equations (collapse all gaps), chain of three equations (collapse all gaps), trailing display followed by section header (leave alone), `\[…\]` form, starred envs, `align*`, inside protected span (no rewrite), zero-blank-line input (no-op).
+- [x] `rules_pdf_fix.go`: implement per the default-drop heuristic in "Solution Overview". Region detection includes chains-of-equations.
+- [x] Each emitted `Hit` populates `ExpectedDiffSourceLines` with the source line of the prose immediately following the rewritten display-math close. Harness translates via synctex.
+- [x] `format_test.go`: ≥12 table rows covering: continuation above (drop), continuation below (drop), default case with neither strong signal (drop — the new aggressive default), strong paragraph signal (leave alone), chain of two equations (collapse all gaps), chain of three equations (collapse all gaps), trailing display followed by section header (leave alone), `\[…\]` form, starred envs, `align*`, inside protected span (no rewrite), zero-blank-line input (no-op).
 
 **`env.spacing`:**
-- [ ] Walk tokens for `TokBeginEnv` matching the env list (`theorem|lemma|proposition|corollary|definition|conjecture|figure|abstract`) and `TokSection` for section-like commands. For each, check the source bytes between the previous non-blank line and the env's start line: if zero blank lines, insert one. If ≥1 blank line, leave alone (no collapsing here — `space.blank-runs` already collapsed).
-- [ ] Each emitted `Hit` populates `ExpectedDiffSourceLines` with `[N-1, N]` where `N` is the env's source line. The line above (whose paragraph may now end) and the env line (whose vertical spacing may change) are both legitimately different in the PDF.
-- [ ] `format_test.go`: ≥8 table rows: insertion needed before `theorem`, `figure`, `section`, `subsection`; insertion not needed (already had blank); env in a protected span (no-op); env at start of file (no-op, no line above); chain of consecutive theorem envs.
+- [x] Walk tokens for `TokBeginEnv` matching the env list (`theorem|lemma|proposition|corollary|definition|conjecture|figure|abstract`) and `TokSection` for section-like commands. For each, check the source bytes between the previous non-blank line and the env's start line: if zero blank lines, insert one. If ≥1 blank line, leave alone (no collapsing here — `space.blank-runs` already collapsed).
+- [x] Each emitted `Hit` populates `ExpectedDiffSourceLines` with `[N-1, N]` where `N` is the env's source line. The line above (whose paragraph may now end) and the env line (whose vertical spacing may change) are both legitimately different in the PDF.
+- [x] `format_test.go`: ≥8 table rows: insertion needed before `theorem`, `figure`, `section`, `subsection`; insertion not needed (already had blank); env in a protected span (no-op); env at start of file (no-op, no line above); chain of consecutive theorem envs.
 
 **Both rules:**
-- [ ] Register with `Tier: PDFFix`. CLI flags `--pdf-fix` and `--rule=<id>` enable them.
-- [ ] Run Phase A, B, C on `main_pnas.tex` manually. Record the rewrite counts and verifier surprises in `docs/plans/2026-04-24-format-pass.notes.md` (sibling file, NOT this plan body — this plan moves to `completed/` after Task 10 and shouldn't carry execution scribbles).
+- [x] Register with `Tier: PDFFix`. CLI flags `--pdf-fix` and `--rule=<id>` enable them.
+- [x] Run Phase A, B, C on `main_pnas.tex` manually. Record the rewrite counts and verifier surprises in `docs/plans/2026-04-24-format-pass.notes.md` (sibling file, NOT this plan body — this plan moves to `completed/` after Task 10 and shouldn't carry execution scribbles).
 
 ### Task 6: Tier-3 diagnostics
 

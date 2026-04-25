@@ -7,7 +7,9 @@ import (
 	"mreview/pkg/parser"
 )
 
-func init() {
+// registerSafeRules appends the Tier-1 rules to the registry.
+// Called from registry.go's init() to guarantee ordering before PDFFix rules.
+func registerSafeRules() {
 	Registry = append(Registry,
 		Rule{
 			ID:   "space.trailing",

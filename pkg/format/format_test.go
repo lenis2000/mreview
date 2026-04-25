@@ -396,6 +396,8 @@ func TestRegistryOrder(t *testing.T) {
 		"space.blank-runs",
 		"space.tabs",
 		"display.style",
+		"math.paragraph-suppress",
+		"env.spacing",
 	}, ids)
 }
 
@@ -467,4 +469,249 @@ func TestNoopInput(t *testing.T) {
 	res := Apply([]byte(input), Options{})
 	assert.True(t, bytes.Equal([]byte(input), res.Src), "should be identical")
 	assert.Empty(t, res.Hits)
+}
+
+// ---------------------------------------------------------------------------
+// math.paragraph-suppress
+// ---------------------------------------------------------------------------
+
+func TestMathParagraphSuppress(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		want     string
+		wantHits int
+	}{
+		{
+			name: "continuation above (drop)",
+			input: "we simply define\n\n\\begin{equation}\nx = 1\n\\end{equation}\nmore text\n",
+			want:  "we simply define\n\\begin{equation}\nx = 1\n\\end{equation}\nmore text\n",
+			wantHits: 1,
+		},
+		{
+			name: "continuation below (drop)",
+			input: "some text\n\\begin{equation}\nx = 1\n\\end{equation}\n\nwhere x is nice\n",
+			want:  "some text\n\\begin{equation}\nx = 1\n\\end{equation}\nwhere x is nice\n",
+			wantHits: 1,
+		},
+		{
+			name: "default case — no strong signal (drop both)",
+			input: "we define\n\n\\begin{equation}\nx = 1\n\\end{equation}\n\nwhere x is\n",
+			want:  "we define\n\\begin{equation}\nx = 1\n\\end{equation}\nwhere x is\n",
+			wantHits: 2,
+		},
+		{
+			name: "strong paragraph signal (leave alone)",
+			input: "This ends a sentence.\n\n\\begin{equation}\nx = 1\n\\end{equation}\n\nThe next paragraph starts.\n",
+			want:  "This ends a sentence.\n\n\\begin{equation}\nx = 1\n\\end{equation}\n\nThe next paragraph starts.\n",
+			wantHits: 0,
+		},
+		{
+			name: "chain of two equations (collapse all gaps)",
+			input: "text\n\n\\begin{equation}\na = 1\n\\end{equation}\n\n\\begin{equation}\nb = 2\n\\end{equation}\n\nmore\n",
+			want:  "text\n\\begin{equation}\na = 1\n\\end{equation}\n\\begin{equation}\nb = 2\n\\end{equation}\nmore\n",
+			wantHits: 3, // above, inner, below
+		},
+		{
+			name: "chain of three equations (collapse all gaps)",
+			input: "text\n\n\\begin{align}\na\n\\end{align}\n\n\\begin{align}\nb\n\\end{align}\n\n\\begin{align}\nc\n\\end{align}\n\nmore\n",
+			want:  "text\n\\begin{align}\na\n\\end{align}\n\\begin{align}\nb\n\\end{align}\n\\begin{align}\nc\n\\end{align}\nmore\n",
+			wantHits: 4, // above, inner1, inner2, below
+		},
+		{
+			name: "display math followed by section header (no blank below, no-op below)",
+			input: "text\n\n\\begin{equation}\nx\n\\end{equation}\n\\section{Next}\n",
+			want:  "text\n\\begin{equation}\nx\n\\end{equation}\n\\section{Next}\n",
+			wantHits: 1, // only above blank removed
+		},
+		{
+			name: "\\[...\\] form (drop)",
+			input: "we have\n\n\\[x = 1\\]\n\nthen\n",
+			want:  "we have\n\\[x = 1\\]\nthen\n",
+			wantHits: 2,
+		},
+		{
+			name: "starred env align* (drop)",
+			input: "satisfies\n\n\\begin{align*}\nx &= 1\n\\end{align*}\n\nwhich gives\n",
+			want:  "satisfies\n\\begin{align*}\nx &= 1\n\\end{align*}\nwhich gives\n",
+			wantHits: 2,
+		},
+		{
+			name: "inside protected span (no rewrite)",
+			input: "\\begin{verbatim}\ntext\n\n\\begin{equation}\nx\n\\end{equation}\n\nmore\n\\end{verbatim}\n",
+			want:  "\\begin{verbatim}\ntext\n\n\\begin{equation}\nx\n\\end{equation}\n\nmore\n\\end{verbatim}\n",
+			wantHits: 0,
+		},
+		{
+			name: "zero blank lines (no-op)",
+			input: "text\n\\begin{equation}\nx\n\\end{equation}\nmore\n",
+			want:  "text\n\\begin{equation}\nx\n\\end{equation}\nmore\n",
+			wantHits: 0,
+		},
+		{
+			name: "only above blank, no below blank (drop above)",
+			input: "the value\n\n\\begin{equation}\nx = 1\n\\end{equation}\nfollows\n",
+			want:  "the value\n\\begin{equation}\nx = 1\n\\end{equation}\nfollows\n",
+			wantHits: 1,
+		},
+		{
+			name: "half signal: above ends with period but below lowercase (drop both)",
+			input: "Sentence ends here.\n\n\\begin{equation}\nx\n\\end{equation}\n\nbut lowercase continues\n",
+			want:  "Sentence ends here.\n\\begin{equation}\nx\n\\end{equation}\nbut lowercase continues\n",
+			wantHits: 2,
+		},
+		{
+			name: "half signal: below starts uppercase but above no punctuation (drop both)",
+			input: "and we have\n\n\\begin{equation}\nx\n\\end{equation}\n\nNow consider\n",
+			want:  "and we have\n\\begin{equation}\nx\n\\end{equation}\nNow consider\n",
+			wantHits: 2,
+		},
+		{
+			name: "multiple blank lines collapsed (not just one)",
+			input: "define\n\n\n\\begin{equation}\nx\n\\end{equation}\n\n\nwhere\n",
+			want:  "define\n\\begin{equation}\nx\n\\end{equation}\nwhere\n",
+			wantHits: 2,
+		},
+		{
+			name: "gather env (drop)",
+			input: "consider\n\n\\begin{gather}\nx\n\\end{gather}\n\nso\n",
+			want:  "consider\n\\begin{gather}\nx\n\\end{gather}\nso\n",
+			wantHits: 2,
+		},
+		{
+			name: "multline env (drop)",
+			input: "we get\n\n\\begin{multline}\nx\n\\end{multline}\n\nhence\n",
+			want:  "we get\n\\begin{multline}\nx\n\\end{multline}\nhence\n",
+			wantHits: 2,
+		},
+	}
+
+	opts := Options{Rules: []string{"math.paragraph-suppress"}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), opts)
+			assert.Equal(t, tt.want, string(res.Src), "source mismatch")
+			assert.Equal(t, tt.wantHits, len(res.Hits), "hit count")
+			// Verify all hits have ExpectedDiffSourceLines set.
+			for _, h := range res.Hits {
+				assert.Equal(t, "math.paragraph-suppress", h.RuleID)
+				assert.NotNil(t, h.ExpectedDiffSourceLines, "hit should have ExpectedDiffSourceLines")
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// env.spacing
+// ---------------------------------------------------------------------------
+
+func TestEnvSpacing(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		want     string
+		wantHits int
+	}{
+		{
+			name:     "insertion needed before theorem",
+			input:    "Some text.\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			want:     "Some text.\n\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "insertion needed before figure",
+			input:    "Text here.\n\\begin{figure}\nFig.\n\\end{figure}\n",
+			want:     "Text here.\n\n\\begin{figure}\nFig.\n\\end{figure}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "insertion needed before section",
+			input:    "End of old section.\n\\section{New}\n",
+			want:     "End of old section.\n\n\\section{New}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "insertion needed before subsection",
+			input:    "Content.\n\\subsection{Sub}\n",
+			want:     "Content.\n\n\\subsection{Sub}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "insertion not needed (already has blank)",
+			input:    "Some text.\n\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			want:     "Some text.\n\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			wantHits: 0,
+		},
+		{
+			name:     "env in protected span (no-op)",
+			input:    "\\begin{verbatim}\ntext\n\\begin{theorem}\n\\end{verbatim}\n",
+			want:     "\\begin{verbatim}\ntext\n\\begin{theorem}\n\\end{verbatim}\n",
+			wantHits: 0,
+		},
+		{
+			name:     "env at start of file (no-op)",
+			input:    "\\begin{theorem}\nT.\n\\end{theorem}\n",
+			want:     "\\begin{theorem}\nT.\n\\end{theorem}\n",
+			wantHits: 0,
+		},
+		{
+			name:     "consecutive theorem envs (insert before each)",
+			input:    "Text.\n\\begin{theorem}\nT1.\n\\end{theorem}\n\\begin{lemma}\nL1.\n\\end{lemma}\n",
+			want:     "Text.\n\n\\begin{theorem}\nT1.\n\\end{theorem}\n\n\\begin{lemma}\nL1.\n\\end{lemma}\n",
+			wantHits: 2,
+		},
+		{
+			name:     "non-matching env not touched",
+			input:    "Text.\n\\begin{itemize}\n\\item A\n\\end{itemize}\n",
+			want:     "Text.\n\\begin{itemize}\n\\item A\n\\end{itemize}\n",
+			wantHits: 0,
+		},
+		{
+			name:     "definition env",
+			input:    "Setup.\n\\begin{definition}\nD.\n\\end{definition}\n",
+			want:     "Setup.\n\n\\begin{definition}\nD.\n\\end{definition}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "conjecture env",
+			input:    "Note.\n\\begin{conjecture}\nC.\n\\end{conjecture}\n",
+			want:     "Note.\n\n\\begin{conjecture}\nC.\n\\end{conjecture}\n",
+			wantHits: 1,
+		},
+		{
+			name:     "multiple blank lines already present (no-op)",
+			input:    "Text.\n\n\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			want:     "Text.\n\n\n\\begin{theorem}\nT.\n\\end{theorem}\n",
+			wantHits: 0,
+		},
+	}
+
+	opts := Options{Rules: []string{"env.spacing"}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := Apply([]byte(tt.input), opts)
+			assert.Equal(t, tt.want, string(res.Src), "source mismatch")
+			assert.Equal(t, tt.wantHits, len(res.Hits), "hit count")
+			// Verify all hits have ExpectedDiffSourceLines set.
+			for _, h := range res.Hits {
+				assert.Equal(t, "env.spacing", h.RuleID)
+				assert.NotNil(t, h.ExpectedDiffSourceLines, "hit should have ExpectedDiffSourceLines")
+			}
+		})
+	}
+}
+
+// TestPdfFixNotRunByDefault verifies Tier-2 rules don't run unless --pdf-fix or --rule is set.
+func TestPdfFixNotRunByDefault(t *testing.T) {
+	input := "define\n\n\\begin{equation}\nx\n\\end{equation}\n\nwhere\n"
+	res := Apply([]byte(input), Options{})
+	assert.Equal(t, input, string(res.Src), "Tier-2 rules should not run by default")
+}
+
+// TestPdfFixEnabled verifies Tier-2 rules run when PDFFix is enabled.
+func TestPdfFixEnabled(t *testing.T) {
+	input := "define\n\n\\begin{equation}\nx\n\\end{equation}\n\nwhere\n"
+	res := Apply([]byte(input), Options{PDFFix: true})
+	assert.NotEqual(t, input, string(res.Src), "Tier-2 rules should run with PDFFix")
+	assert.True(t, len(res.Hits) > 0, "should have hits")
 }
