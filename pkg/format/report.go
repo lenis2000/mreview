@@ -37,12 +37,16 @@ type ReportDiag struct {
 }
 
 // WriteReport writes a paper.tex.fmt-report.md file at reportPath.
-func WriteReport(reportPath string, rpt Report) error {
+func WriteReport(reportPath string, rpt Report) (retErr error) {
 	f, err := os.Create(reportPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 
 	w := bufio.NewWriter(f)
 
@@ -82,7 +86,7 @@ func WriteReport(reportPath string, rpt Report) error {
 	if len(rpt.Diags) > 0 {
 		fmt.Fprintf(w, "\n## Diagnostics (Tier 3, %d issues)\n", len(rpt.Diags))
 		for _, d := range rpt.Diags {
-			fmt.Fprintf(w, "- %s — %s\n", d.RuleID, d.Message)
+			fmt.Fprintf(w, "- %s L%d — %s\n", d.RuleID, d.Line, d.Message)
 		}
 	}
 
@@ -256,12 +260,24 @@ func parseRewriteLine(s string) RewriteGroup {
 	}
 }
 
-// parseDiagLine parses a line like: "lint.label-unused — `eq:tilde-w-extra` declared at L612, never referenced."
-var diagLineRe = regexp.MustCompile(`^(\S+)\s+—\s+(.+)`)
+// parseDiagLine parses a line like: "lint.label-unused L612 — `eq:tilde-w-extra` declared at L612, never referenced."
+// Also handles the legacy format without a structured line number: "lint.label-unused — message".
+var diagLineReNew = regexp.MustCompile(`^(\S+)\s+L(\d+)\s+—\s+(.+)`)
+var diagLineReLegacy = regexp.MustCompile(`^(\S+)\s+—\s+(.+)`)
 var diagLineNumRe = regexp.MustCompile(`L(\d+)`)
 
 func parseDiagLine(s string) ReportDiag {
-	m := diagLineRe.FindStringSubmatch(s)
+	// Try the new format first: "ruleID L<line> — message"
+	if m := diagLineReNew.FindStringSubmatch(s); m != nil {
+		line, _ := strconv.Atoi(m[2])
+		return ReportDiag{
+			RuleID:  m[1],
+			Line:    line,
+			Message: m[3],
+		}
+	}
+	// Fall back to legacy format: "ruleID — message"
+	m := diagLineReLegacy.FindStringSubmatch(s)
 	if m == nil {
 		return ReportDiag{}
 	}
@@ -269,7 +285,7 @@ func parseDiagLine(s string) ReportDiag {
 		RuleID:  m[1],
 		Message: m[2],
 	}
-	// Try to extract a line number from the message.
+	// Try to extract a line number from the message body.
 	if lm := diagLineNumRe.FindStringSubmatch(d.Message); lm != nil {
 		d.Line, _ = strconv.Atoi(lm[1])
 	}

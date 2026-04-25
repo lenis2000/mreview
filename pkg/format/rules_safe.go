@@ -242,12 +242,13 @@ func lineAt(lines []int, offset int) int {
 	return hi
 }
 
-// truncExcerpt truncates s to at most 80 characters.
+// truncExcerpt truncates s to at most 80 runes.
 func truncExcerpt(s string) string {
-	if len(s) <= 80 {
+	runes := []rune(s)
+	if len(runes) <= 80 {
 		return s
 	}
-	return s[:77] + "..."
+	return string(runes[:77]) + "..."
 }
 
 // dedupeTabHits collapses consecutive tab hits on the same line into one.

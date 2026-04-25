@@ -14,8 +14,11 @@ const MarkerExternal = "🔧"
 // to owning blocks by line number. Returns nil (not an error) when the
 // report file does not exist.
 func LoadExternalIssues(reportPath string, doc *parser.Document) (map[string][]format.ReportDiag, error) {
-	if _, err := os.Stat(reportPath); os.IsNotExist(err) {
-		return nil, nil
+	if _, err := os.Stat(reportPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	rpt, err := format.LoadReport(reportPath)
 	if err != nil {

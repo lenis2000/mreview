@@ -3,6 +3,7 @@ package format
 import (
 	"bytes"
 	"regexp"
+	"strconv"
 
 	"mreview/pkg/parser"
 )
@@ -145,7 +146,7 @@ func diagLabelUnused(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.label-unused",
 				Line:    b.StartLine,
-				Message: `\label{` + b.Label + `} declared at L` + itoa(b.StartLine) + `, never referenced`,
+				Message: `\label{` + b.Label + `} declared at L` + strconv.Itoa(b.StartLine) + `, never referenced`,
 			})
 		}
 	}
@@ -171,7 +172,7 @@ func diagLabelDuplicate(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.label-duplicate",
 				Line:    tok.Line,
-				Message: `\label{` + tok.Target + `} already declared at L` + itoa(firstLine),
+				Message: `\label{` + tok.Target + `} already declared at L` + strconv.Itoa(firstLine),
 			})
 		} else {
 			seen[tok.Target] = tok.Line
@@ -254,7 +255,7 @@ func diagThmUnlabeled(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.thm-unlabeled",
 				Line:    b.StartLine,
-				Message: title + ` at L` + itoa(b.StartLine) + ` has no \label`,
+				Message: title + ` at L` + strconv.Itoa(b.StartLine) + ` has no \label`,
 			})
 		}
 	}
@@ -279,7 +280,7 @@ func diagThmOrphanProof(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.thm-orphan-proof",
 				Line:    b.StartLine,
-				Message: `Proof at L` + itoa(b.StartLine) + ` not preceded by a theorem-like block`,
+				Message: `Proof at L` + strconv.Itoa(b.StartLine) + ` not preceded by a theorem-like block`,
 			})
 		}
 	}
@@ -332,7 +333,7 @@ func diagThmNoProof(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.thm-no-proof",
 				Line:    b.StartLine,
-				Message: title + label + ` at L` + itoa(b.StartLine) + ` has no following proof in next 5 blocks`,
+				Message: title + label + ` at L` + strconv.Itoa(b.StartLine) + ` has no following proof in next 5 blocks`,
 			})
 		}
 	}
@@ -442,16 +443,16 @@ func diagTodoMarker(ctx *Ctx) Result {
 		if cursor >= len(trimmed) || trimmed[cursor] != '{' {
 			continue
 		}
-		_, cursor, ok = readBraceGroupAt(trimmed, cursor+1)
+		_, cursor, ok = readBraceGroup(trimmed, cursor+1)
 		if !ok {
 			continue
 		}
 		// Read {COMMENT}
-		cursor = skipWhitespaceBytes(trimmed, cursor)
+		cursor = skipWhitespace(trimmed, cursor)
 		if cursor >= len(trimmed) || trimmed[cursor] != '{' {
 			continue
 		}
-		comment, _, ok := readBraceGroupAt(trimmed, cursor+1)
+		comment, _, ok := readBraceGroup(trimmed, cursor+1)
 		if !ok {
 			continue
 		}
@@ -492,27 +493,6 @@ func readBraceGroup(src []byte, pos int) ([]byte, int, bool) {
 	return nil, pos, false
 }
 
-// readBraceGroupAt reads a brace-balanced group starting at buf[pos],
-// where buf[pos-1] was the opening '{'. Returns content and position after '}'.
-func readBraceGroupAt(buf []byte, pos int) ([]byte, int, bool) {
-	depth := 1
-	start := pos
-	for i := pos; i < len(buf); i++ {
-		switch buf[i] {
-		case '\\':
-			i++
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return buf[start:i], i + 1, true
-			}
-		}
-	}
-	return nil, pos, false
-}
-
 // readBracketGroupBytes reads a bracket-balanced [...] group starting at buf[pos],
 // where buf[pos-1] was '['. Returns content and position after ']'.
 func readBracketGroupBytes(buf []byte, pos int) ([]byte, int, bool) {
@@ -539,13 +519,6 @@ func skipWhitespace(src []byte, pos int) int {
 	return pos
 }
 
-func skipWhitespaceBytes(buf []byte, pos int) int {
-	for pos < len(buf) && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n' || buf[pos] == '\r') {
-		pos++
-	}
-	return pos
-}
-
 // ---------------------------------------------------------------------------
 // lint.block-too-long
 // ---------------------------------------------------------------------------
@@ -566,34 +539,10 @@ func diagBlockTooLong(ctx *Ctx) Result {
 			diags = append(diags, Diag{
 				RuleID:  "lint.block-too-long",
 				Line:    b.StartLine,
-				Message: "Paragraph block spans " + itoa(lineCount) + " lines (threshold: " + itoa(longParagraphThreshold) + ")",
+				Message: "Paragraph block spans " + strconv.Itoa(lineCount) + " lines (threshold: " + strconv.Itoa(longParagraphThreshold) + ")",
 			})
 		}
 	}
 	return Result{Src: ctx.Src, Diags: diags}
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-func itoa(n int) string {
-	buf := make([]byte, 0, 8)
-	if n < 0 {
-		buf = append(buf, '-')
-		n = -n
-	}
-	if n == 0 {
-		return "0"
-	}
-	start := len(buf)
-	for n > 0 {
-		buf = append(buf, byte('0'+n%10))
-		n /= 10
-	}
-	// Reverse the digit part.
-	for i, j := start, len(buf)-1; i < j; i, j = i+1, j-1 {
-		buf[i], buf[j] = buf[j], buf[i]
-	}
-	return string(buf)
-}

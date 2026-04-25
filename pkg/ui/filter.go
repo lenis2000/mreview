@@ -42,7 +42,7 @@ func blockMatchesFilter(b *parser.Block, side *persist.Sidecar, f Filter, ext ..
 	case FilterAnnotated:
 		return hasAnnotation(side, b.ID)
 	case FilterIssues:
-		if blockHasIssue(b) {
+		if blockHasUnresolved(b) {
 			return true
 		}
 		if len(ext) > 0 && blockHasExternalIssue(ext[0], b.ID) {
@@ -77,18 +77,3 @@ func hasAnnotation(side *persist.Sidecar, id string) bool {
 	return false
 }
 
-// blockHasIssue is true when the block carries any unresolved outgoing ref.
-// The `⊘ no-region` marker is rendered but not treated as a filter-level
-// issue, because until Task 15 wires the SyncTeX index every block lacks a
-// region and the filter would degenerate into "show everything".
-func blockHasIssue(b *parser.Block) bool {
-	if b == nil {
-		return false
-	}
-	for _, r := range b.RefsOut {
-		if !r.Resolved {
-			return true
-		}
-	}
-	return false
-}

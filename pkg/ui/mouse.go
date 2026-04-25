@@ -388,10 +388,7 @@ func sourcePaneInnerH(termH int, layout LayoutMode) int {
 		paneH = 1
 	}
 	if layout == LayoutStacked {
-		paneH, _ = stackedHeights(paneH)
-		_ = paneH
-		topH, _ := stackedHeights(termH - statusBarHeight)
-		paneH = topH
+		paneH, _ = stackedHeights(termH - statusBarHeight)
 	}
 	bodyH := paneH - 2 - 1
 	if bodyH < 1 {

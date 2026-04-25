@@ -83,7 +83,14 @@ func appendLineSpans(spans []ProtectedSpan, src []byte, lineStart, lineEnd int) 
 		c := src[i]
 		switch {
 		case c == '%':
-			if i > lineStart && src[i-1] == '\\' {
+			// Count consecutive backslashes before the %. If odd, the %
+			// is escaped (\%); if even (including zero), the % starts a
+			// real comment (e.g. \\% where \\ is a line break).
+			nSlashes := 0
+			for k := i - 1; k >= lineStart && src[k] == '\\'; k-- {
+				nSlashes++
+			}
+			if nSlashes%2 == 1 {
 				i++
 				continue
 			}
