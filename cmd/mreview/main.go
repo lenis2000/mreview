@@ -12,6 +12,7 @@ import (
 	"github.com/jessevdk/go-flags"
 
 	"mreview/pkg/build"
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
@@ -233,6 +234,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
+
+	// Load external fmt-report diagnostics if a report file exists.
+	reportPath := format.ReportPath(o.File)
+	if ext, extErr := ui.LoadExternalIssues(reportPath, doc); extErr != nil {
+		fmt.Fprintf(stderr, "mreview: warning: load fmt-report: %v\n", extErr)
+	} else if ext != nil {
+		model.ExternalIssues = ext
+	}
 	model.Styles = ui.StylesForTheme(cfg.Theme)
 	model.KittyAvailable = ui.KittyGraphicsAvailable()
 	if buildWarning != "" {

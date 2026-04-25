@@ -69,7 +69,8 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	paperPath := rest[0]
 
-	if _, statErr := os.Stat(paperPath); statErr != nil {
+	fileInfo, statErr := os.Stat(paperPath)
+	if statErr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: cannot read %q: %v\n", paperPath, statErr)
 		return 1
 	}
@@ -89,29 +90,35 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	result := format.Apply(src, opts)
 
+	// Write report early — both --check and no-changes paths benefit.
+	writeReportIfNeeded := func(verifyResult *format.VerifyResult) {
+		if !o.Report || len(result.Diags) == 0 && len(result.Hits) == 0 {
+			return
+		}
+		rpt := format.BuildReport(filepath.Base(paperPath), opts, result, verifyResult)
+		reportPath := format.ReportPath(paperPath)
+		if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
+			return
+		}
+		fmt.Fprintf(stderr, "mreview fmt: wrote %s\n", filepath.Base(reportPath))
+	}
+
 	// No changes?
 	if string(result.Src) == string(src) {
+		writeReportIfNeeded(nil)
 		if o.Check {
 			return 0
 		}
-		// Write report even when no rewrites — diagnostics are still useful.
-		if o.Report && len(result.Diags) > 0 {
-			rpt := format.BuildReport(filepath.Base(paperPath), opts, result, nil)
-			reportPath := format.ReportPath(paperPath)
-			if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
-				fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
-				return 1
-			}
-			fmt.Fprintf(stderr, "mreview fmt: no changes; wrote %s (%d diagnostics)\n",
-				filepath.Base(reportPath), len(result.Diags))
-			return 0
+		if !o.Report || len(result.Diags) == 0 {
+			fmt.Fprintln(stderr, "mreview fmt: no changes")
 		}
-		fmt.Fprintln(stderr, "mreview fmt: no changes")
 		return 0
 	}
 
 	// --check: exit 1 if changes are needed.
 	if o.Check {
+		writeReportIfNeeded(nil)
 		return 1
 	}
 
@@ -186,22 +193,14 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Write the rewritten source.
-	if writeErr := os.WriteFile(paperPath, result.Src, 0o644); writeErr != nil {
+	// Write the rewritten source, preserving original file permissions.
+	if writeErr := os.WriteFile(paperPath, result.Src, fileInfo.Mode().Perm()); writeErr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: write %q: %v\n", paperPath, writeErr)
 		return 1
 	}
 
-	// Write report if --report is set.
-	if o.Report {
-		rpt := format.BuildReport(filepath.Base(paperPath), opts, result, verifyResult)
-		reportPath := format.ReportPath(paperPath)
-		if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
-			return 1
-		}
-		fmt.Fprintf(stderr, "mreview fmt: wrote %s\n", filepath.Base(reportPath))
-	}
+	// Write report if --report is set (with verifier result).
+	writeReportIfNeeded(verifyResult)
 
 	// Summary.
 	nHits := len(result.Hits)

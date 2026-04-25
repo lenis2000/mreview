@@ -56,6 +56,9 @@ func Apply(src []byte, opts Options) PipelineResult {
 			ctx.Src = result.Src
 			if nlBefore != nlAfter {
 				reindex(ctx)
+				// Invalidate Doc so it gets re-parsed with correct
+				// line numbers before the next tier that needs it.
+				ctx.Doc = nil
 			}
 		}
 	}

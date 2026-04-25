@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -209,10 +208,3 @@ func truncLine(s string, max int) string {
 	return s[:max] + "..."
 }
 
-func init() {
-	// Ensure tests run from the repo root so relative paths work.
-	if runtime.GOOS != "windows" {
-		// The test binary runs from pkg/format/, so the fixture dir
-		// at ../../testdata/pnas-fixture/ should be correct.
-	}
-}
