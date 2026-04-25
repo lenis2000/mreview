@@ -13,84 +13,64 @@ import (
 func registerDiagRules() {
 	Registry = append(Registry,
 		Rule{
-			ID:   "lint.ref-undefined",
-			Tier: DiagOnly,
-			Doc:  "Flag \\ref{X} with no matching \\label{X}.",
-			Apply: func(ctx *Ctx) Result {
-				return diagRefUndefined(ctx)
-			},
+			ID:    "lint.ref-undefined",
+			Tier:  DiagOnly,
+			Doc:   "Flag \\ref{X} with no matching \\label{X}.",
+			Apply: diagRefUndefined,
 		},
 		Rule{
-			ID:   "lint.label-unused",
-			Tier: DiagOnly,
-			Doc:  "Flag \\label{X} referenced nowhere.",
-			Apply: func(ctx *Ctx) Result {
-				return diagLabelUnused(ctx)
-			},
+			ID:    "lint.label-unused",
+			Tier:  DiagOnly,
+			Doc:   "Flag \\label{X} referenced nowhere.",
+			Apply: diagLabelUnused,
 		},
 		Rule{
-			ID:   "lint.label-duplicate",
-			Tier: DiagOnly,
-			Doc:  "Flag same \\label{X} declared twice.",
-			Apply: func(ctx *Ctx) Result {
-				return diagLabelDuplicate(ctx)
-			},
+			ID:    "lint.label-duplicate",
+			Tier:  DiagOnly,
+			Doc:   "Flag same \\label{X} declared twice.",
+			Apply: diagLabelDuplicate,
 		},
 		Rule{
-			ID:   "lint.ref-should-eqref",
-			Tier: DiagOnly,
-			Doc:  "Flag \\ref{X} where X labels a KindDisplay block; suggest \\eqref.",
-			Apply: func(ctx *Ctx) Result {
-				return diagRefShouldEqref(ctx)
-			},
+			ID:    "lint.ref-should-eqref",
+			Tier:  DiagOnly,
+			Doc:   "Flag \\ref{X} where X labels a KindDisplay block; suggest \\eqref.",
+			Apply: diagRefShouldEqref,
 		},
 		Rule{
-			ID:   "lint.cite-undefined",
-			Tier: DiagOnly,
-			Doc:  "Flag \\cite{X} with X not in .bbl.",
-			Apply: func(ctx *Ctx) Result {
-				return diagCiteUndefined(ctx)
-			},
+			ID:    "lint.cite-undefined",
+			Tier:  DiagOnly,
+			Doc:   "Flag \\cite{X} with X not in .bbl.",
+			Apply: diagCiteUndefined,
 		},
 		Rule{
-			ID:   "lint.thm-unlabeled",
-			Tier: DiagOnly,
-			Doc:  "Flag KindTheoremLike block with no \\label.",
-			Apply: func(ctx *Ctx) Result {
-				return diagThmUnlabeled(ctx)
-			},
+			ID:    "lint.thm-unlabeled",
+			Tier:  DiagOnly,
+			Doc:   "Flag KindTheoremLike block with no \\label.",
+			Apply: diagThmUnlabeled,
 		},
 		Rule{
-			ID:   "lint.thm-orphan-proof",
-			Tier: DiagOnly,
-			Doc:  "Flag KindProof not preceded by a theorem-like block.",
-			Apply: func(ctx *Ctx) Result {
-				return diagThmOrphanProof(ctx)
-			},
+			ID:    "lint.thm-orphan-proof",
+			Tier:  DiagOnly,
+			Doc:   "Flag KindProof not preceded by a theorem-like block.",
+			Apply: diagThmOrphanProof,
 		},
 		Rule{
-			ID:   "lint.thm-no-proof",
-			Tier: DiagOnly,
-			Doc:  "Flag theorem stated with no proof block within next 5 outer-sibling blocks.",
-			Apply: func(ctx *Ctx) Result {
-				return diagThmNoProof(ctx)
-			},
+			ID:    "lint.thm-no-proof",
+			Tier:  DiagOnly,
+			Doc:   "Flag theorem stated with no proof block within next 5 outer-sibling blocks.",
+			Apply: diagThmNoProof,
 		},
 		Rule{
-			ID:   "lint.todo-marker",
-			Tier: DiagOnly,
-			Doc:  "Flag \\colorbox{...}{\\parbox{...}{...}} TODO markers.",
-			Apply: func(ctx *Ctx) Result {
-				return diagTodoMarker(ctx)
-			},
+			ID:    "lint.todo-marker",
+			Tier:  DiagOnly,
+			Doc:   "Flag \\colorbox{...}{\\parbox{...}{...}} TODO markers.",
+			Apply: diagTodoMarker,
 		},
 		Rule{
-			ID:   "lint.block-too-long",
-			Tier: DiagOnly,
-			Doc:  "Flag KindParagraph blocks whose source span exceeds 40 lines.",
-			Apply: func(ctx *Ctx) Result {
-				return diagBlockTooLong(ctx)
-			},
+			ID:    "lint.block-too-long",
+			Tier:  DiagOnly,
+			Doc:   "Flag KindParagraph blocks whose source span exceeds 40 lines.",
+			Apply: diagBlockTooLong,
 		},
 	)
 }

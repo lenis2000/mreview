@@ -12,36 +12,28 @@ import (
 func registerSafeRules() {
 	Registry = append(Registry,
 		Rule{
-			ID:   "space.trailing",
-			Tier: Safe,
-			Doc:  "Strip trailing whitespace per line.",
-			Apply: func(ctx *Ctx) Result {
-				return applyTrailing(ctx)
-			},
+			ID:    "space.trailing",
+			Tier:  Safe,
+			Doc:   "Strip trailing whitespace per line.",
+			Apply: applyTrailing,
 		},
 		Rule{
-			ID:   "space.blank-runs",
-			Tier: Safe,
-			Doc:  "Collapse runs of 3+ consecutive blank lines to 2 (one blank line).",
-			Apply: func(ctx *Ctx) Result {
-				return applyBlankRuns(ctx)
-			},
+			ID:    "space.blank-runs",
+			Tier:  Safe,
+			Doc:   "Collapse runs of 3+ consecutive blank lines to 2 (one blank line).",
+			Apply: applyBlankRuns,
 		},
 		Rule{
-			ID:   "space.tabs",
-			Tier: Safe,
-			Doc:  "Replace tabs with 4 spaces outside protected regions.",
-			Apply: func(ctx *Ctx) Result {
-				return applyTabs(ctx)
-			},
+			ID:    "space.tabs",
+			Tier:  Safe,
+			Doc:   "Replace tabs with 4 spaces outside protected regions.",
+			Apply: applyTabs,
 		},
 		Rule{
-			ID:   "display.style",
-			Tier: Safe,
-			Doc:  "Replace $$...$$ with \\[...\\].",
-			Apply: func(ctx *Ctx) Result {
-				return applyDisplayStyle(ctx)
-			},
+			ID:    "display.style",
+			Tier:  Safe,
+			Doc:   "Replace $$...$$ with \\[...\\].",
+			Apply: applyDisplayStyle,
 		},
 	)
 }

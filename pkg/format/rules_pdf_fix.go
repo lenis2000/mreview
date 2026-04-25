@@ -3,6 +3,7 @@ package format
 import (
 	"bytes"
 	"regexp"
+	"sort"
 
 	"mreview/pkg/parser"
 )
@@ -12,20 +13,16 @@ import (
 func registerPDFFixRules() {
 	Registry = append(Registry,
 		Rule{
-			ID:   "math.paragraph-suppress",
-			Tier: PDFFix,
-			Doc:  "Remove blank lines around display-math envs when no strong paragraph signal exists.",
-			Apply: func(ctx *Ctx) Result {
-				return applyMathParagraphSuppress(ctx)
-			},
+			ID:    "math.paragraph-suppress",
+			Tier:  PDFFix,
+			Doc:   "Remove blank lines around display-math envs when no strong paragraph signal exists.",
+			Apply: applyMathParagraphSuppress,
 		},
 		Rule{
-			ID:   "env.spacing",
-			Tier: PDFFix,
-			Doc:  "Ensure exactly one blank line above theorem-like envs and section commands.",
-			Apply: func(ctx *Ctx) Result {
-				return applyEnvSpacing(ctx)
-			},
+			ID:    "env.spacing",
+			Tier:  PDFFix,
+			Doc:   "Ensure exactly one blank line above theorem-like envs and section commands.",
+			Apply: applyEnvSpacing,
 		},
 	)
 }
@@ -128,15 +125,9 @@ func applyMathParagraphSuppress(ctx *Ctx) Result {
 	}
 
 	// Sort removals by start position.
-	for i := 1; i < len(removals); i++ {
-		key := removals[i]
-		j := i - 1
-		for j >= 0 && removals[j].start > key.start {
-			removals[j+1] = removals[j]
-			j--
-		}
-		removals[j+1] = key
-	}
+	sort.Slice(removals, func(i, j int) bool {
+		return removals[i].start < removals[j].start
+	})
 
 	// Apply removals: delete each blank-line byte range entirely.
 	// The content line above (or the display-math close line below) already
@@ -215,9 +206,11 @@ func findDisplayMathRegions(ctx *Ctx) []displayMathRegion {
 					break
 				}
 			}
-			// Check if inside protected region.
-			startOff := lineStartOffset(ctx.Lines, startLine)
-			if parser.OverlapsProtected(startOff, startOff+1, ctx.Protected) {
+			// Check if inside protected region using the token's actual byte
+			// position (not the line start) so inline protected content like
+			// \verb|...| is correctly detected.
+			tokOff := tokenByteOffset(ctx.Lines, tok)
+			if parser.OverlapsProtected(tokOff, tokOff+1, ctx.Protected) {
 				continue
 			}
 			regions = append(regions, displayMathRegion{startLine: startLine, endLine: endLine})
@@ -233,8 +226,8 @@ func findDisplayMathRegions(ctx *Ctx) []displayMathRegion {
 					break
 				}
 			}
-			startOff := lineStartOffset(ctx.Lines, startLine)
-			if parser.OverlapsProtected(startOff, startOff+1, ctx.Protected) {
+			tokOff := tokenByteOffset(ctx.Lines, tok)
+			if parser.OverlapsProtected(tokOff, tokOff+1, ctx.Protected) {
 				continue
 			}
 			regions = append(regions, displayMathRegion{startLine: startLine, endLine: endLine})
@@ -305,6 +298,12 @@ func mergeIntoChains(regions []displayMathRegion, src []byte, lines []int) []cha
 	}
 
 	return chains
+}
+
+// tokenByteOffset returns the byte offset of a token in the source, computed
+// from the token's 1-based Line and Col and the line offset table.
+func tokenByteOffset(lines []int, tok parser.Token) int {
+	return lineStartOffset(lines, tok.Line) + tok.Col - 1
 }
 
 // lineStartOffset returns the byte offset of the start of 1-based line n.
@@ -518,9 +517,11 @@ func applyEnvSpacing(ctx *Ctx) Result {
 			continue
 		}
 
-		// Check if inside a protected region.
-		startOff := lineStartOffset(ctx.Lines, targetLine)
-		if parser.OverlapsProtected(startOff, startOff+1, ctx.Protected) {
+		// Check if inside a protected region using the token's actual
+		// byte position (not the line start) so inline protected content
+		// like \verb|...| is correctly detected.
+		tokOff := tokenByteOffset(ctx.Lines, tok)
+		if parser.OverlapsProtected(tokOff, tokOff+1, ctx.Protected) {
 			continue
 		}
 
@@ -540,8 +541,9 @@ func applyEnvSpacing(ctx *Ctx) Result {
 
 		// Need to insert a blank line. Insert at the start of targetLine
 		// (which means adding a \n before the existing content).
+		lineOff := lineStartOffset(ctx.Lines, targetLine)
 		insertions = append(insertions, insertion{
-			offset:  startOff,
+			offset:  lineOff,
 			srcLine: targetLine,
 		})
 	}
@@ -562,15 +564,9 @@ func applyEnvSpacing(ctx *Ctx) Result {
 	insertions = deduped
 
 	// Sort by offset.
-	for i := 1; i < len(insertions); i++ {
-		key := insertions[i]
-		j := i - 1
-		for j >= 0 && insertions[j].offset > key.offset {
-			insertions[j+1] = insertions[j]
-			j--
-		}
-		insertions[j+1] = key
-	}
+	sort.Slice(insertions, func(i, j int) bool {
+		return insertions[i].offset < insertions[j].offset
+	})
 
 	// Build output with insertions. Track output byte positions so we
 	// can compute ExpectedDiffSourceLines using the AFTER-rule line table.

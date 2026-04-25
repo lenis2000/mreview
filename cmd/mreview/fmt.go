@@ -81,6 +81,13 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Validate --rule IDs before running the pipeline so typos
+	// don't silently produce a no-op success.
+	if err := format.ValidateRuleIDs(o.Rule); err != nil {
+		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
+		return 2
+	}
+
 	// Build pipeline options.
 	opts := format.Options{
 		PDFFix: o.PDFFix,

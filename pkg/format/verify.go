@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"mreview/pkg/build"
 	"mreview/pkg/synctex"
@@ -55,12 +56,13 @@ type VerifyResult struct {
 // Returns ok=true if all diffs are whitelisted. Callers should refuse to write
 // when ok=false.
 func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, error) {
-	// Create isolated tempdirs.
+	// Create isolated tempdirs. setLastTmpDir cleans the previous run's
+	// tempdir so /tmp/mr-fmt-* doesn't accumulate unboundedly.
 	tmpBase, err := os.MkdirTemp("", "mr-fmt-")
 	if err != nil {
 		return nil, fmt.Errorf("verify: create tempdir: %w", err)
 	}
-	lastTmpDir = tmpBase
+	setLastTmpDir(tmpBase)
 	beforeDir := filepath.Join(tmpBase, "before")
 	afterDir := filepath.Join(tmpBase, "after")
 	if err := os.MkdirAll(beforeDir, 0o755); err != nil {
@@ -518,13 +520,30 @@ func DiscoverTree(paperPath string) (*Tree, error) {
 	}, nil
 }
 
-// WriteTempdir is the path of the last verifier tempdir, for inspection
-// on failure. Set by Verify; callers may print it to help debugging.
-var lastTmpDir string
+// lastTmpDir holds the path of the last verifier tempdir, for inspection
+// on failure. Set by Verify; guarded by lastTmpMu.
+var (
+	lastTmpDir string
+	lastTmpMu  sync.Mutex
+)
 
 // LastTempDir returns the path of the most recent verification tempdir.
 func LastTempDir() string {
+	lastTmpMu.Lock()
+	defer lastTmpMu.Unlock()
 	return lastTmpDir
+}
+
+// setLastTmpDir atomically updates the last tempdir, cleaning the
+// previous one if it exists. The new tempdir is preserved for
+// inspection until the next Verify call replaces it.
+func setLastTmpDir(dir string) {
+	lastTmpMu.Lock()
+	defer lastTmpMu.Unlock()
+	if lastTmpDir != "" && lastTmpDir != dir {
+		os.RemoveAll(lastTmpDir)
+	}
+	lastTmpDir = dir
 }
 
 // CleanTempDirs removes all mr-fmt-* tempdirs in os.TempDir.

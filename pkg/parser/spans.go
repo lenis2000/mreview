@@ -1,6 +1,9 @@
 package parser
 
-import "bytes"
+import (
+	"bytes"
+	"sort"
+)
 
 // ProtectedSpan marks a byte range in the source that must not be rewritten by
 // the format pass. The Start/End pair is a half-open interval [Start, End).
@@ -263,13 +266,7 @@ func spanKindForEnv(env string) string {
 }
 
 func sortSpans(spans []ProtectedSpan) {
-	for i := 1; i < len(spans); i++ {
-		key := spans[i]
-		j := i - 1
-		for j >= 0 && spans[j].Start > key.Start {
-			spans[j+1] = spans[j]
-			j--
-		}
-		spans[j+1] = key
-	}
+	sort.Slice(spans, func(i, j int) bool {
+		return spans[i].Start < spans[j].Start
+	})
 }

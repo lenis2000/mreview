@@ -2,6 +2,7 @@ package format
 
 import (
 	"bytes"
+	"fmt"
 
 	"mreview/pkg/parser"
 )
@@ -88,6 +89,24 @@ func reindex(ctx *Ctx) {
 	ctx.Tokens = parser.Tokenize(ctx.Src)
 	ctx.Protected = parser.ProtectedSpans(ctx.Src)
 	ctx.Lines = parser.LineOffsets(ctx.Src)
+}
+
+// ValidateRuleIDs checks that all rule IDs in ids exist in the Registry.
+// Returns an error listing the first unknown ID, or nil if all are valid.
+func ValidateRuleIDs(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(Registry))
+	for _, r := range Registry {
+		known[r.ID] = true
+	}
+	for _, id := range ids {
+		if !known[id] {
+			return fmt.Errorf("unknown rule %q", id)
+		}
+	}
+	return nil
 }
 
 // enabledRules filters Registry according to opts.

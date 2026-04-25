@@ -32,7 +32,7 @@ func LoadExternalIssues(reportPath string, doc *parser.Document) (map[string][]f
 
 // mapDiagsToBlocks maps each ReportDiag to the block whose [StartLine, EndLine]
 // range contains the diagnostic's line. Diagnostics that don't fall in any
-// block are mapped to the root block.
+// block are mapped to the nearest block by line distance.
 func mapDiagsToBlocks(diags []format.ReportDiag, doc *parser.Document) map[string][]format.ReportDiag {
 	if doc == nil {
 		return nil
@@ -46,7 +46,11 @@ func mapDiagsToBlocks(diags []format.ReportDiag, doc *parser.Document) map[strin
 }
 
 // findOwningBlock returns the ID of the deepest block whose line range
-// contains line. Returns "root" if no block matches.
+// contains line. When no block's range contains the line (e.g. a diagnostic
+// in the preamble or after \end{document}), the function falls back to the
+// nearest block by line distance so the diagnostic remains visible in the
+// outline's issues filter. Returns "root" only when the document has no
+// non-root blocks at all.
 func findOwningBlock(line int, doc *parser.Document) string {
 	if doc == nil || line <= 0 {
 		return "root"
@@ -66,7 +70,30 @@ func findOwningBlock(line int, doc *parser.Document) string {
 			}
 		}
 	}
-	return bestID
+	if bestID != "root" {
+		return bestID
+	}
+	// Fallback: assign to the nearest block by line distance so the
+	// diagnostic is visible in the issues filter (the outline never
+	// renders the synthetic root node).
+	nearestID := "root"
+	nearestDist := int(^uint(0) >> 1)
+	for _, b := range doc.Blocks {
+		if b == nil || b.ID == "root" {
+			continue
+		}
+		var dist int
+		if line < b.StartLine {
+			dist = b.StartLine - line
+		} else {
+			dist = line - b.EndLine
+		}
+		if dist < nearestDist {
+			nearestDist = dist
+			nearestID = b.ID
+		}
+	}
+	return nearestID
 }
 
 // blockHasExternalIssue reports whether the block has any fmt-report diagnostics.

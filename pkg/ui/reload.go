@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/build"
+	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/persist"
@@ -155,6 +156,14 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		newSidecar.Detached = append(newSidecar.Detached, detached...)
 		RefreshRemappedAnnotations(m.Doc, newSidecar)
 		m.Sidecar = newSidecar
+	}
+	// Refresh external issues (fmt-report diagnostics) against the new
+	// doc so the issues filter stays current after edits.
+	if m.Doc != nil && m.Doc.File != "" {
+		reportPath := format.ReportPath(m.Doc.File)
+		if ext, extErr := LoadExternalIssues(reportPath, m.Doc); extErr == nil {
+			m.ExternalIssues = ext
+		}
 	}
 	// Resolve the cursor against the *live* cursor too — if the user
 	// navigated during the rebuild, m.CursorBlockID is what they
@@ -339,21 +348,6 @@ func resolveReloadCursor(oldCursor string, newDoc *parser.Document, newSidecar *
 	return firstUnreviewedOrAny(newDoc, newSidecar)
 }
 
-// cloneSidecar returns a shallow copy so the reload goroutine can
-// operate on a snapshot while the user keeps typing notes in the live
-// model. The slices still share backing storage, but we never mutate
-// them in performReload.
-func cloneSidecar(s *persist.Sidecar) *persist.Sidecar {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	out.Annotations = append([]persist.Annotation(nil), s.Annotations...)
-	out.Detached = append([]persist.Annotation(nil), s.Detached...)
-	out.Reviewed = append([]string(nil), s.Reviewed...)
-	return &out
-}
-
 // shouldRebuild reports whether tex mtime is newer than pdf mtime. A
 // missing PDF also triggers a build (the user might have edited and
 // deleted the stale output).
@@ -379,18 +373,6 @@ func shortBuildErr(err error) string {
 		}
 	}
 	return msg
-}
-
-// lmkfActive reports whether LP's `lmkf` shell function (latexmk -pvc
-// wrapper) is watching this particular .tex. lmkf writes
-// /tmp/lmkf-status/<project-dirname> containing the absolute path to
-// the .log file it's monitoring; we confirm both the file exists and
-// the log path inside matches what we'd expect for our tex. This lets
-// us skip our own latexmk invocation and instead wait for lmkf's
-// continuous-build loop to regenerate the PDF.
-func lmkfActive(texPath string) bool {
-	_, ok := lmkfLogPath(texPath)
-	return ok
 }
 
 // lmkfLogPath returns the absolute .log path lmkf is watching for
@@ -434,7 +416,7 @@ func waitForLmkfComplete(logPath string, editTime time.Time, timeout time.Durati
 		st, err := os.Stat(logPath)
 		if err == nil && !st.ModTime().Before(editTime) {
 			if data, err := os.ReadFile(logPath); err == nil {
-				if bytes := logContainsMarker(data); bytes {
+				if found := logContainsMarker(data); found {
 					if errLine := firstLogError(data); errLine != "" {
 						return "error", errLine
 					}
