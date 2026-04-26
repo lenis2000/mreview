@@ -116,6 +116,8 @@ func applyMathAlign(ctx *Ctx) Result {
 	}
 
 	// Process spans in reverse order so byte offsets remain valid.
+	// We copy sub-slices of ctx.Src before using them as append targets
+	// to avoid corrupting ctx.Src through shared backing arrays.
 	out := make([]byte, 0, len(ctx.Src))
 	changed := false
 	var hits []Hit
@@ -130,9 +132,10 @@ func applyMathAlign(ctx *Ctx) Result {
 		// Skip entire environment if any body line is masked by
 		// % mreview-fmt: off/on or skip directives.
 		if ctx.RangeSkipped(sp.bodyStart, sp.bodyEnd) {
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
-			out = append(ctx.Src[sp.bodyStart:sp.bodyEnd], out...)
+			bodyCP := append([]byte(nil), ctx.Src[sp.bodyStart:sp.bodyEnd]...)
+			out = append(bodyCP, out...)
 			prev = sp.bodyStart
 			continue
 		}
@@ -149,9 +152,10 @@ func applyMathAlign(ctx *Ctx) Result {
 				})
 			}
 			// Prepend unchanged span + tail.
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
-			out = append(body, out...)
+			bodyCP := append([]byte(nil), body...)
+			out = append(bodyCP, out...)
 			prev = sp.bodyStart
 			continue
 		}
@@ -163,13 +167,14 @@ func applyMathAlign(ctx *Ctx) Result {
 				Line:    sp.beginLine,
 				Excerpt: truncExcerpt("aligned " + sp.name),
 			})
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
 			out = append(aligned, out...)
 		} else {
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
-			out = append(body, out...)
+			bodyCP := append([]byte(nil), body...)
+			out = append(bodyCP, out...)
 		}
 		prev = sp.bodyStart
 	}
@@ -179,7 +184,8 @@ func applyMathAlign(ctx *Ctx) Result {
 	}
 
 	// Prepend everything before the first span.
-	out = append(ctx.Src[:prev], out...)
+	prefix := append([]byte(nil), ctx.Src[:prev]...)
+	out = append(prefix, out...)
 	return Result{Src: out, Hits: hits, Diags: diags}
 }
 

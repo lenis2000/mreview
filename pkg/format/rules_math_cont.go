@@ -117,6 +117,8 @@ func applyMathCont(ctx *Ctx) Result {
 	var hits []Hit
 
 	// Process in reverse so byte offsets stay valid.
+	// Copy sub-slices of ctx.Src before using as append targets
+	// to avoid corrupting ctx.Src through shared backing arrays.
 	out := make([]byte, 0, len(ctx.Src))
 	prev := len(ctx.Src)
 	for i := len(spans) - 1; i >= 0; i-- {
@@ -127,9 +129,10 @@ func applyMathCont(ctx *Ctx) Result {
 		// Skip entire environment if any body line is masked by
 		// % mreview-fmt: off/on or skip directives.
 		if ctx.RangeSkipped(sp.bodyStart, sp.bodyEnd) {
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
-			out = append(ctx.Src[sp.bodyStart:sp.bodyEnd], out...)
+			bodyCP := append([]byte(nil), ctx.Src[sp.bodyStart:sp.bodyEnd]...)
+			out = append(bodyCP, out...)
 			prev = sp.bodyStart
 			continue
 		}
@@ -143,13 +146,14 @@ func applyMathCont(ctx *Ctx) Result {
 				Line:    sp.beginLine,
 				Excerpt: truncExcerpt("continuation-indent " + sp.name),
 			})
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
 			out = append(newBody, out...)
 		} else {
-			tail := ctx.Src[sp.bodyEnd:prev]
+			tail := append([]byte(nil), ctx.Src[sp.bodyEnd:prev]...)
 			out = append(tail, out...)
-			out = append(body, out...)
+			bodyCP := append([]byte(nil), body...)
+			out = append(bodyCP, out...)
 		}
 		prev = sp.bodyStart
 	}
@@ -158,7 +162,8 @@ func applyMathCont(ctx *Ctx) Result {
 		return Result{Src: ctx.Src}
 	}
 
-	out = append(ctx.Src[:prev], out...)
+	prefix := append([]byte(nil), ctx.Src[:prev]...)
+	out = append(prefix, out...)
 	return Result{Src: out, Hits: hits}
 }
 
