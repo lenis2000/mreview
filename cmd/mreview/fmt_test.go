@@ -547,6 +547,104 @@ func TestFmt_Stdin_MutualExclusion(t *testing.T) {
 	}
 }
 
+// --- --summary tests ---
+
+func TestFmt_Summary_SingleFile(t *testing.T) {
+	paper := writeFmtFixture(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--summary", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	// Stdout should be empty (no file content output).
+	if stdout.Len() > 0 {
+		t.Fatalf("--summary should not write to stdout, got %q", stdout.String())
+	}
+	// Stderr should contain the summary line.
+	out := stderr.String()
+	if !strings.Contains(out, "rewrites across") {
+		t.Fatalf("expected summary line on stderr, got %q", out)
+	}
+	// Should report at least 1 rewrite across 1 file.
+	if !strings.Contains(out, "1 files") && !strings.Contains(out, "1 rewrites") {
+		// More flexible: just check the numbers are non-zero.
+		if strings.Contains(out, "0 rewrites across 0 files") {
+			t.Fatalf("expected non-zero rewrites, got %q", out)
+		}
+	}
+	// File should NOT be modified (scan-only).
+	content, _ := os.ReadFile(paper)
+	if !strings.Contains(string(content), "hi  ") {
+		t.Fatalf("--summary should not modify the file")
+	}
+}
+
+func TestFmt_Summary_NoChanges(t *testing.T) {
+	paper := writeFmtFixtureClean(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--summary", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	out := stderr.String()
+	if !strings.Contains(out, "0 rewrites across 0 files") {
+		t.Fatalf("expected 0 rewrites for clean file, got %q", out)
+	}
+}
+
+func TestFmt_Summary_MultiFile(t *testing.T) {
+	a := writeFmtFixture(t) // needs formatting
+	b := writeFmtFixture(t) // needs formatting
+	c := writeFmtFixtureClean(t) // clean
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--summary", a, b, c}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	out := stderr.String()
+	if !strings.Contains(out, "rewrites across") {
+		t.Fatalf("expected summary line, got %q", out)
+	}
+	// Should report rewrites across 2 files (a and b have changes, c doesn't).
+	if !strings.Contains(out, "2 files") {
+		t.Fatalf("expected 2 files with rewrites, got %q", out)
+	}
+	// Files should NOT be modified.
+	contentA, _ := os.ReadFile(a)
+	if !strings.Contains(string(contentA), "hi  ") {
+		t.Fatalf("--summary should not modify files")
+	}
+}
+
+func TestFmt_Summary_MutualExclusion(t *testing.T) {
+	paper := writeFmtFixture(t)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"summary+diff", []string{"fmt", "--summary", "--diff", paper}},
+		{"summary+print", []string{"fmt", "--summary", "--print", paper}},
+		{"summary+check", []string{"fmt", "--summary", "--check", paper}},
+		{"summary+fail-on-change", []string{"fmt", "--summary", "--fail-on-change", paper}},
+		{"summary+stdin", []string{"fmt", "--summary", "--stdin"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(c.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2 for %v, got %d (stderr=%q)", c.args, code, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "mutually exclusive") {
+				t.Fatalf("expected mutually-exclusive message, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 // mustGit runs a git command in dir, failing the test on error.
 func mustGit(t *testing.T, dir string, args ...string) {
 	t.Helper()

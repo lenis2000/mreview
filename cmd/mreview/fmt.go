@@ -30,6 +30,7 @@ type fmtOpts struct {
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
 	Stdin        bool     `long:"stdin" description:"read source from stdin, write formatted to stdout"`
 	FailOnChange bool     `long:"fail-on-change" description:"format in place AND exit 1 when changed (CI/pre-commit)"`
+	Summary      bool     `long:"summary" description:"scan only; print N rewrites across M files to stderr"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
 	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
@@ -63,13 +64,19 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin.
-	if o.FailOnChange && (o.Check || o.Diff || o.Print || o.Stdin) {
-		fmt.Fprintln(stderr, "mreview fmt: --fail-on-change is mutually exclusive with --check, --diff, --print, and --stdin")
+	// --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin.
+	if o.Summary && (o.Diff || o.Print || o.Check || o.FailOnChange || o.Stdin) {
+		fmt.Fprintln(stderr, "mreview fmt: --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, and --stdin")
 		return 2
 	}
 
-	// --stdin is mutually exclusive with file args, --check, --diff, --print.
+	// --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin, --summary.
+	if o.FailOnChange && (o.Check || o.Diff || o.Print || o.Stdin || o.Summary) {
+		fmt.Fprintln(stderr, "mreview fmt: --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin, and --summary")
+		return 2
+	}
+
+	// --stdin is mutually exclusive with file args, --check, --diff, --print, --fail-on-change, --summary.
 	if o.Stdin {
 		if o.Check || o.Diff || o.Print {
 			fmt.Fprintln(stderr, "mreview fmt: --stdin is mutually exclusive with --check, --diff, and --print")
@@ -171,6 +178,11 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	wrapOpts := format.WrapOptions{
 		Mode: wrapMode,
 		Col:  wrapCol,
+	}
+
+	// --summary: scan-only mode; accumulate rewrites/diags across files.
+	if o.Summary {
+		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, cfg, stderr)
 	}
 
 	// Loop the per-file work; aggregate exit codes.
@@ -459,6 +471,63 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	if _, werr := stdout.Write(result.Src); werr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: <stdin>: write stdout: %v\n", werr)
 		return 1
+	}
+	return 0
+}
+
+// runFmtSummary implements --summary: scan each file, accumulate hit/diag
+// counts, and print a single line to stderr. Implies --no-verify, --no-report,
+// no dirty-tree check, no file write. Exit code is always 0.
+func runFmtSummary(
+	paths []string,
+	o *fmtOpts,
+	pdfFix bool,
+	indentOpts format.IndentOptions,
+	wrapOpts format.WrapOptions,
+	cfg *ui.Config,
+	stderr io.Writer,
+) int {
+	totalHits := 0
+	totalDiags := 0
+	filesWithHits := 0
+	filesWithDiags := 0
+
+	for _, paperPath := range paths {
+		src, readErr := os.ReadFile(paperPath)
+		if readErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: read %q: %v\n", paperPath, readErr)
+			return 1
+		}
+
+		opts := format.Options{
+			PDFFix:       pdfFix,
+			Rules:        o.Rule,
+			Diag:         true, // need diags for the count
+			VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
+			Indent:       indentOpts,
+			Wrap:         wrapOpts,
+		}
+
+		result := format.Apply(src, opts)
+
+		nHits := len(result.Hits)
+		nDiags := len(result.Diags)
+		totalHits += nHits
+		totalDiags += nDiags
+		if nHits > 0 {
+			filesWithHits++
+		}
+		if nDiags > 0 {
+			filesWithDiags++
+		}
+	}
+
+	if totalDiags > 0 {
+		fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files (%d with diagnostics)\n",
+			totalHits, filesWithHits, filesWithDiags)
+	} else {
+		fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files\n",
+			totalHits, filesWithHits)
 	}
 	return 0
 }

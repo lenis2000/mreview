@@ -52,12 +52,12 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 **Files:**
 - Modify: `cmd/mreview/fmt.go`
 
-- [ ] add `Summary bool` field to `fmtOpts` with `long:"summary" description:"scan only; print N rewrites across M files to stderr"`
-- [ ] implement: per-file Hit/Diag accumulator, single stderr line `mreview fmt: N rewrites across M files (K with diagnostics)`, exit 0
-- [ ] implies --no-verify; allowed with multi-file
-- [ ] mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, --lines
-- [ ] write tests: summary output format, multi-file accumulation, mutual-exclusion
-- [ ] run `go test ./... && make install`
+- [x] add `Summary bool` field to `fmtOpts` with `long:"summary" description:"scan only; print N rewrites across M files to stderr"`
+- [x] implement: per-file Hit/Diag accumulator, single stderr line `mreview fmt: N rewrites across M files (K with diagnostics)`, exit 0
+- [x] implies --no-verify; allowed with multi-file
+- [x] mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, --lines
+- [x] write tests: summary output format, multi-file accumulation, mutual-exclusion
+- [x] run `go test ./... && make install`
 
 ### Task 4: CI templates and documentation
 
