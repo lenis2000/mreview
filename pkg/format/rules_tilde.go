@@ -193,7 +193,7 @@ func shouldSkipPreceding(b byte) bool {
 	return false
 }
 
-// inlineMathRanges returns byte ranges of inline math in src: $...$ and \(...\).
+// inlineMathRanges returns byte ranges of math in src: $...$, $$...$$, and \(...\).
 // Unlike excludedRanges (in rules_wrap.go), this does NOT include ref-like
 // \command{...} groups, because the tilde rule specifically targets those.
 func inlineMathRanges(src []byte) [][2]int {
@@ -221,6 +221,23 @@ func inlineMathRanges(src []byte) [][2]int {
 			continue
 		}
 		if c == '$' {
+			// Check for $$ (display math) before $ (inline math).
+			if i+1 < len(src) && src[i+1] == '$' && !inDollar {
+				// Display math $$...$$: find the closing $$.
+				j := i + 2
+				for j+1 < len(src) && !(src[j] == '$' && src[j+1] == '$') {
+					j++
+				}
+				if j+1 < len(src) {
+					ranges = append(ranges, [2]int{i, j + 2})
+					i = j + 1
+				} else {
+					// Unclosed $$: protect from here to end.
+					ranges = append(ranges, [2]int{i, len(src)})
+					i = len(src)
+				}
+				continue
+			}
 			if !inDollar {
 				inDollar = true
 				dollarStart = i

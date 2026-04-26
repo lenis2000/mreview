@@ -155,6 +155,8 @@ func ValidateRuleIDs(ids []string) error {
 var lineCountChangingRules = map[string]bool{
 	"space.blank-runs":              true,
 	"space.wrap":                    true,
+	"space.item-per-line":           true,
+	"space.proof-delim-per-line":    true,
 	"space.display-delim-per-line":  true,
 	"display.style":                 true,
 	"math.paragraph-suppress":       true,

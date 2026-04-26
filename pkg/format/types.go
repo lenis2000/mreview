@@ -105,14 +105,6 @@ type Hit struct {
 	Line                    int   // 1-based source line of the rewrite, in the BEFORE source
 	ExpectedDiffSourceLines []int // source lines whose PDF rendering legitimately changes; nil for Tier-1
 	Excerpt                 string
-
-	// BeforeRange records the byte range [start, end) in the BEFORE source
-	// that this hit rewrote. Populated by the pipeline for --lines clip mask.
-	BeforeRange [2]int
-	// AfterText is the replacement text in the AFTER source that replaced
-	// BeforeRange in the original. Used by --lines to splice only in-range
-	// rewrites.
-	AfterText string
 }
 
 // Diag records a diagnostic (Tier-3 only) — no source rewrite, just a message.

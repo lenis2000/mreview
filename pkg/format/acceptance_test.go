@@ -144,7 +144,7 @@ func TestAcceptance_LinesRangeFormat(t *testing.T) {
 	// The PNAS fixture has trailing whitespace and other issues throughout,
 	// so there should be at least a few changes in this range.
 	if changedInRange == 0 {
-		t.Logf("warning: no changes within range 42:120 — may indicate range misses formatting issues")
+		t.Errorf("expected changes within range 42:120, got 0 — range formatting may be broken")
 	}
 }
 

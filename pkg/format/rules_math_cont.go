@@ -208,15 +208,18 @@ func contIndentBody(body []byte) ([]byte, bool) {
 
 	// Find the anchor: the column position of the first relation
 	// operator on the anchor line (at brace depth 0).
-	anchorContent := strings.TrimSpace(lines[anchorIdx])
+	anchorLine := lines[anchorIdx]
+	anchorContent := strings.TrimSpace(anchorLine)
 	anchorCol := findRelationAnchor(anchorContent)
 	if anchorCol < 0 {
 		return body, false
 	}
 
-	// The target indentation for continuation binops: one column past
-	// the anchor, so the binop visually sits just after where = was.
-	targetIndent := anchorCol + 1
+	// The target indentation for continuation binops: leading whitespace
+	// width + anchor column + 1, so the binop visually sits just past
+	// the relation operator on the anchor line.
+	anchorLeadWS := anchorLine[:len(anchorLine)-len(strings.TrimLeft(anchorLine, " \t"))]
+	targetIndent := visualWidth(anchorLeadWS) + anchorCol + 1
 
 	// Process continuation lines.
 	changed := false

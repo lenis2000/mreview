@@ -108,6 +108,11 @@ mreview fmt a.tex b.tex c.tex              # multi-file
 Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 / `git checkout`). Pass `--allow-dirty` to override.
 
+`--lines` automatically disables rules that change line counts (e.g.
+`space.blank-runs`, `space.wrap`, `space.item-per-line`) since the per-line
+replay cannot preserve out-of-range bytes when line counts shift. A note is
+printed to stderr for each skipped rule.
+
 Persistent behaviour (PDF-fix on/off, verifier mode, indent style with per-env
 overrides, wrap mode and column, tilde-before-refs commands, math column
 alignment, custom verbatim envs, …) lives in `~/.config/mreview/config.toml`

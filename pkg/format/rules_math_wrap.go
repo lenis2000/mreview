@@ -228,7 +228,7 @@ func wrapLine(line string, wrapCol int) []string {
 
 	// Find the rightmost break operator at brace depth 0 that keeps the
 	// first part within the column budget.
-	splitIdx, opLen := findRightmostBreakOp(content, wrapCol-len(leadingWS))
+	splitIdx, opLen := findRightmostBreakOp(content, wrapCol-visualWidth(leadingWS))
 	if splitIdx < 0 {
 		return []string{line}
 	}
@@ -337,8 +337,8 @@ func computeWrapIndent(content string, leadingWS string) string {
 	trimmed := strings.TrimSpace(content)
 	anchorCol := findRelationAnchor(trimmed)
 	if anchorCol >= 0 {
-		return strings.Repeat(" ", len(leadingWS)+anchorCol+1)
+		return strings.Repeat(" ", visualWidth(leadingWS)+anchorCol+1)
 	}
-	// Fallback: indent 2 spaces past the leading whitespace.
-	return leadingWS + "  "
+	// Fallback: indent 2 spaces past the leading whitespace visual width.
+	return strings.Repeat(" ", visualWidth(leadingWS)+2)
 }

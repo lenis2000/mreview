@@ -125,15 +125,10 @@ func applyMathAlign(ctx *Ctx) Result {
 	}
 
 	// Process spans in reverse order so byte offsets remain valid.
-	var out []byte
-	if len(spans) > 0 {
-		out = make([]byte, 0, len(ctx.Src))
-	}
+	out := make([]byte, 0, len(ctx.Src))
 	changed := false
 	var hits []Hit
 
-	// Sort spans by bodyStart descending so we can splice from back to front.
-	// Actually, token order should give us ascending order; process in reverse.
 	prev := len(ctx.Src)
 	for i := len(spans) - 1; i >= 0; i-- {
 		sp := spans[i]
@@ -475,13 +470,15 @@ func containsNestedAlignedEnv(body []byte, envSet map[string]bool) bool {
 }
 
 // hasLineComment reports whether content contains a % that is not escaped
-// (i.e., not preceded by \) and not inside braces. This is a conservative
-// check: any line-comment presence causes refusal.
+// (i.e., not preceded by an odd number of backslashes) and not inside braces.
+// This is a conservative check: any line-comment presence causes refusal.
 func hasLineComment(content string) bool {
 	depth := 0
 	for i := 0; i < len(content); i++ {
 		ch := content[i]
 		switch {
+		case ch == '\\' && i+1 < len(content):
+			i++ // skip escaped char (handles \\, \%, \{, etc.)
 		case ch == '{':
 			depth++
 		case ch == '}':
@@ -489,11 +486,9 @@ func hasLineComment(content string) bool {
 				depth--
 			}
 		case ch == '%' && depth == 0:
-			if i == 0 || content[i-1] != '\\' {
-				return true
-			}
-		case ch == '\\' && i+1 < len(content):
-			i++ // skip escaped char
+			// Any % reaching here is unescaped (the \\ case above already
+			// consumed backslash-escaped characters like \%).
+			return true
 		}
 	}
 	return false

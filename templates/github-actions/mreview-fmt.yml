@@ -44,5 +44,7 @@ jobs:
 
       - name: Run mreview fmt --check
         if: steps.changed.outputs.files != ''
+        env:
+          CHANGED_FILES: ${{ steps.changed.outputs.files }}
         run: |
-          echo "${{ steps.changed.outputs.files }}" | xargs mreview fmt --check --no-verify
+          echo "$CHANGED_FILES" | xargs mreview fmt --check --no-verify
