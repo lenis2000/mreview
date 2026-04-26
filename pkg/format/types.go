@@ -59,6 +59,8 @@ type Ctx struct {
 	Wrap WrapOptions
 	// Tilde controls prose.tilde-refs.
 	Tilde TildeOptions
+	// MathAlign controls math.align-columns.
+	MathAlign MathAlignOptions
 }
 
 // LineSkipped reports whether the 1-based source line is silenced by a

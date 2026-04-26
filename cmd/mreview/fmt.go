@@ -209,9 +209,20 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		Refs: cfg.Fmt.TildeRefs,
 	}
 
+	// Resolve math.align-columns options.
+	mathAlignEnabled := true
+	if cfg.Fmt.MathAlign != nil {
+		mathAlignEnabled = *cfg.Fmt.MathAlign
+	}
+	mathAlignOpts := format.MathAlignOptions{
+		Enabled: mathAlignEnabled,
+		Envs:    cfg.Fmt.MathAlignEnvs,
+		Skip:    cfg.Fmt.MathAlignSkip,
+	}
+
 	// --summary: scan-only mode; accumulate rewrites/diags across files.
 	if o.Summary {
-		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, tildeOpts, cfg, stderr)
+		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, tildeOpts, mathAlignOpts, cfg, stderr)
 	}
 
 	// Loop the per-file work; aggregate exit codes.
@@ -220,7 +231,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		if len(rest) > 1 {
 			fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
 		}
-		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, lineRange, stdout, stderr)
+		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, mathAlignOpts, lineRange, stdout, stderr)
 		if code > worst {
 			worst = code
 		}
@@ -240,6 +251,7 @@ func runFmtOne(
 	indentOpts format.IndentOptions,
 	wrapOpts format.WrapOptions,
 	tildeOpts format.TildeOptions,
+	mathAlignOpts format.MathAlignOptions,
 	lineRange *[2]int,
 	stdout, stderr io.Writer,
 ) int {
@@ -264,6 +276,7 @@ func runFmtOne(
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
 		Tilde:        tildeOpts,
+		MathAlign:    mathAlignOpts,
 		LineRange:    lineRange,
 	}
 
@@ -514,6 +527,17 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		Refs: cfg.Fmt.TildeRefs,
 	}
 
+	// Resolve math.align-columns options for stdin.
+	stdinMathAlignEnabled := true
+	if cfg.Fmt.MathAlign != nil {
+		stdinMathAlignEnabled = *cfg.Fmt.MathAlign
+	}
+	stdinMathAlignOpts := format.MathAlignOptions{
+		Enabled: stdinMathAlignEnabled,
+		Envs:    cfg.Fmt.MathAlignEnvs,
+		Skip:    cfg.Fmt.MathAlignSkip,
+	}
+
 	// Parse --lines for stdin mode.
 	var stdinLineRange *[2]int
 	if o.Lines != "" {
@@ -533,6 +557,7 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
 		Tilde:        tildeOpts,
+		MathAlign:    stdinMathAlignOpts,
 		LineRange:    stdinLineRange,
 	}
 
@@ -572,6 +597,7 @@ func runFmtSummary(
 	indentOpts format.IndentOptions,
 	wrapOpts format.WrapOptions,
 	tildeOpts format.TildeOptions,
+	mathAlignOpts format.MathAlignOptions,
 	cfg *ui.Config,
 	stderr io.Writer,
 ) int {
@@ -595,6 +621,7 @@ func runFmtSummary(
 			Indent:       indentOpts,
 			Wrap:         wrapOpts,
 			Tilde:        tildeOpts,
+			MathAlign:    mathAlignOpts,
 		}
 
 		result := format.Apply(src, opts)

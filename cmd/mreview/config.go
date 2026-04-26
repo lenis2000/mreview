@@ -82,6 +82,11 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 # Tilde-before-refs: commands that should be preceded by ~ instead of space.
 # Tier-2 rule (prose.tilde-refs). Default set shown below; omit to use defaults.
 # tilde_refs = ["cite", "citep", "citet", "ref", "eqref", "cref", "Cref", "autoref", "nameref"]
+
+# Align & columns in math/tabular environments.
+# math_align = true                    # default: ON
+# math_align_envs = []                 # override default env list; omit = use defaults
+# math_align_skip = []                 # envs to skip even if in the align list
 `
 
 // runConfig opens the user-global mreview config in $EDITOR. If the file

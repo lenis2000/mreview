@@ -48,6 +48,9 @@ type FmtConfig struct {
 	Wrap         string   `toml:"wrap"` // "" | "off" | "column" | "sentence" | "sentence+column"
 	WrapCol      int      `toml:"wrap_col"`
 	TildeRefs    []string `toml:"tilde_refs"` // cite/ref commands for prose.tilde-refs; omit = defaults
+	MathAlign    *bool    `toml:"math_align"`      // default true; set false to disable math.align-columns
+	MathAlignEnvs []string `toml:"math_align_envs"` // override default env list for math.align-columns
+	MathAlignSkip []string `toml:"math_align_skip"` // envs to skip even if in the align list
 }
 
 // DefaultConfig returns an empty Config with non-nil maps so callers can
@@ -222,6 +225,16 @@ func mergeFmtConfig(base, overlay *FmtConfig) {
 	}
 	if len(overlay.TildeRefs) > 0 {
 		base.TildeRefs = append([]string(nil), overlay.TildeRefs...)
+	}
+	if overlay.MathAlign != nil {
+		v := *overlay.MathAlign
+		base.MathAlign = &v
+	}
+	if len(overlay.MathAlignEnvs) > 0 {
+		base.MathAlignEnvs = append([]string(nil), overlay.MathAlignEnvs...)
+	}
+	if len(overlay.MathAlignSkip) > 0 {
+		base.MathAlignSkip = append([]string(nil), overlay.MathAlignSkip...)
 	}
 }
 

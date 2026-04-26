@@ -25,6 +25,8 @@ type Options struct {
 	Wrap WrapOptions
 	// Tilde controls the prose.tilde-refs rule.
 	Tilde TildeOptions
+	// MathAlign controls the math.align-columns rule.
+	MathAlign MathAlignOptions
 	// LineRange, when non-nil, restricts formatting to the given 1-based
 	// inclusive line range [Start, End]. Line-count-changing rules are
 	// force-disabled when set.
@@ -115,6 +117,7 @@ func newCtxWithOpts(src []byte, opts Options) *Ctx {
 		Indent:       opts.Indent,
 		Wrap:         opts.Wrap,
 		Tilde:        opts.Tilde,
+		MathAlign:    opts.MathAlign,
 	}
 }
 

@@ -75,3 +75,8 @@
 # Default: cite, citep, citet, ref, eqref, cref, Cref, autoref, nameref.
 # Omit (or leave empty) to use the defaults; set to override completely.
 # tilde_refs = ["cite", "citep", "citet", "ref", "eqref", "cref", "Cref", "autoref", "nameref"]
+
+# Align & columns in math/tabular environments.
+# math_align = true                    # default: ON
+# math_align_envs = []                 # override default env list; omit = use defaults
+# math_align_skip = []                 # envs to skip even if in the align list

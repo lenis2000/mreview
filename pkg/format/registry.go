@@ -7,8 +7,9 @@ var Registry []Rule
 
 func init() {
 	registerSafeRules()
-	registerIndentRule() // runs after the other Safe rules so leading-ws is the last word
-	registerWrapRule()   // runs after indent so the lead prefix is stable
+	registerIndentRule()     // runs after the other Safe rules so leading-ws is the last word
+	registerWrapRule()       // runs after indent so the lead prefix is stable
+	registerMathAlignRule()  // Tier 1: align & columns in math/tabular envs
 	registerPDFFixRules()
 	registerTildeRule() // Tier 2: insert ~ before \cite/\ref commands
 	registerDiagRules()

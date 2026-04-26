@@ -138,16 +138,16 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Modify: `cmd/mreview/config.go`
 - Modify: `config.example.toml`
 
-- [ ] implement env-body parser: tokenize rows by `\\` at depth 0, cells by `&` at depth 0
-- [ ] align `&` columns in: align, align*, alignat, alignat*, aligned, array, matrix, pmatrix, bmatrix, vmatrix, Vmatrix, Bmatrix, cases, tabular, tabular*, tabularx
-- [ ] refusal cases: unequal cell counts, `%` line comments, nested aligned envs -> emit Tier-3 note in report
-- [ ] compute colWidth per column, right-pad cells, emit with preserved `\\`
-- [ ] skip if env inside protected span or skip-directive region
-- [ ] add `MathAlign *bool`, `MathAlignEnvs []string`, `MathAlignSkip []string` to FmtConfig
-- [ ] register as Tier 1; Tier-1 contract: whitespace-only changes, pixel-identical PDF
-- [ ] update defaultGlobalConfig and config.example.toml
-- [ ] write tests: basic alignment, unequal rows refusal, comment refusal, nested env, protected span, various env types
-- [ ] run `go test ./... && make install`
+- [x] implement env-body parser: tokenize rows by `\\` at depth 0, cells by `&` at depth 0
+- [x] align `&` columns in: align, align*, alignat, alignat*, aligned, array, matrix, pmatrix, bmatrix, vmatrix, Vmatrix, Bmatrix, cases, tabular, tabular*, tabularx
+- [x] refusal cases: unequal cell counts, `%` line comments, nested aligned envs -> emit Tier-3 note in report
+- [x] compute colWidth per column, right-pad cells, emit with preserved `\\`
+- [x] skip if env inside protected span or skip-directive region
+- [x] add `MathAlign *bool`, `MathAlignEnvs []string`, `MathAlignSkip []string` to FmtConfig
+- [x] register as Tier 1; Tier-1 contract: whitespace-only changes, pixel-identical PDF
+- [x] update defaultGlobalConfig and config.example.toml
+- [x] write tests: basic alignment, unequal rows refusal, comment refusal, nested env, protected span, various env types
+- [x] run `go test ./... && make install`
 
 ### Task 9: math.continuation-indent rule
 
