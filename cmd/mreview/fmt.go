@@ -31,6 +31,7 @@ type fmtOpts struct {
 	Stdin        bool     `long:"stdin" description:"read source from stdin, write formatted to stdout"`
 	FailOnChange bool     `long:"fail-on-change" description:"format in place AND exit 1 when changed (CI/pre-commit)"`
 	Summary      bool     `long:"summary" description:"scan only; print N rewrites across M files to stderr"`
+	Lines        string   `long:"lines" description:"format only lines START:END (1-based, inclusive)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
 	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
@@ -64,9 +65,15 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	// --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin.
-	if o.Summary && (o.Diff || o.Print || o.Check || o.FailOnChange || o.Stdin) {
-		fmt.Fprintln(stderr, "mreview fmt: --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, and --stdin")
+	// --lines is mutually exclusive with --check, --summary, --fail-on-change, multi-file.
+	if o.Lines != "" && (o.Check || o.Summary || o.FailOnChange) {
+		fmt.Fprintln(stderr, "mreview fmt: --lines is mutually exclusive with --check, --summary, and --fail-on-change")
+		return 2
+	}
+
+	// --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, --lines.
+	if o.Summary && (o.Diff || o.Print || o.Check || o.FailOnChange || o.Stdin || o.Lines != "") {
+		fmt.Fprintln(stderr, "mreview fmt: --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, and --lines")
 		return 2
 	}
 
@@ -116,10 +123,27 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// --lines accepts only one file.
+	if o.Lines != "" && len(rest) > 1 {
+		fmt.Fprintln(stderr, "mreview fmt: --lines accepts only one file")
+		return 2
+	}
+
 	// Validate --rule IDs once before opening any file.
 	if err := format.ValidateRuleIDs(o.Rule); err != nil {
 		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
 		return 2
+	}
+
+	// Parse --lines early so we fail fast on bad input.
+	var lineRange *[2]int
+	if o.Lines != "" {
+		lr, lrErr := format.ParseLineRange(o.Lines)
+		if lrErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: %v\n", lrErr)
+			return 2
+		}
+		lineRange = &lr
 	}
 
 	// Load config once; defaults are shared across all files.
@@ -196,7 +220,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		if len(rest) > 1 {
 			fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
 		}
-		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, stdout, stderr)
+		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, lineRange, stdout, stderr)
 		if code > worst {
 			worst = code
 		}
@@ -216,6 +240,7 @@ func runFmtOne(
 	indentOpts format.IndentOptions,
 	wrapOpts format.WrapOptions,
 	tildeOpts format.TildeOptions,
+	lineRange *[2]int,
 	stdout, stderr io.Writer,
 ) int {
 	fileInfo, statErr := os.Stat(paperPath)
@@ -239,9 +264,29 @@ func runFmtOne(
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
 		Tilde:        tildeOpts,
+		LineRange:    lineRange,
+	}
+
+	// Report rules skipped under --lines.
+	if skipped := format.SkippedLineRangeRules(opts); len(skipped) > 0 {
+		for _, id := range skipped {
+			fmt.Fprintf(stderr, "mreview fmt: note: %s skipped under --lines\n", id)
+		}
 	}
 
 	result := format.Apply(src, opts)
+
+	// When --lines is set, clip the result to the requested range:
+	// in-range lines get the formatted version, out-of-range lines keep
+	// the original text.
+	if lineRange != nil {
+		clipped, clipErr := format.ClipToRange(src, result.Src, *lineRange)
+		if clipErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: --lines: %v\n", clipErr)
+			return 1
+		}
+		result.Src = clipped
+	}
 
 	// Write report early — both --check and no-changes paths benefit.
 	writeReportIfNeeded := func(verifyResult *format.VerifyResult) {
@@ -469,6 +514,17 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		Refs: cfg.Fmt.TildeRefs,
 	}
 
+	// Parse --lines for stdin mode.
+	var stdinLineRange *[2]int
+	if o.Lines != "" {
+		lr, lrErr := format.ParseLineRange(o.Lines)
+		if lrErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", lrErr)
+			return 2
+		}
+		stdinLineRange = &lr
+	}
+
 	opts := format.Options{
 		PDFFix:       pdfFix,
 		Rules:        o.Rule,
@@ -477,9 +533,27 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
 		Tilde:        tildeOpts,
+		LineRange:    stdinLineRange,
+	}
+
+	// Report rules skipped under --lines.
+	if skipped := format.SkippedLineRangeRules(opts); len(skipped) > 0 {
+		for _, id := range skipped {
+			fmt.Fprintf(stderr, "mreview fmt: <stdin>: note: %s skipped under --lines\n", id)
+		}
 	}
 
 	result := format.Apply(src, opts)
+
+	// Clip to range if --lines is active.
+	if stdinLineRange != nil {
+		clipped, clipErr := format.ClipToRange(src, result.Src, *stdinLineRange)
+		if clipErr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: <stdin>: --lines: %v\n", clipErr)
+			return 1
+		}
+		result.Src = clipped
+	}
 
 	if _, werr := stdout.Write(result.Src); werr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: <stdin>: write stdout: %v\n", werr)

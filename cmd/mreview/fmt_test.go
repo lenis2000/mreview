@@ -645,6 +645,171 @@ func TestFmt_Summary_MutualExclusion(t *testing.T) {
 	}
 }
 
+// --- --lines tests ---
+
+// writeFmtFixtureMultiLine writes a .tex file with trailing whitespace on
+// multiple lines, useful for testing --lines range formatting.
+func writeFmtFixtureMultiLine(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	paper := filepath.Join(dir, "paper.tex")
+	// Lines 1-5: trailing whitespace on lines 3 and 4.
+	body := "\\documentclass{amsart}\n\\begin{document}\nfoo  \nbar  \n\\end{document}\n"
+	if err := os.WriteFile(paper, []byte(body), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	return paper
+}
+
+func TestFmt_Lines_InRangeOnly(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+
+	var stdout, stderr bytes.Buffer
+	// Format only line 3 (which has trailing whitespace "foo  ").
+	code := run([]string{"fmt", "--lines=3:3", "--allow-dirty", "--no-verify", "--no-report", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	content, _ := os.ReadFile(paper)
+	// Line 3 should be trimmed to "foo\n".
+	if !strings.Contains(string(content), "foo\n") {
+		t.Fatalf("expected line 3 trimmed, got %q", string(content))
+	}
+	// Line 4 should keep trailing whitespace ("bar  \n") since it's out of range.
+	if !strings.Contains(string(content), "bar  \n") {
+		t.Fatalf("expected line 4 preserved, got %q", string(content))
+	}
+}
+
+func TestFmt_Lines_PrintMode(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+
+	var stdout, stderr bytes.Buffer
+	// --lines with --print: should output the range-clipped result.
+	code := run([]string{"fmt", "--lines=3:3", "--print", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "foo\n") {
+		t.Fatalf("expected trimmed foo in output, got %q", out)
+	}
+	if !strings.Contains(out, "bar  \n") {
+		t.Fatalf("expected untrimmed bar in output (out of range), got %q", out)
+	}
+}
+
+func TestFmt_Lines_DiffMode(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--lines=3:3", "--diff", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	diff := stdout.String()
+	// Should show the change on line 3.
+	if !strings.Contains(diff, "-foo  ") {
+		t.Fatalf("expected diff showing trimmed line 3, got %q", diff)
+	}
+	// Should NOT show a change on line 4 (out of range).
+	if strings.Contains(diff, "-bar  ") {
+		t.Fatalf("diff should not show line 4 change (out of range), got %q", diff)
+	}
+}
+
+func TestFmt_Lines_StdinMode(t *testing.T) {
+	input := "\\documentclass{amsart}\n\\begin{document}\nfoo  \nbar  \n\\end{document}\n"
+	withStdinReader(t, []byte(input))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--stdin", "--lines=3:3"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "foo\n") {
+		t.Fatalf("expected trimmed foo, got %q", out)
+	}
+	if !strings.Contains(out, "bar  \n") {
+		t.Fatalf("expected untrimmed bar (out of range), got %q", out)
+	}
+}
+
+func TestFmt_Lines_MutualExclusion(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"lines+check", []string{"fmt", "--lines=1:5", "--check", paper}},
+		{"lines+summary", []string{"fmt", "--lines=1:5", "--summary", paper}},
+		{"lines+fail-on-change", []string{"fmt", "--lines=1:5", "--fail-on-change", paper}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(c.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2 for %v, got %d (stderr=%q)", c.args, code, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "mutually exclusive") {
+				t.Fatalf("expected mutually-exclusive message, got %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestFmt_Lines_MultiFileRejected(t *testing.T) {
+	a := writeFmtFixtureMultiLine(t)
+	b := writeFmtFixtureMultiLine(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--lines=1:5", a, b}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "accepts only one file") {
+		t.Fatalf("expected multi-file rejection message, got %q", stderr.String())
+	}
+}
+
+func TestFmt_Lines_InvalidFormat(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+
+	cases := []struct {
+		name  string
+		lines string
+	}{
+		{"no colon", "1-5"},
+		{"end < start", "10:5"},
+		{"non-numeric", "abc:def"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"fmt", "--lines=" + c.lines, paper}, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2, got %d (stderr=%q)", code, stderr.String())
+			}
+		})
+	}
+}
+
+func TestFmt_Lines_SkipsReported(t *testing.T) {
+	paper := writeFmtFixtureMultiLine(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--lines=3:3", "--diff", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	// Should report that line-count-changing rules were skipped.
+	if !strings.Contains(stderr.String(), "skipped under --lines") {
+		t.Fatalf("expected skip report on stderr, got %q", stderr.String())
+	}
+}
+
 // mustGit runs a git command in dir, failing the test on error.
 func mustGit(t *testing.T, dir string, args ...string) {
 	t.Helper()

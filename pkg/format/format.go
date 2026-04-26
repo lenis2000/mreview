@@ -25,6 +25,10 @@ type Options struct {
 	Wrap WrapOptions
 	// Tilde controls the prose.tilde-refs rule.
 	Tilde TildeOptions
+	// LineRange, when non-nil, restricts formatting to the given 1-based
+	// inclusive line range [Start, End]. Line-count-changing rules are
+	// force-disabled when set.
+	LineRange *[2]int
 }
 
 // PipelineResult holds the output of a full Apply run.
@@ -140,6 +144,14 @@ func ValidateRuleIDs(ids []string) error {
 	return nil
 }
 
+// lineCountChangingRules is the set of rule IDs whose Apply may change the
+// number of lines in the source. These are force-disabled under --lines.
+var lineCountChangingRules = map[string]bool{
+	"space.blank-runs":         true,
+	"space.wrap":               true,
+	"math.paragraph-suppress":  true,
+}
+
 // enabledRules filters Registry according to opts.
 func enabledRules(opts Options) []Rule {
 	ruleSet := make(map[string]bool, len(opts.Rules))
@@ -169,7 +181,48 @@ func enabledRules(opts Options) []Rule {
 				}
 			}
 		}
+		// Force-disable line-count-changing rules when --lines is active.
+		if opts.LineRange != nil && lineCountChangingRules[r.ID] {
+			continue
+		}
 		out = append(out, r)
 	}
 	return out
+}
+
+// SkippedLineRangeRules returns the IDs of rules that were force-disabled
+// because --lines is active.
+func SkippedLineRangeRules(opts Options) []string {
+	if opts.LineRange == nil {
+		return nil
+	}
+	ruleSet := make(map[string]bool, len(opts.Rules))
+	for _, id := range opts.Rules {
+		ruleSet[id] = true
+	}
+	var skipped []string
+	for _, r := range Registry {
+		if !lineCountChangingRules[r.ID] {
+			continue
+		}
+		// Only report skip if the rule would otherwise be enabled.
+		if len(ruleSet) > 0 {
+			if !ruleSet[r.ID] {
+				continue
+			}
+		} else {
+			switch r.Tier {
+			case PDFFix:
+				if !opts.PDFFix {
+					continue
+				}
+			case DiagOnly:
+				if !opts.Diag {
+					continue
+				}
+			}
+		}
+		skipped = append(skipped, r.ID)
+	}
+	return skipped
 }

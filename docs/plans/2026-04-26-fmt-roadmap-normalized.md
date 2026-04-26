@@ -119,14 +119,14 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Modify: `cmd/mreview/fmt.go`
 - Modify: `pkg/format/types.go`
 
-- [ ] add `Lines string` field to `fmtOpts` with `long:"lines" description:"format only lines START:END (1-based, inclusive)"`
-- [ ] extend `Hit` with `BeforeRange [2]int` (byte offsets) and `AfterText string`
-- [ ] implement clip mask + per-line replay in range.go: run format.Apply on whole file, build mask, emit formatted lines for in-range, original for out-of-range
-- [ ] --lines forces off line-count-changing rules (space.blank-runs, space.wrap, math.paragraph-suppress) with report note "skipped under --lines"
-- [ ] mutual exclusion: --lines + {multi-file, --check, --summary, --fail-on-change} -> exit 2; allowed with --stdin, --diff, --print, default in-place
-- [ ] plumb `Options.LineRange` through to rules that need to self-disable
-- [ ] write tests: range preserves out-of-range bytes identically, in-range rewrites apply, force-off rules report skip, parse validation
-- [ ] run `go test ./... && make install`
+- [x] add `Lines string` field to `fmtOpts` with `long:"lines" description:"format only lines START:END (1-based, inclusive)"`
+- [x] extend `Hit` with `BeforeRange [2]int` (byte offsets) and `AfterText string`
+- [x] implement clip mask + per-line replay in range.go: run format.Apply on whole file, build mask, emit formatted lines for in-range, original for out-of-range
+- [x] --lines forces off line-count-changing rules (space.blank-runs, space.wrap, math.paragraph-suppress) with report note "skipped under --lines"
+- [x] mutual exclusion: --lines + {multi-file, --check, --summary, --fail-on-change} -> exit 2; allowed with --stdin, --diff, --print, default in-place
+- [x] plumb `Options.LineRange` through to rules that need to self-disable
+- [x] write tests: range preserves out-of-range bytes identically, in-range rewrites apply, force-off rules report skip, parse validation
+- [x] run `go test ./... && make install`
 
 ### Task 8: math.align-columns rule
 
