@@ -130,6 +130,8 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 	var rendered []string
 	blockFirstRow := -1
 	blockLastRow := -1
+	editorFirstRow := -1
+	editorLastRow := -1
 	pushNotes := func(forLine int) {
 		for _, n := range notesByLine[forLine] {
 			rendered = append(rendered, annotationRows(n, gutterW, bodyWidth, styles)...)
@@ -139,7 +141,11 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		if !editorActive || editorAnchor != forLine {
 			return
 		}
+		if editorFirstRow < 0 {
+			editorFirstRow = len(rendered)
+		}
 		rendered = append(rendered, editorRows(editor, gutterW, bodyWidth, styles)...)
+		editorLastRow = len(rendered) - 1
 	}
 
 	// Block-level header annotations and a block-level editor land above
@@ -202,6 +208,18 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 			offset = blockFirstRow
 		} else {
 			offset = blockFirstRow - (height-blockRows)/2
+		}
+	}
+	// When the inline annotation editor is active, the user's focus is the
+	// textarea — keep it on screen even if the cursor block is too tall to
+	// fit. Block-level editors anchor above the block, so plain centring on
+	// the cursor would push the editor off the top edge.
+	if editorActive && editorFirstRow >= 0 {
+		if editorLastRow >= offset+height {
+			offset = editorLastRow - height + 1
+		}
+		if editorFirstRow < offset {
+			offset = editorFirstRow
 		}
 	}
 	if offset < 0 {
