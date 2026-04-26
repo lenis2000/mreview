@@ -205,7 +205,7 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 
 ### Task 13: Update documentation
 
-- [ ] update README.md with new flags (--stdin, --fail-on-change, --summary, --lines) + per-env config + math rules
-- [ ] update config.example.toml if any keys still undocumented
-- [ ] update CLAUDE.md if internal patterns changed
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update README.md with new flags (--stdin, --fail-on-change, --summary, --lines) + per-env config + math rules
+- [x] update config.example.toml if any keys still undocumented
+- [x] update CLAUDE.md if internal patterns changed
+- [x] move this plan to `docs/plans/completed/`

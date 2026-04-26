@@ -93,6 +93,10 @@ mreview fmt paper.tex                      # default: Tier 1 + Tier 2, paranoid 
 mreview fmt --diff paper.tex               # show unified diff, no write
 mreview fmt --print paper.tex              # print formatted source to stdout, no write
 mreview fmt --check paper.tex              # exit 1 if changes needed (CI)
+mreview fmt --stdin < paper.tex            # read from stdin, write formatted to stdout
+mreview fmt --fail-on-change paper.tex     # format in place AND exit 1 when changed (CI/pre-commit)
+mreview fmt --summary a.tex b.tex          # scan only; print rewrite count to stderr
+mreview fmt --lines=42:120 paper.tex       # format only lines 42–120 (1-based, inclusive)
 mreview fmt --rule=math.paragraph-suppress paper.tex  # one rule only
 mreview fmt --no-verify paper.tex          # one-off: skip PDF verification
 mreview fmt --no-report paper.tex          # one-off: do not write paper.tex.fmt-report.md
@@ -104,8 +108,9 @@ mreview fmt a.tex b.tex c.tex              # multi-file
 Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 / `git checkout`). Pass `--allow-dirty` to override.
 
-Persistent behaviour (PDF-fix on/off, verifier mode, indent style, wrap mode
-and column, custom verbatim envs, …) lives in `~/.config/mreview/config.toml`
+Persistent behaviour (PDF-fix on/off, verifier mode, indent style with per-env
+overrides, wrap mode and column, tilde-before-refs commands, math column
+alignment, custom verbatim envs, …) lives in `~/.config/mreview/config.toml`
 or a project-local `.mreview.toml` walked up from the cwd to the git root.
 The CLI surface stays small on purpose: only one-off escape hatches
 (`--no-verify`, `--no-report`) and per-invocation modes (`--diff`, `--print`,
@@ -128,6 +133,14 @@ hook and GitHub Actions setup.
 | `space.blank-runs` | Collapse 3+ consecutive blank lines to one blank line |
 | `space.tabs` | Tabs → 4 spaces outside protected regions |
 | `display.style` | `$$…$$` → `\[…\]` |
+| `space.item-per-line` | Ensure `\item` starts on its own line |
+| `space.proof-delim-per-line` | Ensure `\begin{proof}` / `\end{proof}` start on own lines |
+| `space.display-delim-per-line` | Ensure display-math delimiters start on own lines |
+| `space.indent` | Normalize indentation inside environments (configurable per env) |
+| `space.wrap` | Sentence-aware line wrapping at target column |
+| `math.align-columns` | Align `&` columns in align/tabular/matrix environments |
+| `math.continuation-indent` | Indent continuation rows in equation environments past the relation operator |
+| `math.wrap-at-break-op` | Wrap long equation rows at break operators (opt-in, off by default) |
 
 **Tier 2 — PDF-fixing (on by default; opt out via `[fmt] no_pdf_fix = true`):**
 
@@ -135,6 +148,7 @@ hook and GitHub Actions setup.
 |---|---|
 | `math.paragraph-suppress` | Remove blank lines around display-math envs that cause unwanted paragraph breaks/indentation |
 | `env.spacing` | Ensure one blank line above theorem-like envs and section commands |
+| `prose.tilde-refs` | Insert `~` (non-breaking space) before `\cite`, `\ref`, and related commands |
 
 **Tier 3 — Diagnostics (no rewrite; emitted to report and `issues` filter):**
 
