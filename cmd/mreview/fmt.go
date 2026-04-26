@@ -28,6 +28,7 @@ type fmtOpts struct {
 	Diff         bool     `long:"diff" description:"show unified diff to stdout, do not write"`
 	Print        bool     `long:"print" short:"p" description:"print formatted source to stdout, do not write"`
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
+	Stdin        bool     `long:"stdin" description:"read source from stdin, write formatted to stdout"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
 	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
@@ -61,6 +62,18 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// --stdin is mutually exclusive with file args, --check, --diff, --print.
+	if o.Stdin {
+		if o.Check || o.Diff || o.Print {
+			fmt.Fprintln(stderr, "mreview fmt: --stdin is mutually exclusive with --check, --diff, and --print")
+			return 2
+		}
+		if len(rest) > 0 {
+			fmt.Fprintln(stderr, "mreview fmt: --stdin does not accept file arguments")
+			return 2
+		}
+	}
+
 	// --clean-tempdir: remove all verification tempdirs and exit.
 	if o.CleanTempdir {
 		if err := format.CleanTempDirs(); err != nil {
@@ -69,6 +82,11 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stderr, "mreview fmt: cleaned verification tempdirs")
 		return 0
+	}
+
+	// --stdin: read from stdin, format, write to stdout.
+	if o.Stdin {
+		return runFmtStdin(&o, stdout, stderr)
 	}
 
 	if len(rest) == 0 {
@@ -344,6 +362,92 @@ func runFmtOne(
 		fmt.Fprintf(stderr, "mreview fmt: wrote %s (%d rewrites)\n", filepath.Base(paperPath), nHits)
 	}
 
+	return 0
+}
+
+// stdinReader is the source for --stdin. It defaults to os.Stdin but tests
+// can replace it with a bytes.Reader.
+var stdinReader io.Reader = os.Stdin
+
+// runFmtStdin implements the --stdin path: read all of stdin, run format.Apply,
+// write formatted source to stdout. Implies --no-verify and --no-report; no
+// dirty-tree check, no path argument.
+func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
+	src, err := io.ReadAll(stdinReader)
+	if err != nil {
+		fmt.Fprintf(stderr, "mreview fmt: <stdin>: read: %v\n", err)
+		return 1
+	}
+
+	// Load config (needed for indent/wrap defaults).
+	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", cfgErr)
+		return 1
+	}
+
+	// Resolve config-driven settings (same as file path, minus verify/report).
+	pdfFix := true
+	if cfg.Fmt.NoPDFFix != nil {
+		pdfFix = !*cfg.Fmt.NoPDFFix
+	}
+
+	indentEnabled := true
+	if cfg.Fmt.Indent != nil {
+		indentEnabled = *cfg.Fmt.Indent
+	}
+	indentChar := cfg.Fmt.IndentChar
+	if indentChar == "" {
+		indentChar = "tab"
+	}
+	indentSize := cfg.Fmt.IndentSize
+	if indentSize <= 0 {
+		if indentChar == "tab" {
+			indentSize = 1
+		} else {
+			indentSize = 2
+		}
+	}
+	indentOpts := format.IndentOptions{
+		Enabled: indentEnabled,
+		UseTab:  indentChar == "tab",
+		Size:    indentSize,
+	}
+
+	wrapMode := cfg.Fmt.Wrap
+	if wrapMode == "" {
+		wrapMode = "sentence+column"
+	}
+	wrapCol := cfg.Fmt.WrapCol
+	if wrapCol <= 0 {
+		wrapCol = 80
+	}
+	wrapOpts := format.WrapOptions{
+		Mode: wrapMode,
+		Col:  wrapCol,
+	}
+
+	// Validate --rule IDs.
+	if err := format.ValidateRuleIDs(o.Rule); err != nil {
+		fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", err)
+		return 2
+	}
+
+	opts := format.Options{
+		PDFFix:       pdfFix,
+		Rules:        o.Rule,
+		Diag:         false, // no report for stdin
+		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
+		Indent:       indentOpts,
+		Wrap:         wrapOpts,
+	}
+
+	result := format.Apply(src, opts)
+
+	if _, werr := stdout.Write(result.Src); werr != nil {
+		fmt.Fprintf(stderr, "mreview fmt: <stdin>: write stdout: %v\n", werr)
+		return 1
+	}
 	return 0
 }
 

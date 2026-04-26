@@ -28,13 +28,13 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 **Files:**
 - Modify: `cmd/mreview/fmt.go`
 
-- [ ] add `Stdin bool` field to `fmtOpts` struct with `long:"stdin" description:"read source from stdin, write formatted to stdout"`
-- [ ] implement stdin read path: read all of os.Stdin, run `format.Apply`, write to stdout
-- [ ] stdin implies --no-verify, --no-report, no dirty-tree check, no path arg
-- [ ] mutual exclusion: --stdin + {file args, --check, --diff, --print, --fail-on-change, --summary} -> exit 2
-- [ ] errors go to stderr with label `<stdin>`
-- [ ] write tests in `cmd/mreview/fmt_test.go` for stdin happy path and mutual-exclusion errors
-- [ ] run `go test ./... && make install`
+- [x] add `Stdin bool` field to `fmtOpts` struct with `long:"stdin" description:"read source from stdin, write formatted to stdout"`
+- [x] implement stdin read path: read all of os.Stdin, run `format.Apply`, write to stdout
+- [x] stdin implies --no-verify, --no-report, no dirty-tree check, no path arg
+- [x] mutual exclusion: --stdin + {file args, --check, --diff, --print, --fail-on-change, --summary} -> exit 2
+- [x] errors go to stderr with label `<stdin>`
+- [x] write tests in `cmd/mreview/fmt_test.go` for stdin happy path and mutual-exclusion errors
+- [x] run `go test ./... && make install`
 
 ### Task 2: --fail-on-change flag
 

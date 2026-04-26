@@ -406,6 +406,75 @@ func TestFmt_NonGitDirWarnAndProceed(t *testing.T) {
 	}
 }
 
+// --- --stdin tests ---
+
+// withStdinReader replaces stdinReader for the duration of a test.
+func withStdinReader(t *testing.T, data []byte) {
+	t.Helper()
+	saved := stdinReader
+	stdinReader = bytes.NewReader(data)
+	t.Cleanup(func() { stdinReader = saved })
+}
+
+func TestFmt_Stdin_HappyPath(t *testing.T) {
+	// Input with trailing whitespace: --stdin should strip it and write to stdout.
+	input := "\\documentclass{amsart}\n\\begin{document}\nhi  \n\\end{document}\n"
+	withStdinReader(t, []byte(input))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--stdin"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	// Trailing whitespace should be stripped.
+	if strings.Contains(stdout.String(), "hi  \n") {
+		t.Fatalf("expected trailing whitespace stripped, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "hi\n") {
+		t.Fatalf("expected clean 'hi' line, got %q", stdout.String())
+	}
+}
+
+func TestFmt_Stdin_NoChanges(t *testing.T) {
+	// Already clean input: --stdin should pass through unchanged.
+	input := "\\documentclass{amsart}\n\\begin{document}\nhi\n\\end{document}\n"
+	withStdinReader(t, []byte(input))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--stdin"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	if stdout.String() != input {
+		t.Fatalf("expected passthrough for clean input, got %q", stdout.String())
+	}
+}
+
+func TestFmt_Stdin_MutualExclusion(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"stdin+check", []string{"fmt", "--stdin", "--check"}},
+		{"stdin+diff", []string{"fmt", "--stdin", "--diff"}},
+		{"stdin+print", []string{"fmt", "--stdin", "--print"}},
+		{"stdin+file", []string{"fmt", "--stdin", "/tmp/paper.tex"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			withStdinReader(t, []byte("x"))
+			var stdout, stderr bytes.Buffer
+			code := run(c.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2 for %v, got %d (stderr=%q)", c.args, code, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "mutually exclusive") && !strings.Contains(stderr.String(), "does not accept") {
+				t.Fatalf("expected exclusion error for %v, got %q", c.args, stderr.String())
+			}
+		})
+	}
+}
+
 // mustGit runs a git command in dir, failing the test on error.
 func mustGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
