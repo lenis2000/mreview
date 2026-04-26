@@ -16,7 +16,7 @@ type WrapOptions struct {
 	Col int
 }
 
-const defaultWrapCol = 100
+const defaultWrapCol = 80
 
 // abbreviations whose terminal '.' must NOT be treated as a sentence end.
 // (matched case-sensitively; entries should be lowercased forms when seen
