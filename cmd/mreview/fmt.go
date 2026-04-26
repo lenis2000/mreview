@@ -52,45 +52,45 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		var flagsErr *flags.Error
 		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
-			fmt.Fprintln(stdout, err.Error())
+			_, _ = fmt.Fprintln(stdout, err.Error())
 			return 0
 		}
-		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
 		return 2
 	}
 
 	// --print is mutually exclusive with --diff and --check.
 	if (o.Print && o.Diff) || (o.Print && o.Check) || (o.Diff && o.Check) {
-		fmt.Fprintln(stderr, "mreview fmt: --diff, --print, and --check are mutually exclusive")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --diff, --print, and --check are mutually exclusive")
 		return 2
 	}
 
 	// --lines is mutually exclusive with --check, --summary, --fail-on-change, multi-file.
 	if o.Lines != "" && (o.Check || o.Summary || o.FailOnChange) {
-		fmt.Fprintln(stderr, "mreview fmt: --lines is mutually exclusive with --check, --summary, and --fail-on-change")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --lines is mutually exclusive with --check, --summary, and --fail-on-change")
 		return 2
 	}
 
 	// --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, --lines.
 	if o.Summary && (o.Diff || o.Print || o.Check || o.FailOnChange || o.Stdin || o.Lines != "") {
-		fmt.Fprintln(stderr, "mreview fmt: --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, and --lines")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --summary is mutually exclusive with --diff, --print, --check, --fail-on-change, --stdin, and --lines")
 		return 2
 	}
 
 	// --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin, --summary.
 	if o.FailOnChange && (o.Check || o.Diff || o.Print || o.Stdin || o.Summary) {
-		fmt.Fprintln(stderr, "mreview fmt: --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin, and --summary")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin, and --summary")
 		return 2
 	}
 
 	// --stdin is mutually exclusive with file args, --check, --diff, --print, --fail-on-change, --summary.
 	if o.Stdin {
 		if o.Check || o.Diff || o.Print {
-			fmt.Fprintln(stderr, "mreview fmt: --stdin is mutually exclusive with --check, --diff, and --print")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: --stdin is mutually exclusive with --check, --diff, and --print")
 			return 2
 		}
 		if len(rest) > 0 {
-			fmt.Fprintln(stderr, "mreview fmt: --stdin does not accept file arguments")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: --stdin does not accept file arguments")
 			return 2
 		}
 	}
@@ -98,10 +98,10 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	// --clean-tempdir: remove all verification tempdirs and exit.
 	if o.CleanTempdir {
 		if err := format.CleanTempDirs(); err != nil {
-			fmt.Fprintf(stderr, "mreview fmt: clean tempdirs: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: clean tempdirs: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(stderr, "mreview fmt: cleaned verification tempdirs")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: cleaned verification tempdirs")
 		return 0
 	}
 
@@ -111,27 +111,27 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if len(rest) == 0 {
-		fmt.Fprintln(stderr, "mreview fmt: missing paper argument")
-		fmt.Fprintln(stderr, "usage: mreview fmt [OPTIONS] paper.tex [paper.tex...]")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: missing paper argument")
+		_, _ = fmt.Fprintln(stderr, "usage: mreview fmt [OPTIONS] paper.tex [paper.tex...]")
 		return 2
 	}
 
 	// --print / --diff / --check have no sensible interpretation across many
 	// files: refuse so output isn't accidentally interleaved.
 	if (o.Print || o.Diff || o.Check) && len(rest) > 1 {
-		fmt.Fprintln(stderr, "mreview fmt: --print, --diff, and --check accept only one file")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --print, --diff, and --check accept only one file")
 		return 2
 	}
 
 	// --lines accepts only one file.
 	if o.Lines != "" && len(rest) > 1 {
-		fmt.Fprintln(stderr, "mreview fmt: --lines accepts only one file")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: --lines accepts only one file")
 		return 2
 	}
 
 	// Validate --rule IDs once before opening any file.
 	if err := format.ValidateRuleIDs(o.Rule); err != nil {
-		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
 		return 2
 	}
 
@@ -140,7 +140,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	if o.Lines != "" {
 		lr, lrErr := format.ParseLineRange(o.Lines)
 		if lrErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: %v\n", lrErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", lrErr)
 			return 2
 		}
 		lineRange = &lr
@@ -149,17 +149,14 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	// Load config once; defaults are shared across all files.
 	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
 	if cfgErr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: %v\n", cfgErr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", cfgErr)
 		return 1
 	}
 
 	// Resolve config-driven settings. CLI escape hatches override (only
 	// --no-verify and --no-report); everything else comes from [fmt] in
 	// the config file or the built-in defaults.
-	pdfFix := true
-	if cfg.Fmt.NoPDFFix != nil {
-		pdfFix = !*cfg.Fmt.NoPDFFix
-	}
+	resolved := resolveFormatOpts(cfg.Fmt)
 	noVerify := resolveBool(o.NoVerify, cfg.Fmt.NoVerify, false)
 	wantReport := !resolveBool(o.NoReport, cfg.Fmt.NoReport, false)
 	verifyMode := cfg.Fmt.VerifyPDF
@@ -167,81 +164,18 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		verifyMode = "visual"
 	}
 
-	// Resolve indent options.
-	indentEnabled := true
-	if cfg.Fmt.Indent != nil {
-		indentEnabled = *cfg.Fmt.Indent
-	}
-	indentChar := cfg.Fmt.IndentChar
-	if indentChar == "" {
-		indentChar = "tab"
-	}
-	indentSize := cfg.Fmt.IndentSize
-	if indentSize <= 0 {
-		if indentChar == "tab" {
-			indentSize = 1
-		} else {
-			indentSize = 2
-		}
-	}
-	indentOpts := format.IndentOptions{
-		Enabled: indentEnabled,
-		UseTab:  indentChar == "tab",
-		Size:    indentSize,
-		Rules:   cfg.Fmt.IndentRules,
-	}
-
-	// Resolve wrap options. Default mode is "sentence+column".
-	wrapMode := cfg.Fmt.Wrap
-	if wrapMode == "" {
-		wrapMode = "sentence+column"
-	}
-	wrapCol := cfg.Fmt.WrapCol
-	if wrapCol <= 0 {
-		wrapCol = 80
-	}
-	wrapOpts := format.WrapOptions{
-		Mode: wrapMode,
-		Col:  wrapCol,
-	}
-
-	tildeOpts := format.TildeOptions{
-		Refs: cfg.Fmt.TildeRefs,
-	}
-
-	// Resolve math.align-columns options.
-	mathAlignEnabled := true
-	if cfg.Fmt.MathAlign != nil {
-		mathAlignEnabled = *cfg.Fmt.MathAlign
-	}
-	mathAlignOpts := format.MathAlignOptions{
-		Enabled: mathAlignEnabled,
-		Envs:    cfg.Fmt.MathAlignEnvs,
-		Skip:    cfg.Fmt.MathAlignSkip,
-	}
-
-	// Resolve math.wrap-at-break-op options (off by default).
-	mathWrapEnabled := false
-	if cfg.Fmt.MathWrap != nil {
-		mathWrapEnabled = *cfg.Fmt.MathWrap
-	}
-	mathWrapOpts := format.MathWrapOptions{
-		Enabled: mathWrapEnabled,
-		Col:     cfg.Fmt.MathWrapCol,
-	}
-
 	// --summary: scan-only mode; accumulate rewrites/diags across files.
 	if o.Summary {
-		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, tildeOpts, mathAlignOpts, mathWrapOpts, cfg, stderr)
+		return runFmtSummary(rest, &o, resolved.pdfFix, resolved.indent, resolved.wrap, resolved.tilde, resolved.mathAlign, resolved.mathWrap, cfg, stderr)
 	}
 
 	// Loop the per-file work; aggregate exit codes.
 	worst := 0
 	for i, paperPath := range rest {
 		if len(rest) > 1 {
-			fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
 		}
-		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, mathAlignOpts, mathWrapOpts, lineRange, stdout, stderr)
+		code := runFmtOne(paperPath, &o, cfg, resolved.pdfFix, noVerify, wantReport, verifyMode, resolved.indent, resolved.wrap, resolved.tilde, resolved.mathAlign, resolved.mathWrap, lineRange, stdout, stderr)
 		if code > worst {
 			worst = code
 		}
@@ -268,13 +202,13 @@ func runFmtOne(
 ) int {
 	fileInfo, statErr := os.Stat(paperPath)
 	if statErr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: cannot read %q: %v\n", paperPath, statErr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: cannot read %q: %v\n", paperPath, statErr)
 		return 1
 	}
 
 	src, readErr := os.ReadFile(paperPath)
 	if readErr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: read %q: %v\n", paperPath, readErr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: read %q: %v\n", paperPath, readErr)
 		return 1
 	}
 
@@ -295,7 +229,7 @@ func runFmtOne(
 	// Report rules skipped under --lines.
 	if skipped := format.SkippedLineRangeRules(opts); len(skipped) > 0 {
 		for _, id := range skipped {
-			fmt.Fprintf(stderr, "mreview fmt: note: %s skipped under --lines\n", id)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: note: %s skipped under --lines\n", id)
 		}
 	}
 
@@ -307,7 +241,7 @@ func runFmtOne(
 	if lineRange != nil {
 		clipped, clipErr := format.ClipToRange(src, result.Src, *lineRange)
 		if clipErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: --lines: %v\n", clipErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: --lines: %v\n", clipErr)
 			return 1
 		}
 		result.Src = clipped
@@ -322,16 +256,16 @@ func runFmtOne(
 		if len(result.Diags) == 0 && len(result.Hits) == 0 {
 			// Clean up stale report so the UI doesn't show outdated diagnostics.
 			if rmErr := os.Remove(reportPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				fmt.Fprintf(stderr, "mreview fmt: remove stale report: %v\n", rmErr)
+				_, _ = fmt.Fprintf(stderr, "mreview fmt: remove stale report: %v\n", rmErr)
 			}
 			return
 		}
 		rpt := format.BuildReport(filepath.Base(paperPath), opts, result, verifyResult)
 		if rptErr := format.WriteReport(reportPath, rpt); rptErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: write report: %v\n", rptErr)
 			return
 		}
-		fmt.Fprintf(stderr, "mreview fmt: wrote %s\n", filepath.Base(reportPath))
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: wrote %s\n", filepath.Base(reportPath))
 	}
 
 	// No changes?
@@ -342,13 +276,13 @@ func runFmtOne(
 		}
 		if o.Print {
 			if _, werr := stdout.Write(result.Src); werr != nil {
-				fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
+				_, _ = fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
 				return 1
 			}
 			return 0
 		}
 		if !wantReport || len(result.Diags) == 0 {
-			fmt.Fprintln(stderr, "mreview fmt: no changes")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: no changes")
 		}
 		return 0
 	}
@@ -368,7 +302,7 @@ func runFmtOne(
 	// --print: write formatted source to stdout, no file write, no verify, no report.
 	if o.Print {
 		if _, werr := stdout.Write(result.Src); werr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
 			return 1
 		}
 		return 0
@@ -379,10 +313,10 @@ func runFmtOne(
 		dirty, dirtyErr := isGitDirty(paperPath)
 		if dirtyErr != nil {
 			// Not a git repo or git not available — proceed with a warning.
-			fmt.Fprintf(stderr, "mreview fmt: warning: cannot check git status: %v\n", dirtyErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: warning: cannot check git status: %v\n", dirtyErr)
 		} else if dirty {
-			fmt.Fprintf(stderr, "mreview fmt: %s has uncommitted changes; refusing to overwrite\n", filepath.Base(paperPath))
-			fmt.Fprintln(stderr, "hint: commit or stash first, or pass --allow-dirty")
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: %s has uncommitted changes; refusing to overwrite\n", filepath.Base(paperPath))
+			_, _ = fmt.Fprintln(stderr, "hint: commit or stash first, or pass --allow-dirty")
 			return 1
 		}
 	}
@@ -392,58 +326,58 @@ func runFmtOne(
 	if !noVerify {
 		tree, treeErr := format.DiscoverTree(paperPath)
 		if treeErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: discover build inputs: %v\n", treeErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: discover build inputs: %v\n", treeErr)
 			return 1
 		}
 
-		fmt.Fprintln(stderr, "mreview fmt: verifying PDF text layer...")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: verifying PDF text layer...")
 		vr, verifyErr := format.Verify(*tree, src, result.Src, result.Hits)
 		if verifyErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: verification error: %v\n", verifyErr)
-			fmt.Fprintf(stderr, "hint: pass --no-verify to skip, or inspect %s\n", format.LastTempDir())
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: verification error: %v\n", verifyErr)
+			_, _ = fmt.Fprintf(stderr, "hint: pass --no-verify to skip, or inspect %s\n", format.LastTempDir())
 			return 1
 		}
 		if !vr.OK {
-			fmt.Fprintln(stderr, "mreview fmt: verification FAILED — unexpected PDF text diffs:")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: verification FAILED — unexpected PDF text diffs:")
 			format.FormatDiffs(stderr, vr.Unexpected)
-			fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
-			fmt.Fprintln(stderr, "hint: pass --no-verify to skip verification")
+			_, _ = fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
+			_, _ = fmt.Fprintln(stderr, "hint: pass --no-verify to skip verification")
 			return 1
 		}
 		for _, w := range vr.Warnings {
-			fmt.Fprintf(stderr, "mreview fmt: warning: %s\n", w)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: warning: %s\n", w)
 		}
-		fmt.Fprintln(stderr, "mreview fmt: verification ok (text layer)")
+		_, _ = fmt.Fprintln(stderr, "mreview fmt: verification ok (text layer)")
 		verifyResult = vr
 
 		// Paranoid mode: pixel-level diff-pdf comparison. Default; opt out
 		// with --verify-pdf=text.
 		if verifyMode == "visual" {
 			if !format.ParanoidAvailable {
-				fmt.Fprintln(stderr, "mreview fmt: paranoid verifier not available — rebuild with -tags=pdfverify")
+				_, _ = fmt.Fprintln(stderr, "mreview fmt: paranoid verifier not available — rebuild with -tags=pdfverify")
 				return 1
 			}
-			fmt.Fprintln(stderr, "mreview fmt: running paranoid pixel-level verification...")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: running paranoid pixel-level verification...")
 			pr, prErr := format.VerifyParanoid(vr.BeforePDF, vr.AfterPDF)
 			if prErr != nil {
-				fmt.Fprintf(stderr, "mreview fmt: paranoid verification error: %v\n", prErr)
+				_, _ = fmt.Fprintf(stderr, "mreview fmt: paranoid verification error: %v\n", prErr)
 				return 1
 			}
 			if !pr.OK {
-				fmt.Fprintf(stderr, "mreview fmt: paranoid verification FAILED — %s\n", pr.Message)
+				_, _ = fmt.Fprintf(stderr, "mreview fmt: paranoid verification FAILED — %s\n", pr.Message)
 				if pr.DiffPDFPath != "" {
-					fmt.Fprintf(stderr, "diff PDF saved to %s\n", pr.DiffPDFPath)
+					_, _ = fmt.Fprintf(stderr, "diff PDF saved to %s\n", pr.DiffPDFPath)
 				}
-				fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
+				_, _ = fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
 				return 1
 			}
-			fmt.Fprintln(stderr, "mreview fmt: paranoid verification ok (pixel-identical)")
+			_, _ = fmt.Fprintln(stderr, "mreview fmt: paranoid verification ok (pixel-identical)")
 		}
 	}
 
 	// Write the rewritten source, preserving original file permissions.
 	if writeErr := os.WriteFile(paperPath, result.Src, fileInfo.Mode().Perm()); writeErr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: write %q: %v\n", paperPath, writeErr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: write %q: %v\n", paperPath, writeErr)
 		return 1
 	}
 
@@ -453,9 +387,9 @@ func runFmtOne(
 	// Summary.
 	nHits := len(result.Hits)
 	if nHits == 1 {
-		fmt.Fprintf(stderr, "mreview fmt: wrote %s (1 rewrite)\n", filepath.Base(paperPath))
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: wrote %s (1 rewrite)\n", filepath.Base(paperPath))
 	} else {
-		fmt.Fprintf(stderr, "mreview fmt: wrote %s (%d rewrites)\n", filepath.Base(paperPath), nHits)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: wrote %s (%d rewrites)\n", filepath.Base(paperPath), nHits)
 	}
 
 	// --fail-on-change: exit 1 when changes were applied (for CI/pre-commit).
@@ -464,6 +398,90 @@ func runFmtOne(
 	}
 
 	return 0
+}
+
+// resolvedFmtOpts holds the formatting options resolved from FmtConfig.
+// This avoids duplicating the resolution logic between runFmt and runFmtStdin.
+type resolvedFmtOpts struct {
+	pdfFix    bool
+	indent    format.IndentOptions
+	wrap      format.WrapOptions
+	tilde     format.TildeOptions
+	mathAlign format.MathAlignOptions
+	mathWrap  format.MathWrapOptions
+}
+
+// resolveFormatOpts computes the formatting option structs from the merged
+// FmtConfig. Callers still resolve verify/report/check-specific settings
+// themselves — this helper covers only the format.Options fields shared
+// between file and stdin paths.
+func resolveFormatOpts(fc ui.FmtConfig) resolvedFmtOpts {
+	pdfFix := true
+	if fc.NoPDFFix != nil {
+		pdfFix = !*fc.NoPDFFix
+	}
+
+	indentEnabled := true
+	if fc.Indent != nil {
+		indentEnabled = *fc.Indent
+	}
+	indentChar := fc.IndentChar
+	if indentChar == "" {
+		indentChar = "tab"
+	}
+	indentSize := fc.IndentSize
+	if indentSize <= 0 {
+		if indentChar == "tab" {
+			indentSize = 1
+		} else {
+			indentSize = 2
+		}
+	}
+
+	wrapMode := fc.Wrap
+	if wrapMode == "" {
+		wrapMode = "sentence+column"
+	}
+	wrapCol := fc.WrapCol
+	if wrapCol <= 0 {
+		wrapCol = 80
+	}
+
+	mathAlignEnabled := true
+	if fc.MathAlign != nil {
+		mathAlignEnabled = *fc.MathAlign
+	}
+
+	mathWrapEnabled := false
+	if fc.MathWrap != nil {
+		mathWrapEnabled = *fc.MathWrap
+	}
+
+	return resolvedFmtOpts{
+		pdfFix: pdfFix,
+		indent: format.IndentOptions{
+			Enabled: indentEnabled,
+			UseTab:  indentChar == "tab",
+			Size:    indentSize,
+			Rules:   fc.IndentRules,
+		},
+		wrap: format.WrapOptions{
+			Mode: wrapMode,
+			Col:  wrapCol,
+		},
+		tilde: format.TildeOptions{
+			Refs: fc.TildeRefs,
+		},
+		mathAlign: format.MathAlignOptions{
+			Enabled: mathAlignEnabled,
+			Envs:    fc.MathAlignEnvs,
+			Skip:    fc.MathAlignSkip,
+		},
+		mathWrap: format.MathWrapOptions{
+			Enabled: mathWrapEnabled,
+			Col:     fc.MathWrapCol,
+		},
+	}
 }
 
 // stdinReader is the source for --stdin. It defaults to os.Stdin but tests
@@ -476,88 +494,23 @@ var stdinReader io.Reader = os.Stdin
 func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	src, err := io.ReadAll(stdinReader)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview fmt: <stdin>: read: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: read: %v\n", err)
 		return 1
 	}
 
 	// Load config (needed for indent/wrap defaults).
 	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
 	if cfgErr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", cfgErr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", cfgErr)
 		return 1
 	}
 
-	// Resolve config-driven settings (same as file path, minus verify/report).
-	pdfFix := true
-	if cfg.Fmt.NoPDFFix != nil {
-		pdfFix = !*cfg.Fmt.NoPDFFix
-	}
-
-	indentEnabled := true
-	if cfg.Fmt.Indent != nil {
-		indentEnabled = *cfg.Fmt.Indent
-	}
-	indentChar := cfg.Fmt.IndentChar
-	if indentChar == "" {
-		indentChar = "tab"
-	}
-	indentSize := cfg.Fmt.IndentSize
-	if indentSize <= 0 {
-		if indentChar == "tab" {
-			indentSize = 1
-		} else {
-			indentSize = 2
-		}
-	}
-	indentOpts := format.IndentOptions{
-		Enabled: indentEnabled,
-		UseTab:  indentChar == "tab",
-		Size:    indentSize,
-		Rules:   cfg.Fmt.IndentRules,
-	}
-
-	wrapMode := cfg.Fmt.Wrap
-	if wrapMode == "" {
-		wrapMode = "sentence+column"
-	}
-	wrapCol := cfg.Fmt.WrapCol
-	if wrapCol <= 0 {
-		wrapCol = 80
-	}
-	wrapOpts := format.WrapOptions{
-		Mode: wrapMode,
-		Col:  wrapCol,
-	}
+	resolved := resolveFormatOpts(cfg.Fmt)
 
 	// Validate --rule IDs.
 	if err := format.ValidateRuleIDs(o.Rule); err != nil {
-		fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", err)
 		return 2
-	}
-
-	tildeOpts := format.TildeOptions{
-		Refs: cfg.Fmt.TildeRefs,
-	}
-
-	// Resolve math.align-columns options for stdin.
-	stdinMathAlignEnabled := true
-	if cfg.Fmt.MathAlign != nil {
-		stdinMathAlignEnabled = *cfg.Fmt.MathAlign
-	}
-	stdinMathAlignOpts := format.MathAlignOptions{
-		Enabled: stdinMathAlignEnabled,
-		Envs:    cfg.Fmt.MathAlignEnvs,
-		Skip:    cfg.Fmt.MathAlignSkip,
-	}
-
-	// Resolve math.wrap-at-break-op options for stdin (off by default).
-	stdinMathWrapEnabled := false
-	if cfg.Fmt.MathWrap != nil {
-		stdinMathWrapEnabled = *cfg.Fmt.MathWrap
-	}
-	stdinMathWrapOpts := format.MathWrapOptions{
-		Enabled: stdinMathWrapEnabled,
-		Col:     cfg.Fmt.MathWrapCol,
 	}
 
 	// Parse --lines for stdin mode.
@@ -565,29 +518,29 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	if o.Lines != "" {
 		lr, lrErr := format.ParseLineRange(o.Lines)
 		if lrErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", lrErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", lrErr)
 			return 2
 		}
 		stdinLineRange = &lr
 	}
 
 	opts := format.Options{
-		PDFFix:       pdfFix,
+		PDFFix:       resolved.pdfFix,
 		Rules:        o.Rule,
 		Diag:         false, // no report for stdin
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
-		Indent:       indentOpts,
-		Wrap:         wrapOpts,
-		Tilde:        tildeOpts,
-		MathAlign:    stdinMathAlignOpts,
-		MathWrap:     stdinMathWrapOpts,
+		Indent:       resolved.indent,
+		Wrap:         resolved.wrap,
+		Tilde:        resolved.tilde,
+		MathAlign:    resolved.mathAlign,
+		MathWrap:     resolved.mathWrap,
 		LineRange:    stdinLineRange,
 	}
 
 	// Report rules skipped under --lines.
 	if skipped := format.SkippedLineRangeRules(opts); len(skipped) > 0 {
 		for _, id := range skipped {
-			fmt.Fprintf(stderr, "mreview fmt: <stdin>: note: %s skipped under --lines\n", id)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: note: %s skipped under --lines\n", id)
 		}
 	}
 
@@ -597,14 +550,14 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	if stdinLineRange != nil {
 		clipped, clipErr := format.ClipToRange(src, result.Src, *stdinLineRange)
 		if clipErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: <stdin>: --lines: %v\n", clipErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: --lines: %v\n", clipErr)
 			return 1
 		}
 		result.Src = clipped
 	}
 
 	if _, werr := stdout.Write(result.Src); werr != nil {
-		fmt.Fprintf(stderr, "mreview fmt: <stdin>: write stdout: %v\n", werr)
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: write stdout: %v\n", werr)
 		return 1
 	}
 	return 0
@@ -633,7 +586,7 @@ func runFmtSummary(
 	for _, paperPath := range paths {
 		src, readErr := os.ReadFile(paperPath)
 		if readErr != nil {
-			fmt.Fprintf(stderr, "mreview fmt: read %q: %v\n", paperPath, readErr)
+			_, _ = fmt.Fprintf(stderr, "mreview fmt: read %q: %v\n", paperPath, readErr)
 			return 1
 		}
 
@@ -664,10 +617,10 @@ func runFmtSummary(
 	}
 
 	if totalDiags > 0 {
-		fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files (%d with diagnostics)\n",
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files (%d with diagnostics)\n",
 			totalHits, filesWithHits, filesWithDiags)
 	} else {
-		fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files\n",
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: %d rewrites across %d files\n",
 			totalHits, filesWithHits)
 	}
 	return 0
@@ -701,7 +654,7 @@ func printDiff(w io.Writer, path string, before, after []byte) int {
 	if err != nil {
 		return 1
 	}
-	fmt.Fprint(w, text)
+	_, _ = fmt.Fprint(w, text)
 	return 0
 }
 

@@ -209,14 +209,23 @@ func alignBody(body []byte, envName string, envSet map[string]bool) ([]byte, str
 
 	// Strip leading/trailing whitespace (typically a newline after
 	// \begin{...} and before \end{...}). We'll restore them.
+	// The suffix may include indentation whitespace before \end{...}
+	// (added by the space.indent rule which runs earlier in the pipeline).
 	s := string(body)
 	prefix := ""
 	if len(s) > 0 && s[0] == '\n' {
 		prefix = "\n"
 		s = s[1:]
 	}
+	// Strip trailing whitespace + newline. The body may end with
+	// "\n<indent>" where <indent> is the whitespace before \end{env}.
 	suffix := ""
-	if len(s) > 0 && s[len(s)-1] == '\n' {
+	trimmedRight := strings.TrimRight(s, " \t")
+	if len(trimmedRight) < len(s) && len(trimmedRight) > 0 && trimmedRight[len(trimmedRight)-1] == '\n' {
+		// Body ends with \n followed by spaces/tabs (indent before \end).
+		suffix = s[len(trimmedRight)-1:] // capture \n + trailing ws
+		s = trimmedRight[:len(trimmedRight)-1]
+	} else if len(s) > 0 && s[len(s)-1] == '\n' {
 		suffix = "\n"
 		s = s[:len(s)-1]
 	}
@@ -274,6 +283,24 @@ func alignBody(body []byte, envName string, envSet map[string]bool) ([]byte, str
 		}
 	}
 
+	// Compute the common leading whitespace across rows with & columns.
+	// This preserves the indentation set by the space.indent rule (which
+	// runs before math.align-columns in the pipeline).
+	commonIndent := ""
+	first := true
+	for _, pr := range parsed {
+		if len(pr.cells) <= 1 {
+			continue
+		}
+		// The first cell's leading whitespace represents the row indent.
+		cell0 := pr.cells[0]
+		ws := cell0[:len(cell0)-len(strings.TrimLeft(cell0, " \t"))]
+		if first || len(ws) < len(commonIndent) {
+			commonIndent = ws
+			first = false
+		}
+	}
+
 	// Compute column widths. For each column except the last, measure
 	// the trimmed cell content width. The alignment convention is:
 	//   {cell0_trimmed}{spaces} &{cell1_content}
@@ -306,6 +333,8 @@ func alignBody(body []byte, envName string, envSet map[string]bool) ([]byte, str
 			buf.WriteString(pr.suffix)
 			continue
 		}
+		// Prepend the common indent preserved from the original rows.
+		buf.WriteString(commonIndent)
 		for ci, cell := range pr.cells {
 			if ci > 0 {
 				// Emit " &" separator, then preserve the leading

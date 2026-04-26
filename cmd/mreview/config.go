@@ -98,29 +98,29 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 // the editor opens to a useful starting point rather than an empty buffer.
 func runConfig(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
-		fmt.Fprintln(stderr, "mreview config: unexpected argument")
-		fmt.Fprintln(stderr, "usage: mreview config")
+		_, _ = fmt.Fprintln(stderr, "mreview config: unexpected argument")
+		_, _ = fmt.Fprintln(stderr, "usage: mreview config")
 		return 2
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview config: cannot find home directory: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview config: cannot find home directory: %v\n", err)
 		return 1
 	}
 	dir := filepath.Join(home, ".config", "mreview")
 	path := filepath.Join(dir, "config.toml")
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintf(stderr, "mreview config: mkdir %q: %v\n", dir, err)
+		_, _ = fmt.Fprintf(stderr, "mreview config: mkdir %q: %v\n", dir, err)
 		return 1
 	}
 	if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
 		if writeErr := os.WriteFile(path, []byte(defaultGlobalConfig), 0o644); writeErr != nil {
-			fmt.Fprintf(stderr, "mreview config: write %q: %v\n", path, writeErr)
+			_, _ = fmt.Fprintf(stderr, "mreview config: write %q: %v\n", path, writeErr)
 			return 1
 		}
-		fmt.Fprintf(stderr, "mreview config: created %s with defaults\n", path)
+		_, _ = fmt.Fprintf(stderr, "mreview config: created %s with defaults\n", path)
 	}
 
 	editor := os.Getenv("VISUAL")
@@ -136,7 +136,7 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if runErr := cmd.Run(); runErr != nil {
-		fmt.Fprintf(stderr, "mreview config: editor exited: %v\n", runErr)
+		_, _ = fmt.Fprintf(stderr, "mreview config: editor exited: %v\n", runErr)
 		return 1
 	}
 	return 0
