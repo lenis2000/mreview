@@ -111,6 +111,13 @@ func applyTildeRefs(ctx *Ctx) Result {
 		if shouldSkipPreceding(preceding) {
 			continue
 		}
+		// Special case: a space that follows a control word like `\bf` is
+		// gobbled by TeX as the command-name terminator, not typeset. Replacing
+		// it with `~` would emit a visible non-breaking space (e.g. inside
+		// `{\bf \Cref{...}}` → `{\bf~\Cref{...}}` adds a bold space).
+		if isControlWordTerminatorSpace(src, spacePos) {
+			continue
+		}
 
 		// Check if the space is at the start of a line (only whitespace
 		// before it on this line).
@@ -257,4 +264,36 @@ func isOnlyWhitespace(b []byte) bool {
 		}
 	}
 	return true
+}
+
+// isControlWordTerminatorSpace reports whether the space at spacePos in src
+// is the command-name terminator following a TeX control word (e.g. the
+// space in `\bf \Cref{...}` between `\bf` and `\Cref`). TeX gobbles such a
+// space as a token separator — it is not typeset — so replacing it with
+// `~` would emit a visible non-breaking space and change rendered output.
+//
+// The check walks left from spacePos through alphabetic characters and
+// requires an unescaped backslash immediately before them.
+func isControlWordTerminatorSpace(src []byte, spacePos int) bool {
+	j := spacePos - 1
+	for j >= 0 && isAlpha(src[j]) {
+		j--
+	}
+	// Need at least one alpha char between the backslash and the space.
+	if j == spacePos-1 {
+		return false
+	}
+	if j < 0 || src[j] != '\\' {
+		return false
+	}
+	// The '\' at position j starts a fresh control word iff the run of
+	// consecutive backslashes ending at j has odd length (so the '\' is
+	// unpaired). An even count means '\\' is the second backslash of a
+	// `\\` literal — and then `name` is just text, the space following
+	// it is a regular inter-word space.
+	bsCount := 1
+	for k := j - 1; k >= 0 && src[k] == '\\'; k-- {
+		bsCount++
+	}
+	return bsCount%2 == 1
 }

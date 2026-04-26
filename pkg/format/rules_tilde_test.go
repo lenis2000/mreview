@@ -287,3 +287,51 @@ func TestTildeRefs_MultiLine(t *testing.T) {
 	got := runTildeRule(t, in)
 	assert.Equal(t, want, got)
 }
+
+// --- Control-word terminator (regression) -----------------------------------
+
+// The space following a TeX control word like `\bf` is gobbled as a token
+// separator — it is NOT typeset. Replacing it with `~` emits a visible
+// non-breaking space, which is a rendering bug. Hit on PNAS preamble:
+//   `{\bf \Cref{...}}` → `{\bf~\Cref{...}}` introduced a bold space.
+func TestTildeRefs_ControlWordTerminator(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "{\\bf \\Cref}",
+			in:   "see {\\bf \\Cref{conj:foo}} for context\n",
+			want: "see {\\bf \\Cref{conj:foo}} for context\n",
+		},
+		{
+			name: "\\bf at start of group",
+			in:   "{\\bf \\cite{x}}\n",
+			want: "{\\bf \\cite{x}}\n",
+		},
+		{
+			name: "\\itshape \\ref",
+			in:   "{\\itshape \\ref{sec}}\n",
+			want: "{\\itshape \\ref{sec}}\n",
+		},
+		{
+			name: "\\Large \\Cref",
+			in:   "{\\Large \\Cref{thm}}\n",
+			want: "{\\Large \\Cref{thm}}\n",
+		},
+		// A literal `\\` (line break) is followed by text `name` — the space
+		// after `name` IS a regular inter-word space; tilde rule should fire.
+		{
+			name: "literal \\\\ then word, then \\cite",
+			in:   "first line \\\\name \\cite{a}\n",
+			want: "first line \\\\name~\\cite{a}\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := runTildeRule(t, c.in)
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
