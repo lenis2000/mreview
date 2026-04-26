@@ -383,12 +383,14 @@ func detectNoOps(entries []whitelistEntry, beforePages, afterPages [][]string, h
 	return warnings
 }
 
-// buildInDir runs latexmk in dir on the given paper file.
+// buildInDir runs latexmk on the paper file inside dir. The working directory
+// defaults to the paper's own subdirectory (filepath.Dir(texPath)) so that
+// relative \graphicspath entries like {../img/} resolve as the original
+// project expects.
 func buildInDir(dir, paper string) (*build.Result, error) {
 	texPath := filepath.Join(dir, paper)
 	return build.RunWith(build.Options{
 		TexPath: texPath,
-		Dir:     dir,
 	})
 }
 
@@ -467,20 +469,176 @@ func splitPages(norm string) [][]string {
 	return result
 }
 
-// DiscoverTree walks a paper's directory to find all build inputs needed
-// for an isolated build. It includes the main .tex, plus any .cls, .sty,
-// .bib, .bbl, .bst, latexmkrc, figures, and \input children it can find.
+// DiscoverTree finds all build inputs needed for an isolated build. If
+// <paper>.fls exists (latexmk has been run at least once), it parses the
+// .fls for an exact, complete file list — including inputs that live
+// outside the paper's own directory (e.g. shared figure dirs reached via
+// \graphicspath{../img/}). When .fls is unavailable, it falls back to a
+// directory walk over a fixed allowlist of LaTeX support extensions.
 func DiscoverTree(paperPath string) (*Tree, error) {
 	absPath, err := filepath.Abs(paperPath)
 	if err != nil {
 		return nil, err
 	}
+	if t, flsErr := discoverFromFLS(absPath); flsErr == nil {
+		return t, nil
+	}
+	return discoverFromWalk(absPath)
+}
+
+// discoverFromFLS parses <paper>.fls (a Recorder file written by pdflatex
+// when invoked with -recorder, which latexmk does by default) and returns
+// a Tree whose Root is the common ancestor of every local INPUT path.
+// Returns an error if the .fls is missing or contains no local inputs.
+func discoverFromFLS(paperAbsPath string) (*Tree, error) {
+	flsPath := strings.TrimSuffix(paperAbsPath, filepath.Ext(paperAbsPath)) + ".fls"
+	data, err := os.ReadFile(flsPath)
+	if err != nil {
+		return nil, err
+	}
+	paperDir := filepath.Dir(paperAbsPath)
+
+	seen := map[string]bool{}
+	var inputs []string
+	add := func(p string) {
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		inputs = append(inputs, p)
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "INPUT ")
+		if !ok {
+			continue
+		}
+		path := strings.TrimSpace(rest)
+		if path == "" {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(paperDir, path)
+		}
+		path = filepath.Clean(path)
+		if isSystemTexPath(path) {
+			continue
+		}
+		if _, statErr := os.Stat(path); statErr != nil {
+			continue
+		}
+		add(path)
+	}
+
+	if _, statErr := os.Stat(paperAbsPath); statErr == nil {
+		add(paperAbsPath)
+	}
+
+	// Pick up sibling support files latexmk will need on a fresh run but
+	// that may not be in this .fls (e.g. precomputed .bbl, latexmkrc).
+	if entries, dirErr := os.ReadDir(paperDir); dirErr == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			ext := strings.ToLower(filepath.Ext(name))
+			keep := false
+			switch ext {
+			case ".bbl", ".bib", ".bst", ".cls", ".sty",
+				".ldf", ".clo", ".dfu", ".def", ".cfg", ".fd":
+				keep = true
+			}
+			if name == "latexmkrc" || name == ".latexmkrc" {
+				keep = true
+			}
+			if keep {
+				add(filepath.Join(paperDir, name))
+			}
+		}
+	}
+
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("fls had no local inputs")
+	}
+
+	root := commonAncestor(inputs)
+	rels := make([]string, 0, len(inputs))
+	for _, p := range inputs {
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return nil, relErr
+		}
+		rels = append(rels, rel)
+	}
+	paperRel, err := filepath.Rel(root, paperAbsPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{
+		Root:  root,
+		Paper: paperRel,
+		Files: rels,
+	}, nil
+}
+
+// isSystemTexPath returns true for paths under standard system TeX
+// installation roots — those files are already on the verifier's
+// kpathsea search path and don't need to be copied into the tempdir.
+func isSystemTexPath(p string) bool {
+	prefixes := []string{
+		"/usr/", "/opt/", "/Library/TeX/", "/Library/Frameworks/",
+		"/Applications/", "/private/var/", "/var/folders/",
+	}
+	for _, s := range prefixes {
+		if strings.HasPrefix(p, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// commonAncestor returns the deepest directory that contains every path
+// in paths. Assumes all paths are absolute and on the same volume.
+func commonAncestor(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	common := filepath.Dir(paths[0])
+	for _, p := range paths[1:] {
+		for !pathHasPrefix(p, common) {
+			parent := filepath.Dir(common)
+			if parent == common {
+				return common
+			}
+			common = parent
+		}
+	}
+	return common
+}
+
+// pathHasPrefix reports whether p sits inside (or equals) dir,
+// using component-aware matching so /foo doesn't match /foobar.
+func pathHasPrefix(p, dir string) bool {
+	if p == dir {
+		return true
+	}
+	sep := string(filepath.Separator)
+	if !strings.HasSuffix(dir, sep) {
+		dir += sep
+	}
+	return strings.HasPrefix(p, dir)
+}
+
+// discoverFromWalk is the fallback when no .fls is available: walk the
+// paper's directory and pick up files matching a known extension set.
+func discoverFromWalk(absPath string) (*Tree, error) {
 	dir := filepath.Dir(absPath)
 	paper := filepath.Base(absPath)
 
 	var files []string
 	// Walk the directory and collect relevant files.
-	err = filepath.Walk(dir, func(path string, info os.FileInfo, walkErr error) error {
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip errors
 		}
@@ -512,6 +670,10 @@ func DiscoverTree(paperPath string) (*Tree, error) {
 		case ext == ".bib" || ext == ".bbl":
 			files = append(files, rel)
 		case ext == ".def" || ext == ".cfg" || ext == ".fd":
+			files = append(files, rel)
+		case ext == ".ldf" || ext == ".clo" || ext == ".dfu":
+			files = append(files, rel)
+		case ext == ".tikz" || ext == ".pgf":
 			files = append(files, rel)
 		case ext == ".pdf" || ext == ".png" || ext == ".jpg" ||
 			ext == ".jpeg" || ext == ".eps" || ext == ".svg":

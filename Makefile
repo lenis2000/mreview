@@ -8,7 +8,7 @@ PLAN := docs/plans/2026-04-22-mreview-mvp.md
 
 build:
 	@mkdir -p .bin
-	go build -o $(BIN) ./cmd/mreview
+	go build -tags=pdfverify -o $(BIN) ./cmd/mreview
 
 install: build
 	@mkdir -p $(INSTALL_DIR)
