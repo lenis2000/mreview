@@ -56,6 +56,9 @@ func TestRun_ShortVersion(t *testing.T) {
 }
 
 func TestRun_MissingArg(t *testing.T) {
+	// Run from an empty temp dir so the lone-.tex auto-pick can't kick in.
+	chdir(t, t.TempDir())
+
 	var stdout, stderr bytes.Buffer
 	code := run([]string{}, &stdout, &stderr)
 	if code != 2 {
@@ -67,6 +70,58 @@ func TestRun_MissingArg(t *testing.T) {
 	if !strings.Contains(stderr.String(), "usage:") {
 		t.Fatalf("expected usage hint on stderr, got %q", stderr.String())
 	}
+}
+
+func TestRun_NoArgPicksLoneTex(t *testing.T) {
+	dir := t.TempDir()
+	paper := filepath.Join(dir, "paper.tex")
+	if err := os.WriteFile(paper, []byte("\\documentclass{amsart}\n\\begin{document}\nhi\n\\end{document}\n"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	chdir(t, dir)
+	captured := withStubTUI(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--no-build"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	if *captured == nil {
+		t.Fatalf("expected runTUI to be invoked")
+	}
+}
+
+func TestRun_NoArgMultipleTexErrors(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"a.tex", "b.tex"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("\\documentclass{amsart}\n\\begin{document}\nhi\n\\end{document}\n"), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+	}
+	chdir(t, dir)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "missing paper") {
+		t.Fatalf("expected missing-paper message, got %q", stderr.String())
+	}
+}
+
+// chdir changes the working directory for the duration of t, restoring
+// the original cwd in t.Cleanup.
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %q: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
 }
 
 func TestRun_MissingFile(t *testing.T) {

@@ -1,7 +1,8 @@
-.PHONY: build install test lint fmt clean docker-image docker-run pnas-fixture
+.PHONY: build install install-completion test lint fmt clean docker-image docker-run pnas-fixture
 
 BIN := .bin/mreview
 INSTALL_DIR ?= $(HOME)/bin
+ZSH_COMPLETION_DIR ?= /opt/homebrew/share/zsh/site-functions
 IMAGE ?= ralphex-mreview
 RALPHEX_DK ?= $(HOME)/__code/ralphex/scripts/ralphex-dk.sh
 PLAN := docs/plans/2026-04-22-mreview-mvp.md
@@ -10,10 +11,18 @@ build:
 	@mkdir -p .bin
 	go build -tags=pdfverify -o $(BIN) ./cmd/mreview
 
-install: build
+install: build install-completion
 	@mkdir -p $(INSTALL_DIR)
 	install -m 0755 $(BIN) $(INSTALL_DIR)/mreview
 	@echo "installed $(INSTALL_DIR)/mreview"
+
+install-completion:
+	@if [ -d "$(ZSH_COMPLETION_DIR)" ]; then \
+		install -m 0644 completions/_mreview $(ZSH_COMPLETION_DIR)/_mreview; \
+		echo "installed $(ZSH_COMPLETION_DIR)/_mreview"; \
+	else \
+		echo "skip: $(ZSH_COMPLETION_DIR) not found (set ZSH_COMPLETION_DIR= to override)"; \
+	fi
 
 test:
 	go test -cover ./...

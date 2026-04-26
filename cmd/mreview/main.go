@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -137,9 +138,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if o.File == "" {
-		fmt.Fprintln(stderr, "mreview: missing paper argument")
-		fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
-		return 2
+		// No positional arg: if the current directory contains exactly one
+		// .tex file, review it.
+		if lone, ok := loneTexInCwd(); ok {
+			o.File = lone
+		} else {
+			fmt.Fprintln(stderr, "mreview: missing paper argument")
+			fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
+			return 2
+		}
 	}
 
 	if _, statErr := os.Stat(o.File); statErr != nil {
@@ -330,6 +337,38 @@ func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
 		return true
 	}
 	return false
+}
+
+// loneTexInCwd returns the single .tex file in the current directory and
+// true when exactly one is present. Hidden files and subdirectories are
+// ignored. With zero or multiple matches, returns ("", false) and the
+// caller falls back to the missing-arg error.
+func loneTexInCwd() (string, bool) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return "", false
+	}
+	var found string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if filepath.Ext(name) != ".tex" {
+			continue
+		}
+		if found != "" {
+			return "", false
+		}
+		found = name
+	}
+	if found == "" {
+		return "", false
+	}
+	return found, true
 }
 
 // shortBuildWarning extracts a one-line summary from a build error for

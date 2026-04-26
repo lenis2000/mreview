@@ -1,0 +1,54 @@
+#compdef mreview
+# zsh completion for mreview
+#
+# Install: copy or symlink this file to a directory in $fpath, e.g.
+#   /opt/homebrew/share/zsh/site-functions/_mreview
+# then run `compinit` (or open a new shell) to pick it up.
+# If completions still show non-.tex files, clear the cache:
+#   rm -f ~/.zcompdump*; compinit
+
+_mreview() {
+  local context state state_descr line
+  typeset -A opt_args
+
+  _arguments -C \
+    '(- *)'{-v,--version}'[print version and exit]' \
+    '--no-build[skip latexmk build, use existing outputs]' \
+    '--draft[open TUI even when the build fails]' \
+    '--build-cmd=[override latexmk command]:command:' \
+    '--sidecar=[path to sidecar .mreview.md]:sidecar file:_files' \
+    '--stdout=[format for annotations emitted on quit]:format:(md json none)' \
+    '--config=[path to config file]:config file:_files -g "*.toml"' \
+    '1: :->cmd_or_paper' \
+    '*:: :->args'
+
+  case $state in
+    cmd_or_paper)
+      _alternative \
+        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place))' \
+        'files:tex file:_files -g "*.tex"'
+      ;;
+    args)
+      case $line[1] in
+        fmt) _mreview_fmt ;;
+        *)   _files -g '*.tex' ;;
+      esac
+      ;;
+  esac
+}
+
+_mreview_fmt() {
+  _arguments \
+    '--diff[show unified diff to stdout, do not write]' \
+    '--check[exit 1 if changes needed]' \
+    '--pdf-fix[enable Tier-2 PDF-fixing rules]' \
+    '*--rule=[restrict to these rule IDs]:rule id:' \
+    '--allow-dirty[skip dirty-tree check before writing]' \
+    '--no-verify[skip PDF verification]' \
+    '--verify-pdf=[verifier mode]:mode:(text visual)' \
+    '--report[write paper.tex.fmt-report.md]' \
+    '--clean-tempdir[remove all mr-fmt-* verification tempdirs]' \
+    '*:tex file:_files -g "*.tex"'
+}
+
+_mreview "$@"
