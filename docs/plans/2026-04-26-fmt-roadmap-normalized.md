@@ -156,13 +156,13 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Create: `pkg/format/rules_math_cont_test.go`
 - Modify: `pkg/format/registry.go`
 
-- [ ] implement: find first `=`/`\equiv`/`:=`/`\le`/`\ge` on first row of equation envs (equation, equation*, gather, gather*, multline, multline*, align, align*)
-- [ ] for subsequent rows starting with a binop: pad leading whitespace so binop sits one column past anchor
-- [ ] share env-body parser with math.align-columns
-- [ ] skip when no anchor found; skip when env is aligned by columns (math.align-columns already handled it)
-- [ ] register as Tier 1; pure leading whitespace
-- [ ] write tests: basic continuation indent, no anchor (skip), various binops, interaction with align-columns
-- [ ] run `go test ./... && make install`
+- [x] implement: find first `=`/`\equiv`/`:=`/`\le`/`\ge` on first row of equation envs (equation, equation*, gather, gather*, multline, multline*, align, align*)
+- [x] for subsequent rows starting with a binop: pad leading whitespace so binop sits one column past anchor
+- [x] share env-body parser with math.align-columns
+- [x] skip when no anchor found; skip when env is aligned by columns (math.align-columns already handled it)
+- [x] register as Tier 1; pure leading whitespace
+- [x] write tests: basic continuation indent, no anchor (skip), various binops, interaction with align-columns
+- [x] run `go test ./... && make install`
 
 ### Task 10: math.wrap-at-break-op rule (opt-in)
 

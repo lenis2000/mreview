@@ -387,8 +387,8 @@ func TestDefaultOptionsSafeOnly(t *testing.T) {
 	for _, r := range rules {
 		assert.Equal(t, Safe, r.Tier, "default should only enable Safe rules")
 	}
-	// We have exactly 10 safe rules (incl. space.indent, space.wrap, math.align-columns).
-	assert.Equal(t, 10, len(rules))
+	// We have exactly 11 safe rules (incl. space.indent, space.wrap, math.align-columns, math.continuation-indent).
+	assert.Equal(t, 11, len(rules))
 }
 
 // TestRegistryOrder verifies rules are in the expected order.
@@ -408,6 +408,7 @@ func TestRegistryOrder(t *testing.T) {
 		"space.indent",
 		"space.wrap",
 		"math.align-columns",
+		"math.continuation-indent",
 		"math.paragraph-suppress",
 		"env.spacing",
 		"prose.tilde-refs",
