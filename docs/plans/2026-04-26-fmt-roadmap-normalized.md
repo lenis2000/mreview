@@ -195,13 +195,13 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 
 ### Task 12: Verify acceptance criteria
 
-- [ ] manual test: `mreview fmt --stdin < paper.tex | diff - paper.tex` produces expected output
-- [ ] manual test: `mreview fmt --fail-on-change paper.tex` exits 1 on dirty source
-- [ ] manual test: `mreview fmt --lines=42:120 paper.tex` rewrites only the target range
-- [ ] manual test: `mreview fmt --rule=math.align-columns paper.tex` aligns tabular columns
-- [ ] run full test suite: `go test ./...`
-- [ ] run linter: `make lint`
-- [ ] verify test coverage meets 80%+
+- [x] manual test: `mreview fmt --stdin < paper.tex | diff - paper.tex` produces expected output
+- [x] manual test: `mreview fmt --fail-on-change paper.tex` exits 1 on dirty source
+- [x] manual test: `mreview fmt --lines=42:120 paper.tex` rewrites only the target range
+- [x] manual test: `mreview fmt --rule=math.align-columns paper.tex` aligns tabular columns
+- [x] run full test suite: `go test ./...`
+- [x] run linter: `make lint`
+- [x] verify test coverage meets 80%+
 
 ### Task 13: Update documentation
 

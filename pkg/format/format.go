@@ -153,10 +153,13 @@ func ValidateRuleIDs(ids []string) error {
 // lineCountChangingRules is the set of rule IDs whose Apply may change the
 // number of lines in the source. These are force-disabled under --lines.
 var lineCountChangingRules = map[string]bool{
-	"space.blank-runs":         true,
-	"space.wrap":               true,
-	"math.paragraph-suppress":  true,
-	"math.wrap-at-break-op":   true,
+	"space.blank-runs":              true,
+	"space.wrap":                    true,
+	"space.display-delim-per-line":  true,
+	"display.style":                 true,
+	"math.paragraph-suppress":       true,
+	"math.wrap-at-break-op":        true,
+	"env.spacing":                   true,
 }
 
 // enabledRules filters Registry according to opts.

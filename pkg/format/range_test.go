@@ -171,10 +171,14 @@ func TestLineRange_SkippedRulesReported(t *testing.T) {
 		LineRange: &lr,
 	}
 	skipped := SkippedLineRangeRules(opts)
-	// space.blank-runs and space.wrap are Safe (always on), math.paragraph-suppress is PDFFix.
+	// Safe rules always on: space.blank-runs, space.wrap, display.style, space.display-delim-per-line
 	assert.Contains(t, skipped, "space.blank-runs")
 	assert.Contains(t, skipped, "space.wrap")
+	assert.Contains(t, skipped, "display.style")
+	assert.Contains(t, skipped, "space.display-delim-per-line")
+	// PDFFix rules (enabled via opts.PDFFix): math.paragraph-suppress, env.spacing
 	assert.Contains(t, skipped, "math.paragraph-suppress")
+	assert.Contains(t, skipped, "env.spacing")
 }
 
 func TestLineRange_NoSkipWhenNil(t *testing.T) {
