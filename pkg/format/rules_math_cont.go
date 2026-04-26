@@ -78,24 +78,15 @@ func applyMathCont(ctx *Ctx) Result {
 			if contIndentEnvs[tk.EnvName] {
 				if depth == 0 {
 					pos := byteOffsetOf(ctx, tk.Line, tk.Col)
-					if pos < 0 {
-						continue
+					if pos >= 0 && !parser.OverlapsProtected(pos, pos+1, ctx.Protected) && !ctx.LineSkipped(tk.Line) {
+						if endPos := delimEndAfterBeginWithArgs(ctx.Src, pos); endPos >= 0 {
+							spans = append(spans, envSpan{
+								name:      tk.EnvName,
+								bodyStart: endPos,
+								beginLine: tk.Line,
+							})
+						}
 					}
-					if parser.OverlapsProtected(pos, pos+1, ctx.Protected) {
-						continue
-					}
-					if ctx.LineSkipped(tk.Line) {
-						continue
-					}
-					endPos := delimEndAfterBeginWithArgs(ctx.Src, pos)
-					if endPos < 0 {
-						continue
-					}
-					spans = append(spans, envSpan{
-						name:      tk.EnvName,
-						bodyStart: endPos,
-						beginLine: tk.Line,
-					})
 				}
 				depth++
 			}

@@ -80,24 +80,15 @@ func applyMathAlign(ctx *Ctx) Result {
 			if envSet[tk.EnvName] && !skipSet[tk.EnvName] {
 				if depth == 0 {
 					pos := byteOffsetOf(ctx, tk.Line, tk.Col)
-					if pos < 0 {
-						continue
+					if pos >= 0 && !parser.OverlapsProtected(pos, pos+1, ctx.Protected) && !ctx.LineSkipped(tk.Line) {
+						if endPos := delimEndAfterBeginWithArgs(ctx.Src, pos); endPos >= 0 {
+							spans = append(spans, envSpan{
+								name:      tk.EnvName,
+								bodyStart: endPos,
+								beginLine: tk.Line,
+							})
+						}
 					}
-					if parser.OverlapsProtected(pos, pos+1, ctx.Protected) {
-						continue
-					}
-					if ctx.LineSkipped(tk.Line) {
-						continue
-					}
-					endPos := delimEndAfterBeginWithArgs(ctx.Src, pos)
-					if endPos < 0 {
-						continue
-					}
-					spans = append(spans, envSpan{
-						name:      tk.EnvName,
-						bodyStart: endPos,
-						beginLine: tk.Line,
-					})
 				}
 				depth++
 			}
@@ -378,7 +369,11 @@ func splitRows(body []byte) []rowPiece {
 			}
 			content = s[rowStart:suffixStart]
 			suffixStart2 := suffixStart // actual suffix start (with leading whitespace)
-			i += 2                      // skip \\
+			i += 2 // skip \\
+			// Skip optional * (starred row break, inhibits page break).
+			if i < len(s) && s[i] == '*' {
+				i++
+			}
 			// Skip optional [skip] argument.
 			if i < len(s) && s[i] == '[' {
 				for i < len(s) && s[i] != ']' {
