@@ -187,11 +187,11 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 **Files:**
 - Modify: `pkg/format/golden_test.go` (or create new golden for math)
 
-- [ ] extend PNAS golden round-trip to cover Phase 2-4 rules
-- [ ] create new fixture with hand-crafted misaligned align/tabular blocks for columnizer testing
-- [ ] verify PDF byte-identity for Tier-1 math rules
-- [ ] verify expected-diff-only for Tier-2 tilde rule
-- [ ] run `go test ./... && make install`
+- [x] extend PNAS golden round-trip to cover Phase 2-4 rules
+- [x] create new fixture with hand-crafted misaligned align/tabular blocks for columnizer testing
+- [x] verify PDF byte-identity for Tier-1 math rules
+- [x] verify expected-diff-only for Tier-2 tilde rule
+- [x] run `go test ./... && make install`
 
 ### Task 12: Verify acceptance criteria
 

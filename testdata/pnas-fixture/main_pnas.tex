@@ -220,6 +220,20 @@ The density has compact support. Indeed, one can verify that
 
 Compare with~\eqref{eq:main-expansion} and~\ref{eq:pde}.
 
+We define the transition kernel as follows (see \cite{AGZ2010}
+and \ref{sec:yang-baxter} for background):
+\begin{equation*}
+K(x,y) = \frac{1}{\sqrt{2\pi t}}
++ \frac{1}{n} \sum_{k=1}^{n} \phi_k(x) \phi_k(y)
+- \int_0^t \rho(s,x)\, ds.
+\end{equation*}
+
+The transition matrix has the form
+\begin{equation}\label{eq:tmatrix}
+T =
+\begin{pmatrix} p_{11} & p_{12} & p_{13} \\ p_{21} & p_{22} & p_{23} \\ p_{31} & p_{32} & p_{33} \end{pmatrix}.
+\end{equation}
+
 \section{Numerical experiments}
 \label{sec:numerical}
 	We performed Monte Carlo simulations to verify the theoretical
