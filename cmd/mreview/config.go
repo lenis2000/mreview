@@ -65,6 +65,12 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 # indent_char = "tab"                  # "tab" | "space"
 # indent_size = 1                      # 1 tab/level (or e.g. 2 for spaces)
 
+# Per-environment indent overrides. Key = env name, value = literal indent
+# string per nesting level. Empty string = no indent (like document).
+# [fmt.indent_rules]
+# tikzpicture = "  "                   # 2 spaces inside tikzpicture
+# tikzcd      = ""                     # no indent inside tikzcd
+
 # Wrap mode and target column.
 #   "off"               no wrapping
 #   "column"            break at rightmost space ≤ wrap_col

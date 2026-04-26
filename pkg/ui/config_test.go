@@ -270,3 +270,44 @@ func TestMergeConfig_FmtPointerBoolOverride(t *testing.T) {
 	require.NotNil(t, base.Fmt.NoPDFFix)
 	assert.False(t, *base.Fmt.NoPDFFix, "explicitly-set false in overlay must override true in base")
 }
+
+func TestMergeConfig_IndentRulesOverlay(t *testing.T) {
+	base := DefaultConfig()
+	base.Fmt.IndentRules = map[string]string{
+		"tikzpicture": "  ",
+		"tikzcd":      "",
+	}
+	overlay := &Config{Fmt: FmtConfig{IndentRules: map[string]string{
+		"tikzpicture": "\t", // override
+		"align":       "    ",
+	}}}
+	mergeConfig(base, overlay)
+	assert.Equal(t, "\t", base.Fmt.IndentRules["tikzpicture"], "overlay key must override base")
+	assert.Equal(t, "", base.Fmt.IndentRules["tikzcd"], "base-only key must survive")
+	assert.Equal(t, "    ", base.Fmt.IndentRules["align"], "overlay-only key must be added")
+}
+
+func TestMergeConfig_IndentRulesBaseNil(t *testing.T) {
+	base := DefaultConfig()
+	// base.Fmt.IndentRules is nil
+	overlay := &Config{Fmt: FmtConfig{IndentRules: map[string]string{
+		"tikzpicture": "  ",
+	}}}
+	mergeConfig(base, overlay)
+	assert.Equal(t, "  ", base.Fmt.IndentRules["tikzpicture"], "overlay into nil base must work")
+}
+
+func TestLoadConfig_FmtIndentRules(t *testing.T) {
+	dir := t.TempDir()
+	withChdir(t, dir)
+	withEnvHome(t, dir)
+	writeFile(t, filepath.Join(dir, ".mreview.toml"), `
+[fmt.indent_rules]
+tikzpicture = "  "
+tikzcd      = ""
+`)
+	cfg, err := LoadConfig("", false)
+	require.NoError(t, err)
+	assert.Equal(t, "  ", cfg.Fmt.IndentRules["tikzpicture"])
+	assert.Equal(t, "", cfg.Fmt.IndentRules["tikzcd"])
+}

@@ -166,3 +166,169 @@ func TestIndent_TabsModeSuppressesSpaceTabs(t *testing.T) {
 	})
 	assert.Contains(t, string(res.Src), "\ta", "tabs mode must keep its tabs")
 }
+
+func runIndentWithRules(src string, useTab bool, size int, rules map[string]string) string {
+	res := Apply([]byte(src), Options{
+		Indent: IndentOptions{Enabled: true, UseTab: useTab, Size: size, Rules: rules},
+	})
+	return string(res.Src)
+}
+
+func TestIndent_PerEnvOverride_TwoSpaces(t *testing.T) {
+	// tikzpicture uses 2-space indent while global is tab.
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{tikzpicture}",
+		"a",
+		"\\end{tikzpicture}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndentWithRules(src, true, 1, map[string]string{
+		"tikzpicture": "  ",
+	})
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{tikzpicture}",
+		"  a",
+		"\\end{tikzpicture}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+func TestIndent_PerEnvOverride_NoIndent(t *testing.T) {
+	// tikzcd with empty string = no indent (like document).
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\\begin{tikzcd}",
+		"a",
+		"\\end{tikzcd}",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndentWithRules(src, true, 1, map[string]string{
+		"tikzcd": "",
+	})
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\t\\begin{tikzcd}",
+		"\ta",
+		"\t\\end{tikzcd}",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+func TestIndent_PerEnvOverride_DefaultFallback(t *testing.T) {
+	// Only tikzpicture has a rule; theorem falls back to global tab indent.
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"a",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndentWithRules(src, true, 1, map[string]string{
+		"tikzpicture": "  ",
+	})
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\ta",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got, "envs not in Rules should fall back to global indent")
+}
+
+func TestIndent_PerEnvOverride_NestedMixed(t *testing.T) {
+	// theorem (global tab) -> tikzpicture (2-space per rule): nested indent
+	// should be tab from theorem + 2-space from tikzpicture.
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"text",
+		"\\begin{tikzpicture}",
+		"draw code",
+		"\\end{tikzpicture}",
+		"more text",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndentWithRules(src, true, 1, map[string]string{
+		"tikzpicture": "  ",
+	})
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\ttext",
+		"\t\\begin{tikzpicture}",
+		"\t  draw code",
+		"\t\\end{tikzpicture}",
+		"\tmore text",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+func TestIndent_PerEnvOverride_Idempotent(t *testing.T) {
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"a",
+		"\\begin{tikzpicture}",
+		"b",
+		"\\end{tikzpicture}",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	rules := map[string]string{"tikzpicture": "  "}
+	once := runIndentWithRules(src, true, 1, rules)
+	twice := runIndentWithRules(once, true, 1, rules)
+	assert.Equal(t, once, twice, "per-env indent must be idempotent")
+}
+
+func TestIndent_PerEnvOverride_DeeplyNested(t *testing.T) {
+	// Three levels: theorem (tab) -> tikzpicture (2-space) -> scope (tab, default).
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\\begin{tikzpicture}",
+		"\\begin{scope}",
+		"deep",
+		"\\end{scope}",
+		"\\end{tikzpicture}",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndentWithRules(src, true, 1, map[string]string{
+		"tikzpicture": "  ",
+	})
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\t\\begin{tikzpicture}",
+		"\t  \\begin{scope}",
+		"\t  \tdeep",
+		"\t  \\end{scope}",
+		"\t\\end{tikzpicture}",
+		"\\end{theorem}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}

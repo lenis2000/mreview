@@ -19,6 +19,12 @@ type IndentOptions struct {
 	// ExtraNoIndentEnvs adds caller-supplied environments to the no-indent
 	// list (in addition to the built-in defaults — currently `document`).
 	ExtraNoIndentEnvs []string
+	// Rules holds per-environment indent overrides. Key is the environment
+	// name. Value is the literal indent string to use per nesting level:
+	// empty string means no indent (like document), non-empty is the exact
+	// string repeated per depth. When an env is present in Rules, it
+	// overrides UseTab/Size for lines inside that env.
+	Rules map[string]string
 }
 
 // noIndentEnvs are environments whose contents are NOT indented relative to
@@ -47,6 +53,13 @@ func registerIndentRule() {
 	})
 }
 
+// indentEvent records a begin/end env event on a particular line.
+type indentEvent struct {
+	line    int
+	envName string
+	isBegin bool // true for \begin, false for \end
+}
+
 func applyIndent(ctx *Ctx) Result {
 	if !ctx.Indent.Enabled {
 		return Result{Src: ctx.Src}
@@ -63,43 +76,47 @@ func applyIndent(ctx *Ctx) Result {
 	if nLines <= 0 {
 		return Result{Src: ctx.Src}
 	}
-	beginCount := make([]int, nLines+2)
-	endCount := make([]int, nLines+2)
 
 	noIndentExtra := make(map[string]bool, len(ctx.Indent.ExtraNoIndentEnvs))
 	for _, e := range ctx.Indent.ExtraNoIndentEnvs {
 		noIndentExtra[e] = true
 	}
-	noIndent := func(env string) bool {
+
+	// skipEnv reports whether this env contributes zero indent and is
+	// invisible to the stack (document, user-specified no-indent envs).
+	skipEnv := func(env string) bool {
 		return noIndentEnvs[env] || noIndentExtra[env]
 	}
 
+	// Collect events per line (ordered by token appearance).
+	var events []indentEvent
 	for _, tk := range ctx.Tokens {
 		if tk.Line < 1 || tk.Line > nLines {
 			continue
 		}
 		switch tk.Kind {
 		case parser.TokBeginEnv:
-			if noIndent(tk.EnvName) {
+			if skipEnv(tk.EnvName) {
 				continue
 			}
 			off := tokenByteOffset(ctx.Lines, tk)
 			if off < 0 || parser.OverlapsProtected(off, off+1, ctx.Protected) {
 				continue
 			}
-			beginCount[tk.Line]++
+			events = append(events, indentEvent{line: tk.Line, envName: tk.EnvName, isBegin: true})
 		case parser.TokEndEnv:
-			if noIndent(tk.EnvName) {
+			if skipEnv(tk.EnvName) {
 				continue
 			}
 			off := tokenByteOffset(ctx.Lines, tk)
 			if off < 0 || parser.OverlapsProtected(off, off+1, ctx.Protected) {
 				continue
 			}
-			endCount[tk.Line]++
+			events = append(events, indentEvent{line: tk.Line, envName: tk.EnvName, isBegin: false})
 		}
 	}
 
+	// Global indent unit (used when no per-env rule matches).
 	indentChar := byte(' ')
 	if ctx.Indent.UseTab {
 		indentChar = '\t'
@@ -112,15 +129,58 @@ func applyIndent(ctx *Ctx) Result {
 			size = 2
 		}
 	}
+	globalUnit := strings.Repeat(string(indentChar), size)
+
+	// indentUnit returns the indent string for one nesting level inside env.
+	// Per-env rules override: "" means no indent, non-empty is the literal unit.
+	hasRules := len(ctx.Indent.Rules) > 0
+	indentUnit := func(env string) string {
+		if hasRules {
+			if unit, ok := ctx.Indent.Rules[env]; ok {
+				return unit
+			}
+		}
+		return globalUnit
+	}
+
+	// Build per-line begin/end counts for the simple depth counter, and
+	// also per-line begin/end name lists for the env-stack approach.
+	type lineEvents struct {
+		begins []string
+		ends   []string
+	}
+	lineEvt := make(map[int]*lineEvents)
+	for _, ev := range events {
+		le, ok := lineEvt[ev.line]
+		if !ok {
+			le = &lineEvents{}
+			lineEvt[ev.line] = le
+		}
+		if ev.isBegin {
+			le.begins = append(le.begins, ev.envName)
+		} else {
+			le.ends = append(le.ends, ev.envName)
+		}
+	}
 
 	var out bytes.Buffer
 	out.Grow(len(ctx.Src))
-	actual := 0
 	changed := false
 	var hits []Hit
 
+	// envStack tracks the stack of currently-open environments.
+	var envStack []string
+
 	for line := 1; line <= nLines; line++ {
 		body := lineBytes(ctx, line)
+
+		// Process \end events for this line first (they reduce depth for
+		// the current line).
+		le := lineEvt[line]
+		var lineEnds []string
+		if le != nil {
+			lineEnds = le.ends
+		}
 
 		// Honour skip masks and protected lines: emit verbatim, do not
 		// reindent. The token-level scan above already excluded any
@@ -129,19 +189,32 @@ func applyIndent(ctx *Ctx) Result {
 		if ctx.LineSkipped(line) || lineWhollyProtected(ctx, line) {
 			out.Write(body)
 		} else {
-			// Effective depth for this line: dedent for \end markers on
-			// this line, but never below zero.
-			depth := actual - endCount[line]
-			if depth < 0 {
-				depth = 0
+			// Effective stack for this line: pop \end envs first.
+			viewStack := make([]string, len(envStack))
+			copy(viewStack, envStack)
+			for _, endEnv := range lineEnds {
+				// Pop the most recent matching env (inside-out).
+				for i := len(viewStack) - 1; i >= 0; i-- {
+					if viewStack[i] == endEnv {
+						viewStack = append(viewStack[:i], viewStack[i+1:]...)
+						break
+					}
+				}
 			}
+
 			leadLen, allWS := leadingWS(body)
 			if allWS {
 				// Blank line: preserve as-is (don't synthesise a phantom
 				// indent on empty lines — common house style).
 				out.Write(body)
 			} else {
-				want := strings.Repeat(string(indentChar), depth*size)
+				// Build the wanted indent string from the env stack.
+				var wantBuf strings.Builder
+				for _, env := range viewStack {
+					wantBuf.WriteString(indentUnit(env))
+				}
+				want := wantBuf.String()
+
 				if string(body[:leadLen]) == want {
 					out.Write(body)
 				} else {
@@ -157,9 +230,17 @@ func applyIndent(ctx *Ctx) Result {
 			}
 		}
 
-		actual += beginCount[line] - endCount[line]
-		if actual < 0 {
-			actual = 0
+		// Update the real env stack: pop ends, push begins.
+		if le != nil {
+			for _, endEnv := range le.ends {
+				for i := len(envStack) - 1; i >= 0; i-- {
+					if envStack[i] == endEnv {
+						envStack = append(envStack[:i], envStack[i+1:]...)
+						break
+					}
+				}
+			}
+			envStack = append(envStack, le.begins...)
 		}
 
 		if line < nLines || endsWithNewline(ctx.Src) {

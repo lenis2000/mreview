@@ -83,14 +83,14 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Modify: `cmd/mreview/config.go`
 - Modify: `config.example.toml`
 
-- [ ] add `IndentRules map[string]string` to `FmtConfig`; empty string = no indent, non-empty = literal indent unit
-- [ ] thread through `IndentOptions.Rules` in types.go
-- [ ] in rules_indent.go: walk env-stack inside-out, consult `Rules[envName]` first, fall back to global
-- [ ] update `mergeFmtConfig` for map merging (overlay wins per key, base keys preserved)
-- [ ] update `defaultGlobalConfig` template to document `[fmt.indent_rules]`
-- [ ] update config.example.toml with indent_rules examples
-- [ ] write tests: indent override per env (tikzpicture 2-space, cd no-indent, default fallback), nested envs
-- [ ] run `go test ./... && make install`
+- [x] add `IndentRules map[string]string` to `FmtConfig`; empty string = no indent, non-empty = literal indent unit
+- [x] thread through `IndentOptions.Rules` in types.go
+- [x] in rules_indent.go: walk env-stack inside-out, consult `Rules[envName]` first, fall back to global
+- [x] update `mergeFmtConfig` for map merging (overlay wins per key, base keys preserved)
+- [x] update `defaultGlobalConfig` template to document `[fmt.indent_rules]`
+- [x] update config.example.toml with indent_rules examples
+- [x] write tests: indent override per env (tikzpicture 2-space, cd no-indent, default fallback), nested envs
+- [x] run `go test ./... && make install`
 
 ### Task 6: prose.tilde-refs rule
 

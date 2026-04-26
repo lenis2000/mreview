@@ -41,9 +41,10 @@ type FmtConfig struct {
 	NoVerify     *bool    `toml:"no_verify"`
 	NoReport     *bool    `toml:"no_report"`
 	VerbatimEnvs []string `toml:"verbatim_envs"`
-	Indent       *bool    `toml:"indent"`      // default true
-	IndentChar   string   `toml:"indent_char"` // "" | "space" | "tab"
-	IndentSize   int      `toml:"indent_size"`
+	Indent       *bool             `toml:"indent"`       // default true
+	IndentChar   string            `toml:"indent_char"`  // "" | "space" | "tab"
+	IndentSize   int               `toml:"indent_size"`
+	IndentRules  map[string]string `toml:"indent_rules"` // per-env indent override; "" = no indent, non-empty = literal indent unit
 	Wrap         string   `toml:"wrap"` // "" | "off" | "column" | "sentence" | "sentence+column"
 	WrapCol      int      `toml:"wrap_col"`
 }
@@ -209,6 +210,14 @@ func mergeFmtConfig(base, overlay *FmtConfig) {
 	}
 	if len(overlay.VerbatimEnvs) > 0 {
 		base.VerbatimEnvs = append([]string(nil), overlay.VerbatimEnvs...)
+	}
+	if len(overlay.IndentRules) > 0 {
+		if base.IndentRules == nil {
+			base.IndentRules = map[string]string{}
+		}
+		for k, v := range overlay.IndentRules {
+			base.IndentRules[k] = v
+		}
 	}
 }
 

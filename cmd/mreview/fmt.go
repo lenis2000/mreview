@@ -164,6 +164,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		Enabled: indentEnabled,
 		UseTab:  indentChar == "tab",
 		Size:    indentSize,
+		Rules:   cfg.Fmt.IndentRules,
 	}
 
 	// Resolve wrap options. Default mode is "sentence+column".
@@ -436,6 +437,7 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		Enabled: indentEnabled,
 		UseTab:  indentChar == "tab",
 		Size:    indentSize,
+		Rules:   cfg.Fmt.IndentRules,
 	}
 
 	wrapMode := cfg.Fmt.Wrap
