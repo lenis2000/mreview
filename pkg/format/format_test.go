@@ -409,6 +409,7 @@ func TestRegistryOrder(t *testing.T) {
 		"space.wrap",
 		"math.paragraph-suppress",
 		"env.spacing",
+		"prose.tilde-refs",
 		"lint.ref-undefined",
 		"lint.label-unused",
 		"lint.label-duplicate",

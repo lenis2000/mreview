@@ -47,6 +47,7 @@ type FmtConfig struct {
 	IndentRules  map[string]string `toml:"indent_rules"` // per-env indent override; "" = no indent, non-empty = literal indent unit
 	Wrap         string   `toml:"wrap"` // "" | "off" | "column" | "sentence" | "sentence+column"
 	WrapCol      int      `toml:"wrap_col"`
+	TildeRefs    []string `toml:"tilde_refs"` // cite/ref commands for prose.tilde-refs; omit = defaults
 }
 
 // DefaultConfig returns an empty Config with non-nil maps so callers can
@@ -218,6 +219,9 @@ func mergeFmtConfig(base, overlay *FmtConfig) {
 		for k, v := range overlay.IndentRules {
 			base.IndentRules[k] = v
 		}
+	}
+	if len(overlay.TildeRefs) > 0 {
+		base.TildeRefs = append([]string(nil), overlay.TildeRefs...)
 	}
 }
 

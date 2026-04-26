@@ -181,9 +181,13 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		Col:  wrapCol,
 	}
 
+	tildeOpts := format.TildeOptions{
+		Refs: cfg.Fmt.TildeRefs,
+	}
+
 	// --summary: scan-only mode; accumulate rewrites/diags across files.
 	if o.Summary {
-		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, cfg, stderr)
+		return runFmtSummary(rest, &o, pdfFix, indentOpts, wrapOpts, tildeOpts, cfg, stderr)
 	}
 
 	// Loop the per-file work; aggregate exit codes.
@@ -192,7 +196,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		if len(rest) > 1 {
 			fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
 		}
-		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, stdout, stderr)
+		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, tildeOpts, stdout, stderr)
 		if code > worst {
 			worst = code
 		}
@@ -211,6 +215,7 @@ func runFmtOne(
 	verifyMode string,
 	indentOpts format.IndentOptions,
 	wrapOpts format.WrapOptions,
+	tildeOpts format.TildeOptions,
 	stdout, stderr io.Writer,
 ) int {
 	fileInfo, statErr := os.Stat(paperPath)
@@ -233,6 +238,7 @@ func runFmtOne(
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
+		Tilde:        tildeOpts,
 	}
 
 	result := format.Apply(src, opts)
@@ -459,6 +465,10 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	tildeOpts := format.TildeOptions{
+		Refs: cfg.Fmt.TildeRefs,
+	}
+
 	opts := format.Options{
 		PDFFix:       pdfFix,
 		Rules:        o.Rule,
@@ -466,6 +476,7 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       indentOpts,
 		Wrap:         wrapOpts,
+		Tilde:        tildeOpts,
 	}
 
 	result := format.Apply(src, opts)
@@ -486,6 +497,7 @@ func runFmtSummary(
 	pdfFix bool,
 	indentOpts format.IndentOptions,
 	wrapOpts format.WrapOptions,
+	tildeOpts format.TildeOptions,
 	cfg *ui.Config,
 	stderr io.Writer,
 ) int {
@@ -508,6 +520,7 @@ func runFmtSummary(
 			VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 			Indent:       indentOpts,
 			Wrap:         wrapOpts,
+			Tilde:        tildeOpts,
 		}
 
 		result := format.Apply(src, opts)

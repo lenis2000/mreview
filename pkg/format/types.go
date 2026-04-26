@@ -57,6 +57,8 @@ type Ctx struct {
 	Indent IndentOptions
 	// Wrap controls space.wrap.
 	Wrap WrapOptions
+	// Tilde controls prose.tilde-refs.
+	Tilde TildeOptions
 }
 
 // LineSkipped reports whether the 1-based source line is silenced by a

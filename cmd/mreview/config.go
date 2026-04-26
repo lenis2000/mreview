@@ -78,6 +78,10 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 #   "sentence+column"   sentences first, then column-cap any too-long sentence
 # wrap     = "sentence+column"
 # wrap_col = 80
+
+# Tilde-before-refs: commands that should be preceded by ~ instead of space.
+# Tier-2 rule (prose.tilde-refs). Default set shown below; omit to use defaults.
+# tilde_refs = ["cite", "citep", "citet", "ref", "eqref", "cref", "Cref", "autoref", "nameref"]
 `
 
 // runConfig opens the user-global mreview config in $EDITOR. If the file

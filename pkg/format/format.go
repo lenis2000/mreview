@@ -23,6 +23,8 @@ type Options struct {
 	Indent IndentOptions
 	// Wrap controls the space.wrap rule.
 	Wrap WrapOptions
+	// Tilde controls the prose.tilde-refs rule.
+	Tilde TildeOptions
 }
 
 // PipelineResult holds the output of a full Apply run.
@@ -108,6 +110,7 @@ func newCtxWithOpts(src []byte, opts Options) *Ctx {
 		verbatimEnvs: append([]string(nil), opts.VerbatimEnvs...),
 		Indent:       opts.Indent,
 		Wrap:         opts.Wrap,
+		Tilde:        opts.Tilde,
 	}
 }
 

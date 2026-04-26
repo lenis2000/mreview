@@ -70,3 +70,8 @@
 # Wrap mode + target column.
 # wrap     = "sentence+column"         # "off" | "column" | "sentence" | "sentence+column"
 # wrap_col = 80                        # target column for "column"/"sentence+column"
+
+# Tilde-before-refs: commands that should be preceded by ~ instead of space.
+# Default: cite, citep, citet, ref, eqref, cref, Cref, autoref, nameref.
+# Omit (or leave empty) to use the defaults; set to override completely.
+# tilde_refs = ["cite", "citep", "citet", "ref", "eqref", "cref", "Cref", "autoref", "nameref"]

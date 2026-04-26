@@ -101,15 +101,15 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Modify: `pkg/ui/config.go`
 - Modify: `config.example.toml`
 
-- [ ] implement rule: insert `~` between word char and cite/ref commands when preceding char is a regular space
-- [ ] conservative skip conditions: preceding is `(`, `[`, `~`, `\`, start-of-line, punctuation; inside protected span; inside excluded ranges (inline math)
-- [ ] reuse `excludedRanges()` from rules_wrap.go to find cite/ref call sites
-- [ ] cite-like command set: cite, citep, citet, ref, eqref, cref, Cref, autoref, nameref
-- [ ] configurable via `FmtConfig.TildeRefs []string` (omit = use defaults)
-- [ ] register as Tier 2 in registry; Hits carry ExpectedDiffSourceLines for every line where the rule fires
-- [ ] update config.example.toml with tilde_refs
-- [ ] write tests: insertion cases (Theorem 1.2 \cite, see \eqref), skip cases (opening paren, start-of-line, already tilde, inside math), protected span no-rewrite
-- [ ] run `go test ./... && make install`
+- [x] implement rule: insert `~` between word char and cite/ref commands when preceding char is a regular space
+- [x] conservative skip conditions: preceding is `(`, `[`, `~`, `\`, start-of-line, punctuation; inside protected span; inside excluded ranges (inline math)
+- [x] reuse `excludedRanges()` from rules_wrap.go to find cite/ref call sites
+- [x] cite-like command set: cite, citep, citet, ref, eqref, cref, Cref, autoref, nameref
+- [x] configurable via `FmtConfig.TildeRefs []string` (omit = use defaults)
+- [x] register as Tier 2 in registry; Hits carry ExpectedDiffSourceLines for every line where the rule fires
+- [x] update config.example.toml with tilde_refs
+- [x] write tests: insertion cases (Theorem 1.2 \cite, see \eqref), skip cases (opening paren, start-of-line, already tilde, inside math), protected span no-rewrite
+- [x] run `go test ./... && make install`
 
 ### Task 7: --lines=START:END range formatting
 
