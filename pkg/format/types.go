@@ -46,7 +46,44 @@ type Ctx struct {
 	Tokens    []parser.Token
 	Doc       *parser.Document // nil for early Tier-1 passes that run before Parse
 	Protected []parser.ProtectedSpan
-	Lines     []int // line-start byte offsets (from parser.LineOffsets)
+	Lines     []int  // line-start byte offsets (from parser.LineOffsets)
+	Skip      []bool // 1-indexed; Skip[L]==true means line L is silenced by % mreview-fmt: skip/off/on
+
+	// Carried over from Options so reindex() can rebuild the protected-span
+	// list with the same extras after each rewrite.
+	verbatimEnvs []string
+
+	// Indent controls space.indent.
+	Indent IndentOptions
+	// Wrap controls space.wrap.
+	Wrap WrapOptions
+}
+
+// LineSkipped reports whether the 1-based source line is silenced by a
+// `% mreview-fmt: skip / off / on` directive. Out-of-range line numbers are
+// treated as not-skipped (defensive).
+func (c *Ctx) LineSkipped(line int) bool {
+	if line <= 0 || line >= len(c.Skip) {
+		return false
+	}
+	return c.Skip[line]
+}
+
+// RangeSkipped reports whether the byte range [start, end) overlaps any
+// line that the skip mask silences. Convenient for rules that work in byte
+// space rather than per-line.
+func (c *Ctx) RangeSkipped(start, end int) bool {
+	if len(c.Skip) <= 1 || end <= start {
+		return false
+	}
+	first := lineAt(c.Lines, start)
+	last := lineAt(c.Lines, end-1)
+	for L := first; L <= last; L++ {
+		if c.LineSkipped(L) {
+			return true
+		}
+	}
+	return false
 }
 
 // Result is the output of a rule's Apply function.

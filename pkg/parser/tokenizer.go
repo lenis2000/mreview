@@ -85,7 +85,10 @@ var sectionLevels = map[string]int{
 var skipEnvs = map[string]bool{
 	"verbatim":   true,
 	"verbatim*":  true,
+	"Verbatim":   true, // fancyvrb / fvextra
+	"Verbatim*":  true,
 	"lstlisting": true,
+	"minted":     true, // Pygments-backed listings
 	"comment":    true,
 }
 

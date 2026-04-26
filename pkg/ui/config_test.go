@@ -36,7 +36,7 @@ func TestLoadConfig_NoFiles(t *testing.T) {
 	dir := t.TempDir()
 	withChdir(t, dir)
 	withEnvHome(t, dir)
-	cfg, err := LoadConfig("")
+	cfg, err := LoadConfig("", false)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Empty(t, cfg.TheoremEnvs)
@@ -61,7 +61,7 @@ status = "orange"
 [keybinds]
 quit = "ZZ"
 `)
-	cfg, err := LoadConfig("")
+	cfg, err := LoadConfig("", false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"lemma", "claim"}, cfg.TheoremEnvs)
 	assert.Equal(t, "pdflatex", cfg.BuildCmd)
@@ -96,7 +96,7 @@ status = "blue"
 [keybinds]
 quit = "ZZ"
 `)
-	cfg, err := LoadConfig("")
+	cfg, err := LoadConfig("", false)
 	require.NoError(t, err)
 	// Slices replaced wholesale.
 	assert.Equal(t, []string{"corollary"}, cfg.TheoremEnvs)
@@ -121,14 +121,14 @@ func TestLoadConfig_ExplicitOverridesAllLayers(t *testing.T) {
 	writeFile(t, explicit, `build_cmd = "explicit"
 theme = "light"
 `)
-	cfg, err := LoadConfig(explicit)
+	cfg, err := LoadConfig(explicit, false)
 	require.NoError(t, err)
 	assert.Equal(t, "explicit", cfg.BuildCmd)
 	assert.Equal(t, "light", cfg.Theme)
 }
 
 func TestLoadConfig_ExplicitMissingIsError(t *testing.T) {
-	_, err := LoadConfig(filepath.Join(t.TempDir(), "does-not-exist.toml"))
+	_, err := LoadConfig(filepath.Join(t.TempDir(), "does-not-exist.toml"), false)
 	require.Error(t, err)
 }
 
@@ -136,7 +136,7 @@ func TestLoadConfig_MalformedIsError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.toml")
 	writeFile(t, path, `theorem_envs = [this is not toml`)
-	_, err := LoadConfig(path)
+	_, err := LoadConfig(path, false)
 	require.Error(t, err)
 }
 
@@ -181,4 +181,92 @@ func TestMergeConfig_SliceReplacementNotAppended(t *testing.T) {
 	overlay := &Config{TheoremEnvs: []string{"c"}}
 	mergeConfig(base, overlay)
 	assert.Equal(t, []string{"c"}, base.TheoremEnvs)
+}
+
+func TestLoadConfig_NoConfigSkipsAllLayers(t *testing.T) {
+	dir := t.TempDir()
+	withChdir(t, dir)
+	withEnvHome(t, dir)
+	writeFile(t, filepath.Join(dir, ".config", "mreview", "config.toml"), `build_cmd = "user"`)
+	writeFile(t, filepath.Join(dir, ".mreview.toml"), `build_cmd = "project"`)
+	cfg, err := LoadConfig("", true)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.BuildCmd, "noconfig must ignore both user and project files")
+}
+
+func TestLoadConfig_FmtSubTable(t *testing.T) {
+	dir := t.TempDir()
+	withChdir(t, dir)
+	withEnvHome(t, dir)
+	writeFile(t, filepath.Join(dir, ".mreview.toml"), `
+[fmt]
+no_pdf_fix    = true
+verify_pdf    = "text"
+indent        = false
+indent_char   = "space"
+indent_size   = 2
+wrap          = "off"
+wrap_col      = 100
+verbatim_envs = ["myverbatim"]
+`)
+	cfg, err := LoadConfig("", false)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Fmt.NoPDFFix)
+	assert.True(t, *cfg.Fmt.NoPDFFix)
+	assert.Equal(t, "text", cfg.Fmt.VerifyPDF)
+	require.NotNil(t, cfg.Fmt.Indent)
+	assert.False(t, *cfg.Fmt.Indent)
+	assert.Equal(t, "space", cfg.Fmt.IndentChar)
+	assert.Equal(t, 2, cfg.Fmt.IndentSize)
+	assert.Equal(t, "off", cfg.Fmt.Wrap)
+	assert.Equal(t, 100, cfg.Fmt.WrapCol)
+	assert.Equal(t, []string{"myverbatim"}, cfg.Fmt.VerbatimEnvs)
+}
+
+func TestLoadConfig_ProjectDiscoveryWalksUp(t *testing.T) {
+	root := t.TempDir()
+	withEnvHome(t, root)
+
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
+	writeFile(t, filepath.Join(root, ".mreview.toml"), `
+[fmt]
+verify_pdf = "text"
+`)
+	deep := filepath.Join(root, "sub", "sub2")
+	require.NoError(t, os.MkdirAll(deep, 0o755))
+	withChdir(t, deep)
+
+	cfg, err := LoadConfig("", false)
+	require.NoError(t, err)
+	assert.Equal(t, "text", cfg.Fmt.VerifyPDF, "should discover .mreview.toml at the git root")
+}
+
+func TestLoadConfig_ProjectDiscoveryStopsAtGitRoot(t *testing.T) {
+	// Outer dir has a .mreview.toml. Inner dir is a git repo (with .git but
+	// no .mreview.toml). Discovery from inner must stop at the git root and
+	// must NOT find the outer config.
+	outer := t.TempDir()
+	withEnvHome(t, outer)
+	writeFile(t, filepath.Join(outer, ".mreview.toml"), `
+[fmt]
+verify_pdf = "text"
+`)
+	inner := filepath.Join(outer, "inner")
+	require.NoError(t, os.MkdirAll(filepath.Join(inner, ".git"), 0o755))
+	withChdir(t, inner)
+
+	cfg, err := LoadConfig("", false)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Fmt.VerifyPDF, "discovery must stop at the inner git root")
+}
+
+func TestMergeConfig_FmtPointerBoolOverride(t *testing.T) {
+	base := DefaultConfig()
+	tru := true
+	base.Fmt.NoPDFFix = &tru
+	fal := false
+	overlay := &Config{Fmt: FmtConfig{NoPDFFix: &fal}}
+	mergeConfig(base, overlay)
+	require.NotNil(t, base.Fmt.NoPDFFix)
+	assert.False(t, *base.Fmt.NoPDFFix, "explicitly-set false in overlay must override true in base")
 }

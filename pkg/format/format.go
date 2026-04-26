@@ -15,6 +15,14 @@ type Options struct {
 	Diag bool
 	// Rules, if non-empty, restricts the run to only these rule IDs.
 	Rules []string
+	// VerbatimEnvs adds caller-supplied environments to the protected-span
+	// list (in addition to the built-in verbatim/Verbatim/lstlisting/minted/
+	// comment defaults). Useful for user-defined listing wrappers.
+	VerbatimEnvs []string
+	// Indent controls the space.indent rule.
+	Indent IndentOptions
+	// Wrap controls the space.wrap rule.
+	Wrap WrapOptions
 }
 
 // PipelineResult holds the output of a full Apply run.
@@ -36,7 +44,7 @@ func Apply(src []byte, opts Options) PipelineResult {
 	var allHits []Hit
 	var allDiags []Diag
 
-	ctx := newCtx(src)
+	ctx := newCtxWithOpts(src, opts)
 
 	enabled := enabledRules(opts)
 	for _, rule := range enabled {
@@ -49,7 +57,15 @@ func Apply(src []byte, opts Options) PipelineResult {
 		result := rule.Apply(ctx)
 
 		allHits = append(allHits, result.Hits...)
-		allDiags = append(allDiags, result.Diags...)
+		// Drop Tier-3 diagnostics on lines silenced by % mreview-fmt: skip/off/on.
+		// Tier-1/2 rules already consult ctx.Skip themselves, so Hits are not
+		// filtered here.
+		for _, d := range result.Diags {
+			if ctx.LineSkipped(d.Line) {
+				continue
+			}
+			allDiags = append(allDiags, d)
+		}
 
 		if !bytes.Equal(result.Src, ctx.Src) {
 			nlBefore := bytes.Count(ctx.Src, []byte{'\n'})
@@ -74,21 +90,33 @@ func Apply(src []byte, opts Options) PipelineResult {
 	}
 }
 
-// newCtx builds a fresh Ctx from source bytes.
+// newCtx builds a fresh Ctx from source bytes with default options.
+// Retained for tests and callers that don't need to extend the verbatim list.
 func newCtx(src []byte) *Ctx {
+	return newCtxWithOpts(src, Options{})
+}
+
+// newCtxWithOpts builds a fresh Ctx applying the verbatim-env extras and
+// indent settings from opts.
+func newCtxWithOpts(src []byte, opts Options) *Ctx {
 	return &Ctx{
-		Src:       src,
-		Tokens:    parser.Tokenize(src),
-		Protected: parser.ProtectedSpans(src),
-		Lines:     parser.LineOffsets(src),
+		Src:          src,
+		Tokens:       parser.Tokenize(src),
+		Protected:    parser.ProtectedSpansExtra(src, opts.VerbatimEnvs),
+		Lines:        parser.LineOffsets(src),
+		Skip:         BuildSkipMask(src),
+		verbatimEnvs: append([]string(nil), opts.VerbatimEnvs...),
+		Indent:       opts.Indent,
+		Wrap:         opts.Wrap,
 	}
 }
 
 // reindex recomputes the mutable indices on ctx after a source change.
 func reindex(ctx *Ctx) {
 	ctx.Tokens = parser.Tokenize(ctx.Src)
-	ctx.Protected = parser.ProtectedSpans(ctx.Src)
+	ctx.Protected = parser.ProtectedSpansExtra(ctx.Src, ctx.verbatimEnvs)
 	ctx.Lines = parser.LineOffsets(ctx.Src)
+	ctx.Skip = BuildSkipMask(ctx.Src)
 }
 
 // ValidateRuleIDs checks that all rule IDs in ids exist in the Registry.

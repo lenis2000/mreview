@@ -90,6 +90,7 @@ type opts struct {
 	Sidecar  string `long:"sidecar" description:"path to sidecar .mreview.md (default: <paper>.mreview.md)"`
 	Stdout   string `long:"stdout" default:"md" choice:"md" choice:"json" choice:"none" description:"format for annotations emitted on quit"`
 	Config   string `long:"config" description:"path to config file (default: ~/.config/mreview/config.toml)"`
+	NoConfig bool   `long:"noconfig" description:"ignore config files; use built-in defaults"`
 	Version  bool   `short:"v" long:"version" description:"print version and exit"`
 
 	File string `positional-arg-name:"paper.tex" description:"path to LaTeX paper source"`
@@ -167,7 +168,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	doc.File = o.File
 
 	// Load config early so the build step can use cfg.BuildCmd.
-	cfg, cfgErr := ui.LoadConfig(o.Config)
+	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
 	if cfgErr != nil {
 		fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
 		return 1

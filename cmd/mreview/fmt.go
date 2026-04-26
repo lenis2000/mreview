@@ -13,6 +13,7 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 
 	"mreview/pkg/format"
+	"mreview/pkg/ui"
 )
 
 // fmtOpts holds flags for the "mreview fmt" subcommand.
@@ -22,6 +23,7 @@ import (
 // --no-* flags or --verify-pdf=text to opt out.
 type fmtOpts struct {
 	Diff         bool     `long:"diff" description:"show unified diff to stdout, do not write"`
+	Print        bool     `long:"print" short:"p" description:"print formatted source to stdout, do not write"`
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
 	NoPDFFix     bool     `long:"no-pdf-fix" description:"disable Tier-2 PDF-fixing rules (Tier-1 only)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
@@ -30,6 +32,10 @@ type fmtOpts struct {
 	VerifyPDF    string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode (default: visual)"`
 	NoReport     bool     `long:"no-report" description:"do not write paper.tex.fmt-report.md"`
 	CleanTempdir bool     `long:"clean-tempdir" description:"remove all mr-fmt-* verification tempdirs"`
+	Config       string   `long:"config" description:"path to config file"`
+	NoConfig     bool     `long:"noconfig" description:"ignore config files; use built-in defaults"`
+	NoIndent     bool     `long:"no-indent" description:"disable env-aware reindentation"`
+	Wrap         string   `long:"wrap" description:"wrap mode: off | column | sentence | sentence+column"`
 }
 
 // runFmt implements "mreview fmt [FLAGS] paper.tex".
@@ -50,6 +56,12 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// --print is mutually exclusive with --diff and --check.
+	if (o.Print && o.Diff) || (o.Print && o.Check) || (o.Diff && o.Check) {
+		fmt.Fprintln(stderr, "mreview fmt: --diff, --print, and --check are mutually exclusive")
+		return 2
+	}
+
 	// --clean-tempdir: remove all verification tempdirs and exit.
 	if o.CleanTempdir {
 		if err := format.CleanTempDirs(); err != nil {
@@ -62,17 +74,113 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	if len(rest) == 0 {
 		fmt.Fprintln(stderr, "mreview fmt: missing paper argument")
-		fmt.Fprintln(stderr, "usage: mreview fmt [OPTIONS] paper.tex")
-		return 2
-	}
-	if len(rest) > 1 {
-		fmt.Fprintf(stderr, "mreview fmt: unexpected extra argument %q\n", rest[1])
-		fmt.Fprintln(stderr, "usage: mreview fmt [OPTIONS] paper.tex")
+		fmt.Fprintln(stderr, "usage: mreview fmt [OPTIONS] paper.tex [paper.tex...]")
 		return 2
 	}
 
-	paperPath := rest[0]
+	// --print / --diff / --check have no sensible interpretation across many
+	// files: refuse so output isn't accidentally interleaved.
+	if (o.Print || o.Diff || o.Check) && len(rest) > 1 {
+		fmt.Fprintln(stderr, "mreview fmt: --print, --diff, and --check accept only one file")
+		return 2
+	}
 
+	// Validate --rule IDs once before opening any file.
+	if err := format.ValidateRuleIDs(o.Rule); err != nil {
+		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
+		return 2
+	}
+
+	// Load config once; defaults are shared across all files.
+	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
+	if cfgErr != nil {
+		fmt.Fprintf(stderr, "mreview fmt: %v\n", cfgErr)
+		return 1
+	}
+
+	// Resolve aggressive defaults. Flag (when set) overrides config; config
+	// (when set) overrides built-in default. Built-in default is "aggressive":
+	// pdf-fix on, verify=visual, report on.
+	pdfFix := !resolveBool(o.NoPDFFix, cfg.Fmt.NoPDFFix, false)
+	noVerify := resolveBool(o.NoVerify, cfg.Fmt.NoVerify, false)
+	wantReport := !resolveBool(o.NoReport, cfg.Fmt.NoReport, false)
+	verifyMode := o.VerifyPDF
+	if verifyMode == "" {
+		verifyMode = cfg.Fmt.VerifyPDF
+	}
+	if verifyMode == "" {
+		verifyMode = "visual"
+	}
+
+	// Resolve indent options. Default ON; flag (--no-indent) wins, then
+	// config (`[fmt] indent`), else the built-in default (true).
+	indentEnabled := !o.NoIndent
+	if !o.NoIndent && cfg.Fmt.Indent != nil {
+		indentEnabled = *cfg.Fmt.Indent
+	}
+	indentChar := cfg.Fmt.IndentChar
+	if indentChar == "" {
+		indentChar = "tab"
+	}
+	indentSize := cfg.Fmt.IndentSize
+	if indentSize <= 0 {
+		if indentChar == "tab" {
+			indentSize = 1
+		} else {
+			indentSize = 2
+		}
+	}
+	indentOpts := format.IndentOptions{
+		Enabled: indentEnabled,
+		UseTab:  indentChar == "tab",
+		Size:    indentSize,
+	}
+
+	// Resolve wrap options. Default mode is "sentence+column"; flag wins,
+	// then config, else built-in default.
+	wrapMode := o.Wrap
+	if wrapMode == "" {
+		wrapMode = cfg.Fmt.Wrap
+	}
+	if wrapMode == "" {
+		wrapMode = "sentence+column"
+	}
+	wrapCol := cfg.Fmt.WrapCol
+	if wrapCol <= 0 {
+		wrapCol = 100
+	}
+	wrapOpts := format.WrapOptions{
+		Mode: wrapMode,
+		Col:  wrapCol,
+	}
+
+	// Loop the per-file work; aggregate exit codes.
+	worst := 0
+	for i, paperPath := range rest {
+		if len(rest) > 1 {
+			fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
+		}
+		code := runFmtOne(paperPath, &o, cfg, pdfFix, noVerify, wantReport, verifyMode, indentOpts, wrapOpts, stdout, stderr)
+		if code > worst {
+			worst = code
+		}
+	}
+	return worst
+}
+
+// runFmtOne runs the format pipeline for a single .tex file. Returns 0 on
+// success, 1 on per-file errors, 2 on usage errors. Caller pre-validates
+// shared inputs (--rule, config) and resolves the aggressive defaults.
+func runFmtOne(
+	paperPath string,
+	o *fmtOpts,
+	cfg *ui.Config,
+	pdfFix, noVerify, wantReport bool,
+	verifyMode string,
+	indentOpts format.IndentOptions,
+	wrapOpts format.WrapOptions,
+	stdout, stderr io.Writer,
+) int {
 	fileInfo, statErr := os.Stat(paperPath)
 	if statErr != nil {
 		fmt.Fprintf(stderr, "mreview fmt: cannot read %q: %v\n", paperPath, statErr)
@@ -85,28 +193,14 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Validate --rule IDs before running the pipeline so typos
-	// don't silently produce a no-op success.
-	if err := format.ValidateRuleIDs(o.Rule); err != nil {
-		fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
-		return 2
-	}
-
-	// Resolve aggressive defaults.
-	pdfFix := !o.NoPDFFix
-	wantReport := !o.NoReport
-	// Empty --verify-pdf means visual (paranoid). --verify-pdf=text opts back
-	// to text-layer only.
-	verifyMode := o.VerifyPDF
-	if verifyMode == "" {
-		verifyMode = "visual"
-	}
-
 	// Build pipeline options.
 	opts := format.Options{
-		PDFFix: pdfFix,
-		Rules:  o.Rule,
-		Diag:   wantReport, // enable diagnostics when a report will be written
+		PDFFix:       pdfFix,
+		Rules:        o.Rule,
+		Diag:         wantReport, // enable diagnostics when a report will be written
+		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
+		Indent:       indentOpts,
+		Wrap:         wrapOpts,
 	}
 
 	result := format.Apply(src, opts)
@@ -138,6 +232,13 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		if o.Check {
 			return 0
 		}
+		if o.Print {
+			if _, werr := stdout.Write(result.Src); werr != nil {
+				fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
+				return 1
+			}
+			return 0
+		}
 		if !wantReport || len(result.Diags) == 0 {
 			fmt.Fprintln(stderr, "mreview fmt: no changes")
 		}
@@ -156,6 +257,15 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return printDiff(stdout, paperPath, src, result.Src)
 	}
 
+	// --print: write formatted source to stdout, no file write, no verify, no report.
+	if o.Print {
+		if _, werr := stdout.Write(result.Src); werr != nil {
+			fmt.Fprintf(stderr, "mreview fmt: write stdout: %v\n", werr)
+			return 1
+		}
+		return 0
+	}
+
 	// Write mode: check dirty tree unless --allow-dirty.
 	if !o.AllowDirty {
 		dirty, dirtyErr := isGitDirty(paperPath)
@@ -171,7 +281,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 
 	// Verify: build before/after PDFs and compare text layer.
 	var verifyResult *format.VerifyResult
-	if !o.NoVerify {
+	if !noVerify {
 		tree, treeErr := format.DiscoverTree(paperPath)
 		if treeErr != nil {
 			fmt.Fprintf(stderr, "mreview fmt: discover build inputs: %v\n", treeErr)
@@ -241,6 +351,21 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+// resolveBool returns the effective bool from (flag, config, default).
+//
+// Flag wins when true (go-flags can't distinguish "passed false" from "not
+// passed"). Otherwise config wins when explicitly set. Otherwise the built-in
+// default is used.
+func resolveBool(flag bool, cfg *bool, def bool) bool {
+	if flag {
+		return true
+	}
+	if cfg != nil {
+		return *cfg
+	}
+	return def
 }
 
 // printDiff writes a unified diff of before/after to w, returning exit code.

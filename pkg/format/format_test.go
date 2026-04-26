@@ -387,8 +387,8 @@ func TestDefaultOptionsSafeOnly(t *testing.T) {
 	for _, r := range rules {
 		assert.Equal(t, Safe, r.Tier, "default should only enable Safe rules")
 	}
-	// We have exactly 7 safe rules.
-	assert.Equal(t, 7, len(rules))
+	// We have exactly 9 safe rules (incl. space.indent, space.wrap).
+	assert.Equal(t, 9, len(rules))
 }
 
 // TestRegistryOrder verifies rules are in the expected order.
@@ -405,6 +405,8 @@ func TestRegistryOrder(t *testing.T) {
 		"space.item-per-line",
 		"space.proof-delim-per-line",
 		"space.display-delim-per-line",
+		"space.indent",
+		"space.wrap",
 		"math.paragraph-suppress",
 		"env.spacing",
 		"lint.ref-undefined",

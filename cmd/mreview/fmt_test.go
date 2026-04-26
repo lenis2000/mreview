@@ -23,6 +23,67 @@ func writeFmtFixture(t *testing.T) string {
 	return paper
 }
 
+func TestFmt_PrintWritesToStdout(t *testing.T) {
+	paper := writeFmtFixture(t)
+	original, _ := os.ReadFile(paper)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--print", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	// Stdout has the formatted source (trailing whitespace stripped).
+	if !strings.Contains(stdout.String(), "hi\n") {
+		t.Fatalf("expected formatted output on stdout, got %q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "hi  \n") {
+		t.Fatalf("trailing whitespace must be stripped in stdout, got %q", stdout.String())
+	}
+	// File must NOT have been modified.
+	current, _ := os.ReadFile(paper)
+	if !bytes.Equal(original, current) {
+		t.Fatalf("--print must not modify the file; before=%q after=%q", original, current)
+	}
+}
+
+func TestFmt_PrintNoChanges(t *testing.T) {
+	paper := writeFmtFixtureClean(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--print", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		t.Fatalf("--print must emit even unchanged source to stdout")
+	}
+}
+
+func TestFmt_PrintRejectsConflictingFlags(t *testing.T) {
+	paper := writeFmtFixture(t)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"print+diff", []string{"fmt", "--print", "--diff", paper}},
+		{"print+check", []string{"fmt", "--print", "--check", paper}},
+		{"diff+check", []string{"fmt", "--diff", "--check", paper}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(c.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2 for %v, got %d", c.args, code)
+			}
+			if !strings.Contains(stderr.String(), "mutually exclusive") {
+				t.Fatalf("expected mutually-exclusive message, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 // writeFmtFixtureClean writes a .tex file that requires no formatting changes.
 func writeFmtFixtureClean(t *testing.T) string {
 	t.Helper()
@@ -46,14 +107,50 @@ func TestFmt_MissingArg(t *testing.T) {
 	}
 }
 
-func TestFmt_ExtraArg(t *testing.T) {
+func TestFmt_MultiFile_BothMissing(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"fmt", "a.tex", "b.tex"}, &stdout, &stderr)
-	if code != 2 {
-		t.Fatalf("expected exit 2, got %d", code)
+	code := run([]string{"fmt", "/nonexistent/a.tex", "/nonexistent/b.tex"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit 1 for missing files, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "unexpected extra argument") {
-		t.Fatalf("expected extra-arg error, got %q", stderr.String())
+	// Both paths must show a cannot-read error.
+	if c := strings.Count(stderr.String(), "cannot read"); c != 2 {
+		t.Fatalf("expected cannot-read for both files, got %d in %q", c, stderr.String())
+	}
+}
+
+func TestFmt_MultiFile_RewritesEach(t *testing.T) {
+	a := writeFmtFixture(t)
+	b := writeFmtFixture(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--allow-dirty", "--no-verify", "--no-report", a, b}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	for _, p := range []string{a, b} {
+		body, _ := os.ReadFile(p)
+		if strings.Contains(string(body), "hi  ") {
+			t.Fatalf("trailing whitespace must be stripped from %q, got %q", p, body)
+		}
+	}
+	// Progress lines should appear for each file.
+	if !strings.Contains(stderr.String(), "[1/2]") || !strings.Contains(stderr.String(), "[2/2]") {
+		t.Fatalf("expected progress markers, got %q", stderr.String())
+	}
+}
+
+func TestFmt_MultiFile_RejectedWithPrintDiffCheck(t *testing.T) {
+	a := writeFmtFixture(t)
+	b := writeFmtFixture(t)
+	for _, flag := range []string{"--print", "--diff", "--check"} {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"fmt", flag, a, b}, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("expected exit 2 for %s with multi-file, got %d", flag, code)
+		}
+		if !strings.Contains(stderr.String(), "accept only one file") {
+			t.Fatalf("expected single-file error for %s, got %q", flag, stderr.String())
+		}
 	}
 }
 

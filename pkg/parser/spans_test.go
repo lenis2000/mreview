@@ -279,3 +279,49 @@ func TestOverlapsProtected_MultipleSpans(t *testing.T) {
 	assert.False(t, OverlapsProtected(20, 30, spans))
 	assert.True(t, OverlapsProtected(35, 45, spans))
 }
+
+func TestProtectedSpans_CapitalVerbatim(t *testing.T) {
+	src := []byte("\\begin{Verbatim}\nfancyvrb body\n\\end{Verbatim}\n")
+	spans := ProtectedSpans(src)
+	var found bool
+	for _, sp := range spans {
+		if sp.Kind == "verbatim" {
+			found = true
+			assert.Contains(t, string(src[sp.Start:sp.End]), `\begin{Verbatim}`)
+		}
+	}
+	assert.True(t, found, "fancyvrb \\begin{Verbatim} must be detected")
+}
+
+func TestProtectedSpans_Minted(t *testing.T) {
+	src := []byte("\\begin{minted}{python}\nprint('hi')\n\\end{minted}\n")
+	spans := ProtectedSpans(src)
+	var found bool
+	for _, sp := range spans {
+		if sp.Kind == "lstlisting" {
+			found = true
+			assert.Contains(t, string(src[sp.Start:sp.End]), `\begin{minted}`)
+		}
+	}
+	assert.True(t, found, "minted env must be detected as a protected listing")
+}
+
+func TestProtectedSpansExtra_CustomEnv(t *testing.T) {
+	src := []byte("\\begin{mycode}\nverbatim body  \n\\end{mycode}\n")
+	spans := ProtectedSpansExtra(src, []string{"mycode"})
+	var found bool
+	for _, sp := range spans {
+		if sp.Kind == "verbatim" {
+			found = true
+			assert.Contains(t, string(src[sp.Start:sp.End]), `\begin{mycode}`)
+		}
+	}
+	assert.True(t, found, "user-extended verbatim env must be detected")
+
+	// Without the extra it must NOT be detected.
+	plain := ProtectedSpans(src)
+	for _, sp := range plain {
+		assert.NotContains(t, string(src[sp.Start:sp.End]), `\begin{mycode}`,
+			"default ProtectedSpans must not pick up unknown envs")
+	}
+}

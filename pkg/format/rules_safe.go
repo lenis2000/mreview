@@ -73,7 +73,7 @@ func applyTrailing(ctx *Ctx) Result {
 		trimmed := bytes.TrimRight(line, " \t")
 		// Only check whether the trailing whitespace region itself is protected.
 		trailStart := lineStart + len(trimmed)
-		if len(trimmed) < len(line) && !parser.OverlapsProtected(trailStart, lineEnd, ctx.Protected) {
+		if len(trimmed) < len(line) && !parser.OverlapsProtected(trailStart, lineEnd, ctx.Protected) && !ctx.LineSkipped(i+1) {
 			out = append(out, trimmed...)
 			changed = true
 			hits = append(hits, Hit{
@@ -117,7 +117,7 @@ func applyBlankRuns(ctx *Ctx) Result {
 	for _, loc := range locs {
 		start, end := loc[0], loc[1]
 		// Check if the entire blank-line run overlaps a protected region.
-		if parser.OverlapsProtected(start, end, ctx.Protected) {
+		if parser.OverlapsProtected(start, end, ctx.Protected) || ctx.RangeSkipped(start, end) {
 			out = append(out, ctx.Src[prev:end]...)
 			prev = end
 			continue
@@ -141,7 +141,14 @@ func applyBlankRuns(ctx *Ctx) Result {
 }
 
 // applyTabs replaces tab characters with 4 spaces, skipping protected regions.
+//
+// When the indentation pass uses tabs (`indent_char = "tab"`), the leading
+// tabs that space.indent will write are NOT user errors, so this rule
+// becomes a no-op to avoid a tabs↔spaces fight on every run.
 func applyTabs(ctx *Ctx) Result {
+	if ctx.Indent.Enabled && ctx.Indent.UseTab {
+		return Result{Src: ctx.Src}
+	}
 	if !bytes.ContainsRune(ctx.Src, '\t') {
 		return Result{Src: ctx.Src}
 	}
@@ -150,7 +157,7 @@ func applyTabs(ctx *Ctx) Result {
 	out := make([]byte, 0, len(ctx.Src))
 
 	for i := 0; i < len(ctx.Src); i++ {
-		if ctx.Src[i] == '\t' && !parser.OverlapsProtected(i, i+1, ctx.Protected) {
+		if ctx.Src[i] == '\t' && !parser.OverlapsProtected(i, i+1, ctx.Protected) && !ctx.RangeSkipped(i, i+1) {
 			out = append(out, "    "...)
 			lineNum := lineAt(ctx.Lines, i)
 			hits = append(hits, Hit{
@@ -181,8 +188,8 @@ func applyDisplayStyle(ctx *Ctx) Result {
 		if src[i] != '$' || src[i+1] != '$' {
 			continue
 		}
-		// Found '$$' at position i. Check if inside a protected region.
-		if parser.OverlapsProtected(i, i+2, ctx.Protected) {
+		// Found '$$' at position i. Check if inside a protected/skipped region.
+		if parser.OverlapsProtected(i, i+2, ctx.Protected) || ctx.RangeSkipped(i, i+2) {
 			i++ // skip the second $
 			continue
 		}
@@ -339,6 +346,9 @@ func applyItemPerLine(ctx *Ctx) Result {
 			if parser.OverlapsProtected(pos, pos+5, ctx.Protected) {
 				continue
 			}
+			if ctx.LineSkipped(tk.Line) {
+				continue
+			}
 			inserts = append(inserts, newlineInsert{pos: pos, line: tk.Line})
 		}
 	}
@@ -384,6 +394,9 @@ func applyDisplayDelimPerLine(ctx *Ctx) Result {
 		if parser.OverlapsProtected(pos, pos+1, ctx.Protected) {
 			return
 		}
+		if ctx.LineSkipped(line) {
+			return
+		}
 		inserts = append(inserts, newlineInsert{pos: pos, line: line})
 	}
 	addTrailing := func(endPos int, line int) {
@@ -395,6 +408,9 @@ func applyDisplayDelimPerLine(ctx *Ctx) Result {
 			return
 		}
 		if parser.OverlapsProtected(endPos, endPos+1, ctx.Protected) {
+			return
+		}
+		if ctx.LineSkipped(line) {
 			return
 		}
 		inserts = append(inserts, newlineInsert{pos: endPos, line: line})
@@ -469,6 +485,9 @@ func applyEnvDelimPerLine(ctx *Ctx, ruleID string, match func(env string) bool) 
 	var inserts []newlineInsert
 
 	addBoth := func(startPos, endPos, line int) {
+		if ctx.LineSkipped(line) {
+			return
+		}
 		lineStart := ctx.Lines[line]
 		if startPos > 0 && hasNonWhitespacePrefix(src[lineStart:startPos]) &&
 			!parser.OverlapsProtected(startPos, startPos+1, ctx.Protected) {

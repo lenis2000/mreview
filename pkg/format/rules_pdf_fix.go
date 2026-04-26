@@ -120,6 +120,18 @@ func applyMathParagraphSuppress(ctx *Ctx) Result {
 		}
 	}
 
+	// Drop any removal that overlaps a `% mreview-fmt: skip/off/on`-masked line.
+	if len(removals) > 0 && len(ctx.Skip) > 1 {
+		filtered := removals[:0]
+		for _, r := range removals {
+			if ctx.RangeSkipped(r.start, r.end) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		removals = filtered
+	}
+
 	if len(removals) == 0 {
 		return Result{Src: ctx.Src}
 	}
@@ -527,6 +539,13 @@ func applyEnvSpacing(ctx *Ctx) Result {
 
 		// Check if the env/section is at the start of the file (no line above).
 		if targetLine <= 1 {
+			continue
+		}
+
+		// Honour `% mreview-fmt: skip/off/on` on the env line or the line
+		// above (we'd otherwise be inserting a blank line into a masked
+		// region).
+		if ctx.LineSkipped(targetLine) || ctx.LineSkipped(targetLine-1) {
 			continue
 		}
 

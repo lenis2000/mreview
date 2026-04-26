@@ -19,6 +19,7 @@ _mreview() {
     '--sidecar=[path to sidecar .mreview.md]:sidecar file:_files' \
     '--stdout=[format for annotations emitted on quit]:format:(md json none)' \
     '--config=[path to config file]:config file:_files -g "*.toml"' \
+    '--noconfig[ignore config files; use built-in defaults]' \
     '1: :->cmd_or_paper' \
     '*:: :->args'
 
@@ -39,15 +40,20 @@ _mreview() {
 
 _mreview_fmt() {
   _arguments \
-    '--diff[show unified diff to stdout, do not write]' \
-    '--check[exit 1 if changes needed]' \
+    '(--print --check)--diff[show unified diff to stdout, do not write]' \
+    '(--diff --check -p --print)'{-p,--print}'[print formatted source to stdout, do not write]' \
+    '(--diff --print)--check[exit 1 if changes needed]' \
     '--no-pdf-fix[disable Tier-2 PDF-fixing rules (Tier-1 only)]' \
+    '--no-indent[disable env-aware reindentation]' \
+    '--wrap=[wrap mode]:mode:(off column sentence sentence+column)' \
     '*--rule=[restrict to these rule IDs]:rule id:' \
     '--allow-dirty[skip dirty-tree check before writing]' \
     '--no-verify[skip PDF verification entirely]' \
     '--verify-pdf=[verifier mode (default: visual)]:mode:(text visual)' \
     '--no-report[do not write paper.tex.fmt-report.md]' \
     '--clean-tempdir[remove all mr-fmt-* verification tempdirs]' \
+    '--config=[path to config file]:config file:_files -g "*.toml"' \
+    '--noconfig[ignore config files; use built-in defaults]' \
     '*:tex file:_files -g "*.tex"'
 }
 

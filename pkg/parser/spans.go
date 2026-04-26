@@ -18,6 +18,13 @@ type ProtectedSpan struct {
 //
 // The returned spans are sorted by Start and never overlap.
 func ProtectedSpans(src []byte) []ProtectedSpan {
+	return ProtectedSpansExtra(src, nil)
+}
+
+// ProtectedSpansExtra is ProtectedSpans plus a caller-supplied list of
+// additional environment names whose bodies should be treated as verbatim
+// (e.g. user-defined listing wrappers). Names are matched exactly.
+func ProtectedSpansExtra(src []byte, extraEnvs []string) []ProtectedSpan {
 	var spans []ProtectedSpan
 
 	// Pass 1: per-line scan for %-comments and inline \verb / \lstinline.
@@ -33,10 +40,20 @@ func ProtectedSpans(src []byte) []ProtectedSpan {
 		}
 	}
 
-	// Pass 2: multi-line skip-envs (verbatim, lstlisting, comment).
-	// Pass the comment/inline spans from pass-1 so that scanSkipEnvs skips
-	// \begin{verbatim} markers that fall inside %-comment lines.
-	spans = append(spans, scanSkipEnvs(src, spans)...)
+	// Build the env set for pass 2: defaults + extras.
+	envs := skipEnvs
+	if len(extraEnvs) > 0 {
+		envs = make(map[string]bool, len(skipEnvs)+len(extraEnvs))
+		for k, v := range skipEnvs {
+			envs[k] = v
+		}
+		for _, e := range extraEnvs {
+			envs[e] = true
+		}
+	}
+
+	// Pass 2: multi-line skip-envs.
+	spans = append(spans, scanSkipEnvsWith(src, spans, envs)...)
 	sortSpans(spans)
 	return spans
 }
@@ -209,10 +226,14 @@ func scanInlineVerb(src []byte, pos, lineEnd int) (ProtectedSpan, int, bool) {
 }
 
 // scanSkipEnvs finds all \begin{env}...\end{env} pairs for environments in
-// skipEnvs and returns a span covering each pair. The existing spans
-// (from pass-1) are consulted so that \begin markers inside %-comment
-// lines are ignored.
+// the default skipEnvs map and returns a span covering each pair.
 func scanSkipEnvs(src []byte, existing []ProtectedSpan) []ProtectedSpan {
+	return scanSkipEnvsWith(src, existing, skipEnvs)
+}
+
+// scanSkipEnvsWith is scanSkipEnvs against a caller-supplied env set so the
+// extras list from ProtectedSpansExtra is honoured.
+func scanSkipEnvsWith(src []byte, existing []ProtectedSpan, envs map[string]bool) []ProtectedSpan {
 	var spans []ProtectedSpan
 	pos := 0
 	for pos < len(src) {
@@ -233,7 +254,7 @@ func scanSkipEnvs(src []byte, existing []ProtectedSpan) []ProtectedSpan {
 		envName := string(src[nameStart:nameEnd])
 		afterBegin := nameEnd + 1
 
-		if !skipEnvs[envName] {
+		if !envs[envName] {
 			pos = afterBegin
 			continue
 		}
@@ -265,9 +286,9 @@ func scanSkipEnvs(src []byte, existing []ProtectedSpan) []ProtectedSpan {
 
 func spanKindForEnv(env string) string {
 	switch env {
-	case "verbatim", "verbatim*":
+	case "verbatim", "verbatim*", "Verbatim", "Verbatim*":
 		return "verbatim"
-	case "lstlisting":
+	case "lstlisting", "minted":
 		return "lstlisting"
 	case "comment":
 		return "comment-env"
