@@ -36,7 +36,6 @@ type fmtOpts struct {
 	NoConfig     bool     `long:"noconfig" description:"ignore config files; use built-in defaults"`
 	NoIndent     bool     `long:"no-indent" description:"disable env-aware reindentation"`
 	Wrap         string   `long:"wrap" description:"wrap mode: off | column | sentence | sentence+column"`
-	WrapCol      int      `long:"wrap-col" description:"target column for wrapping (default: 80)"`
 }
 
 // runFmt implements "mreview fmt [FLAGS] paper.tex".
@@ -146,10 +145,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	if wrapMode == "" {
 		wrapMode = "sentence+column"
 	}
-	wrapCol := o.WrapCol
-	if wrapCol <= 0 {
-		wrapCol = cfg.Fmt.WrapCol
-	}
+	wrapCol := cfg.Fmt.WrapCol
 	if wrapCol <= 0 {
 		wrapCol = 80
 	}

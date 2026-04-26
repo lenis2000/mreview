@@ -46,7 +46,6 @@ _mreview_fmt() {
     '--no-pdf-fix[disable Tier-2 PDF-fixing rules (Tier-1 only)]' \
     '--no-indent[disable env-aware reindentation]' \
     '--wrap=[wrap mode]:mode:(off column sentence sentence+column)' \
-    '--wrap-col=[target column for wrapping (default: 80)]:int:' \
     '*--rule=[restrict to these rule IDs]:rule id:' \
     '--allow-dirty[skip dirty-tree check before writing]' \
     '--no-verify[skip PDF verification entirely]' \
