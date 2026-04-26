@@ -1,0 +1,48 @@
+# GitHub Actions workflow for mreview fmt
+#
+# Checks that all .tex files are properly formatted.
+# Copy this file to .github/workflows/mreview-fmt.yml in your repo.
+
+name: mreview fmt
+
+on:
+  pull_request:
+    paths:
+      - "**.tex"
+  push:
+    branches: [main, master]
+    paths:
+      - "**.tex"
+
+jobs:
+  fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Install mreview
+        run: |
+          git clone https://github.com/OWNER/mreview.git /tmp/mreview
+          cd /tmp/mreview
+          go build -o /usr/local/bin/mreview ./cmd/mreview
+
+      - name: Find changed .tex files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only --diff-filter=ACMR ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- '*.tex')
+          else
+            FILES=$(git diff --name-only --diff-filter=ACMR HEAD~1 -- '*.tex')
+          fi
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Run mreview fmt --check
+        if: steps.changed.outputs.files != ''
+        run: |
+          echo "${{ steps.changed.outputs.files }}" | xargs mreview fmt --check --no-verify

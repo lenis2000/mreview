@@ -1,0 +1,21 @@
+# pre-commit hook configuration for mreview fmt
+#
+# Usage:
+#   1. Copy this file to your repo root as .pre-commit-hooks.yaml
+#   2. Add the repo entry to your .pre-commit-config.yaml (see docs/install/pre-commit.md)
+#
+# Alternatively, use this repo directly as a pre-commit hook source:
+#
+#   repos:
+#     - repo: <mreview-repo-url>
+#       rev: <version>
+#       hooks:
+#         - id: mreview-fmt
+
+- id: mreview-fmt
+  name: mreview fmt
+  description: Normalize LaTeX source formatting (whitespace, indentation, spacing rules)
+  entry: mreview fmt --fail-on-change --no-verify
+  language: golang
+  types: [tex]
+  pass_filenames: true

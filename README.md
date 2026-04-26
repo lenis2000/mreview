@@ -113,6 +113,11 @@ The CLI surface stays small on purpose: only one-off escape hatches
 global config in `$EDITOR` (auto-creates a starter file). See
 [`config.example.toml`](config.example.toml) for every available option.
 
+### CI integration
+
+See [docs/install/pre-commit.md](docs/install/pre-commit.md) for pre-commit
+hook and GitHub Actions setup.
+
 ### Rule tiers
 
 **Tier 1 — Safe (PDF byte-identical):**

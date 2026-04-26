@@ -67,12 +67,12 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Create: `docs/install/pre-commit.md`
 - Modify: `README.md`
 
-- [ ] create pre-commit hook config declaring `mreview-fmt` hook with `entry: mreview fmt --fail-on-change --no-verify`
-- [ ] create GH Actions workflow: install Go, build mreview, run `mreview fmt --check --no-verify` on changed .tex files
-- [ ] write copy-paste setup instructions in docs/install/pre-commit.md
-- [ ] add link from README to pre-commit docs
-- [ ] no code tests needed; verify YAML is valid
-- [ ] run `make install`
+- [x] create pre-commit hook config declaring `mreview-fmt` hook with `entry: mreview fmt --fail-on-change --no-verify`
+- [x] create GH Actions workflow: install Go, build mreview, run `mreview fmt --check --no-verify` on changed .tex files
+- [x] write copy-paste setup instructions in docs/install/pre-commit.md
+- [x] add link from README to pre-commit docs
+- [x] no code tests needed; verify YAML is valid
+- [x] run `make install`
 
 ### Task 5: Per-env indent overrides
 
