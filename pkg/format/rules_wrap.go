@@ -85,81 +85,187 @@ func applyWrap(ctx *Ctx) Result {
 		return Result{Src: ctx.Src}
 	}
 
-	var out bytes.Buffer
-	out.Grow(len(ctx.Src))
-	changed := false
-	var hits []Hit
-
 	doSentence := strings.Contains(mode, "sentence")
 	doColumn := strings.Contains(mode, "column")
 
+	// Classify each line. Paragraph-aware reflow joins runs of "prose"
+	// lines, splits the joined string at sentence boundaries (and/or
+	// column limit), and re-emits — that way an already-hand-wrapped
+	// paragraph at column 80 produces clean sentence-per-line output
+	// instead of more breaks.
+	kinds := make([]lineKind, nLines+1) // 1-indexed
 	for line := 1; line <= nLines; line++ {
+		kinds[line] = classifyLineForWrap(ctx, line)
+	}
+
+	var out bytes.Buffer
+	out.Grow(len(ctx.Src))
+	var hits []Hit
+
+	emitLineRaw := func(line int) {
 		body := lineBytes(ctx, line)
-
-		// Pass-through cases — preserve verbatim text and skip-masked lines.
-		if ctx.LineSkipped(line) || lineWhollyProtected(ctx, line) {
-			out.Write(body)
-		} else {
-			leadLen, allWS := leadingWS(body)
-			lead := string(body[:leadLen])
-			content := string(body[leadLen:])
-			// Strip a trailing comment so we don't break inside it. We only
-			// touch the prose portion; the comment part is re-attached
-			// untouched at the end of its original line.
-			commentStart := -1
-			if !allWS {
-				commentStart = unescapedPercentIdx(content)
-			}
-			prose := content
-			tail := ""
-			if commentStart >= 0 {
-				// Pull the whitespace that connects prose to the comment
-				// into the tail so it survives sentence trimming.
-				cs := commentStart
-				for cs > 0 && (content[cs-1] == ' ' || content[cs-1] == '\t') {
-					cs--
-				}
-				prose = content[:cs]
-				tail = content[cs:]
-			}
-
-			pieces := wrapProse(prose, lead, col, doSentence, doColumn)
-			if len(pieces) == 1 {
-				// no change at the source level
-				out.WriteString(lead)
-				out.WriteString(prose)
-				out.WriteString(tail)
-			} else {
-				changed = true
-				hits = append(hits, Hit{
-					RuleID:  "space.wrap",
-					Line:    line,
-					Excerpt: truncExcerpt(prose),
-				})
-				for i, p := range pieces {
-					if i == 0 {
-						out.WriteString(lead)
-						out.WriteString(p)
-					} else {
-						out.WriteByte('\n')
-						out.WriteString(lead)
-						out.WriteString(p)
-					}
-				}
-				// Trailing comment (if any) sticks to the LAST wrapped piece.
-				out.WriteString(tail)
-			}
-		}
-
+		out.Write(body)
 		if line < nLines || endsWithNewline(ctx.Src) {
 			out.WriteByte('\n')
 		}
 	}
 
-	if !changed {
+	line := 1
+	for line <= nLines {
+		if kinds[line] != kindProse {
+			emitLineRaw(line)
+			line++
+			continue
+		}
+
+		// Gather a maximal run of prose lines.
+		paraStart := line
+		paraEnd := line
+		for paraEnd+1 <= nLines && kinds[paraEnd+1] == kindProse {
+			paraEnd++
+		}
+
+		// Take the leading whitespace from the FIRST line as the
+		// paragraph's indent. Subsequent lines' leading whitespace is
+		// dropped during the join (TeX collapses it anyway).
+		firstBody := lineBytes(ctx, paraStart)
+		leadLen, _ := leadingWS(firstBody)
+		lead := string(firstBody[:leadLen])
+
+		var joined strings.Builder
+		for L := paraStart; L <= paraEnd; L++ {
+			b := lineBytes(ctx, L)
+			content := strings.TrimSpace(string(b))
+			if content == "" {
+				continue
+			}
+			if joined.Len() > 0 {
+				joined.WriteByte(' ')
+			}
+			joined.WriteString(content)
+		}
+		prose := joined.String()
+
+		pieces := wrapProse(prose, lead, col, doSentence, doColumn)
+
+		// Emit reflowed pieces.
+		for i, p := range pieces {
+			if i > 0 {
+				out.WriteByte('\n')
+			}
+			out.WriteString(lead)
+			out.WriteString(p)
+		}
+		if paraEnd < nLines || endsWithNewline(ctx.Src) {
+			out.WriteByte('\n')
+		}
+
+		// Detect change vs. original paragraph slice for hit reporting.
+		origStart := ctx.Lines[paraStart]
+		var origEnd int
+		if paraEnd+1 < len(ctx.Lines) {
+			origEnd = ctx.Lines[paraEnd+1]
+		} else {
+			origEnd = len(ctx.Src)
+		}
+		origSlice := ctx.Src[origStart:origEnd]
+		var newSlice strings.Builder
+		for i, p := range pieces {
+			if i > 0 {
+				newSlice.WriteByte('\n')
+			}
+			newSlice.WriteString(lead)
+			newSlice.WriteString(p)
+		}
+		if paraEnd < nLines || endsWithNewline(ctx.Src) {
+			newSlice.WriteByte('\n')
+		}
+		if string(origSlice) != newSlice.String() {
+			hits = append(hits, Hit{
+				RuleID:  "space.wrap",
+				Line:    paraStart,
+				Excerpt: truncExcerpt(prose),
+			})
+		}
+
+		line = paraEnd + 1
+	}
+
+	result := out.Bytes()
+	if bytes.Equal(result, ctx.Src) {
 		return Result{Src: ctx.Src}
 	}
-	return Result{Src: out.Bytes(), Hits: hits}
+	return Result{Src: result, Hits: hits}
+}
+
+// lineKind classifies a source line for paragraph grouping.
+type lineKind int
+
+const (
+	kindBlank  lineKind = iota // blank/whitespace-only — paragraph break
+	kindStruct                 // structural line (env begin/end, section, item, …) — preserved as-is
+	kindProse                  // joinable prose — eligible for paragraph reflow
+)
+
+// structPrefixes are leading tokens that mark a line as structural
+// (i.e. NOT eligible for paragraph reflow).
+var structPrefixes = []string{
+	`\begin{`, `\end{`,
+	`\item`, `\noindent`,
+	`\section`, `\subsection`, `\subsubsection`,
+	`\paragraph`, `\subparagraph`,
+	`\chapter`, `\part`,
+	`\maketitle`, `\tableofcontents`,
+	`\bibliography`, `\printbibliography`,
+	`\input`, `\include`,
+	`\[`, `\]`, `\(`, `\)`,
+	`$$`,
+	`\par `, `\par\t`,
+}
+
+// classifyLineForWrap categorises a line for paragraph-aware reflow. A
+// line is structural (and thus a paragraph terminator) when it carries
+// hand-laid layout we should never touch — env delimiters, section
+// commands, list items, display-math fences, trailing comments, or the
+// `\\` row break.
+func classifyLineForWrap(ctx *Ctx, line int) lineKind {
+	body := lineBytes(ctx, line)
+	leadLen, allWS := leadingWS(body)
+	if allWS {
+		return kindBlank
+	}
+	if ctx.LineSkipped(line) || lineWhollyProtected(ctx, line) {
+		return kindStruct
+	}
+	bodyContent := string(body[leadLen:])
+
+	// Trailing inline comment present? Conservative: don't reflow lines
+	// that carry side-comments; the user usually wants the comment to
+	// stay attached to *that* physical line.
+	if unescapedPercentIdx(bodyContent) >= 0 {
+		return kindStruct
+	}
+
+	// Forced row break.
+	if strings.HasSuffix(strings.TrimRight(bodyContent, " \t"), `\\`) {
+		return kindStruct
+	}
+
+	// Structural leading command?
+	for _, p := range structPrefixes {
+		if strings.HasPrefix(bodyContent, p) {
+			return kindStruct
+		}
+	}
+	// `\par` as a standalone token (not e.g. \parbox).
+	if strings.HasPrefix(bodyContent, `\par`) {
+		rest := bodyContent[4:]
+		if rest == "" || !isAlpha(rest[0]) {
+			return kindStruct
+		}
+	}
+
+	return kindProse
 }
 
 // wrapProse splits prose into one-or-more pieces according to the requested

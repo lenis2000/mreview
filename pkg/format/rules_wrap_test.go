@@ -99,13 +99,13 @@ func TestWrap_SkipDirective(t *testing.T) {
 	assert.Equal(t, src, got, "skipped lines must not be wrapped")
 }
 
-func TestWrap_TrailingCommentSticksToLastPiece(t *testing.T) {
-	// Trailing comment on a multi-sentence line: comment must end up on
-	// the line of the last wrapped piece (not get duplicated or re-anchored).
+func TestWrap_TrailingCommentLineLeftAlone(t *testing.T) {
+	// Lines with a trailing inline comment are preserved verbatim — the
+	// comment is the user's annotation of THIS physical line, so we don't
+	// reflow it (would re-anchor the comment to a different sentence).
 	src := "First sentence. Second sentence. % side note\n"
 	got := runWrap(src, "sentence", 200)
-	// Should split into two prose lines; the comment stays on the second.
-	assert.Equal(t, "First sentence.\nSecond sentence. % side note\n", got)
+	assert.Equal(t, src, got)
 }
 
 func TestWrap_Idempotent(t *testing.T) {
@@ -113,4 +113,73 @@ func TestWrap_Idempotent(t *testing.T) {
 	once := runWrap(src, "sentence", 100)
 	twice := runWrap(once, "sentence", 100)
 	assert.Equal(t, once, twice, "wrap must be idempotent")
+}
+
+// Regression: input that's already hand-wrapped at column 80 (mid-sentence
+// breaks) must reflow to clean sentence-per-line, NOT produce additional
+// breaks on top of the existing ones.
+func TestWrap_RejoinsAlreadyWrappedParagraph(t *testing.T) {
+	src := strings.Join([]string{
+		"This is the first",
+		"sentence. And here",
+		"is the second one.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	want := strings.Join([]string{
+		"This is the first sentence.",
+		"And here is the second one.",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+// Regression: a paragraph with three lines and three sentences should
+// reflow to three lines regardless of where the original breaks were.
+func TestWrap_ParagraphReflowSentencePerLine(t *testing.T) {
+	src := strings.Join([]string{
+		"First. Second sentence here that wraps to two",
+		"physical lines. Third one is also long enough to span multiple",
+		"input lines comfortably.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	want := strings.Join([]string{
+		"First.",
+		"Second sentence here that wraps to two physical lines.",
+		"Third one is also long enough to span multiple input lines comfortably.",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+// Paragraph reflow is idempotent: running wrap a second time on the
+// reflowed output must not add or remove any breaks.
+func TestWrap_ParagraphReflowIdempotent(t *testing.T) {
+	src := strings.Join([]string{
+		"This is the first",
+		"sentence. And here",
+		"is the second.",
+		"",
+	}, "\n")
+	once := runWrap(src, "sentence", 200)
+	twice := runWrap(once, "sentence", 200)
+	assert.Equal(t, once, twice)
+}
+
+// Structural lines (\begin, \end, \section, \item, blank, \\) terminate
+// paragraphs — surrounding prose must not be joined across them.
+func TestWrap_StructuralLinesAreParagraphBreaks(t *testing.T) {
+	src := strings.Join([]string{
+		"Above the env.",
+		"\\begin{theorem}",
+		"Inside.",
+		"\\end{theorem}",
+		"Below the env.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	// Structure preserved; each body line is its own paragraph (single
+	// sentence each), so no reflow occurs.
+	assert.Equal(t, src, got)
 }
