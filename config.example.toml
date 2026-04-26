@@ -1,0 +1,66 @@
+# mreview example config
+#
+# Resolved in this order (highest priority first):
+#
+#   1. mreview --config /path/to/file.toml          (explicit)
+#   2. .mreview.toml found by walking from cwd      (project)
+#   3. ~/.config/mreview/config.toml                (user-global)
+#
+# Pass --noconfig to skip layers (1)–(3) and use built-in defaults.
+#
+# Every value below is set to the BUILT-IN DEFAULT, so this file is
+# behaviourally identical to no config at all. Uncomment + edit the
+# fields you want to change.
+
+# ---------------------------------------------------------------------
+# Top-level — mreview review session
+# ---------------------------------------------------------------------
+
+# build_cmd = ""                       # override latexmk invocation; "" = use default
+# theme     = "dark"                   # "dark" | "light"
+# theorem_envs = []                    # extra envs treated as theorem-like
+# figure_envs  = []                    # extra envs treated as figure-like
+
+# [colors]                             # palette overrides; see ui/styles.go
+# status = "orange"
+
+# [keybinds]                           # keybinding overrides; see ui/keys.go
+# quit = "ZZ"
+
+# ---------------------------------------------------------------------
+# [fmt] — `mreview fmt` defaults
+# ---------------------------------------------------------------------
+
+[fmt]
+
+# Tier-2 PDF-fixing rules (math.paragraph-suppress, env.spacing).
+# Default: ON.
+# no_pdf_fix = false
+
+# Verifier strictness. "visual" runs the paranoid pixel-level diff-pdf
+# pass on top of text-layer verification. "text" runs only the
+# text-layer check. Default: "visual".
+# verify_pdf = "visual"
+
+# Skip PDF verification entirely. Faster but loses the safety net.
+# Default: false. (Also available as --no-verify on the CLI.)
+# no_verify = false
+
+# Suppress paper.tex.fmt-report.md. The TUI loads this report and
+# surfaces lint diagnostics in the `issues` filter, so most users
+# want it on. Default: false. (Also available as --no-report.)
+# no_report = false
+
+# Extra environments to treat as opaque (verbatim-like). The built-in
+# list already covers verbatim, Verbatim (fancyvrb), lstlisting, minted,
+# comment.
+# verbatim_envs = ["mycustomlisting"]
+
+# Indentation pass.
+# indent      = true                   # default: ON
+# indent_char = "tab"                  # "tab" | "space"
+# indent_size = 1                      # 1 tab/level, or e.g. 2 for spaces
+
+# Wrap mode + target column.
+# wrap     = "sentence+column"         # "off" | "column" | "sentence" | "sentence+column"
+# wrap_col = 80                        # target column for "column"/"sentence+column"

@@ -104,8 +104,13 @@ func main() {
 // 0 = success, 1 = error, 2 = usage error.
 func run(args []string, stdout, stderr io.Writer) int {
 	// Dispatch subcommands before main flags parsing.
-	if len(args) > 0 && args[0] == "fmt" {
-		return runFmt(args[1:], stdout, stderr)
+	if len(args) > 0 {
+		switch args[0] {
+		case "fmt":
+			return runFmt(args[1:], stdout, stderr)
+		case "config":
+			return runConfig(args[1:], stdout, stderr)
+		}
 	}
 
 	var o opts

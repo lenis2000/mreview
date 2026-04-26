@@ -19,23 +19,22 @@ import (
 // fmtOpts holds flags for the "mreview fmt" subcommand.
 //
 // Defaults are aggressive: Tier-2 PDF-fix rules on, paranoid pixel-level
-// verification on, and a fmt-report.md emitted next to the paper. Use the
-// --no-* flags or --verify-pdf=text to opt out.
+// verification on, and a fmt-report.md emitted next to the paper. Persistent
+// behaviour is configured in ~/.config/mreview/config.toml or .mreview.toml
+// under the [fmt] sub-table; the CLI exposes only one-off escape hatches
+// (--no-verify, --no-report) and per-invocation modes (--diff, --print,
+// --check, --rule).
 type fmtOpts struct {
 	Diff         bool     `long:"diff" description:"show unified diff to stdout, do not write"`
 	Print        bool     `long:"print" short:"p" description:"print formatted source to stdout, do not write"`
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
-	NoPDFFix     bool     `long:"no-pdf-fix" description:"disable Tier-2 PDF-fixing rules (Tier-1 only)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
-	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely"`
-	VerifyPDF    string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode (default: visual)"`
-	NoReport     bool     `long:"no-report" description:"do not write paper.tex.fmt-report.md"`
+	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
+	NoReport     bool     `long:"no-report" description:"do not write paper.tex.fmt-report.md (one-off)"`
 	CleanTempdir bool     `long:"clean-tempdir" description:"remove all mr-fmt-* verification tempdirs"`
 	Config       string   `long:"config" description:"path to config file"`
 	NoConfig     bool     `long:"noconfig" description:"ignore config files; use built-in defaults"`
-	NoIndent     bool     `long:"no-indent" description:"disable env-aware reindentation"`
-	Wrap         string   `long:"wrap" description:"wrap mode: off | column | sentence | sentence+column"`
 }
 
 // runFmt implements "mreview fmt [FLAGS] paper.tex".
@@ -98,24 +97,23 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Resolve aggressive defaults. Flag (when set) overrides config; config
-	// (when set) overrides built-in default. Built-in default is "aggressive":
-	// pdf-fix on, verify=visual, report on.
-	pdfFix := !resolveBool(o.NoPDFFix, cfg.Fmt.NoPDFFix, false)
+	// Resolve config-driven settings. CLI escape hatches override (only
+	// --no-verify and --no-report); everything else comes from [fmt] in
+	// the config file or the built-in defaults.
+	pdfFix := true
+	if cfg.Fmt.NoPDFFix != nil {
+		pdfFix = !*cfg.Fmt.NoPDFFix
+	}
 	noVerify := resolveBool(o.NoVerify, cfg.Fmt.NoVerify, false)
 	wantReport := !resolveBool(o.NoReport, cfg.Fmt.NoReport, false)
-	verifyMode := o.VerifyPDF
-	if verifyMode == "" {
-		verifyMode = cfg.Fmt.VerifyPDF
-	}
+	verifyMode := cfg.Fmt.VerifyPDF
 	if verifyMode == "" {
 		verifyMode = "visual"
 	}
 
-	// Resolve indent options. Default ON; flag (--no-indent) wins, then
-	// config (`[fmt] indent`), else the built-in default (true).
-	indentEnabled := !o.NoIndent
-	if !o.NoIndent && cfg.Fmt.Indent != nil {
+	// Resolve indent options.
+	indentEnabled := true
+	if cfg.Fmt.Indent != nil {
 		indentEnabled = *cfg.Fmt.Indent
 	}
 	indentChar := cfg.Fmt.IndentChar
@@ -136,12 +134,8 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		Size:    indentSize,
 	}
 
-	// Resolve wrap options. Default mode is "sentence+column"; flag wins,
-	// then config, else built-in default.
-	wrapMode := o.Wrap
-	if wrapMode == "" {
-		wrapMode = cfg.Fmt.Wrap
-	}
+	// Resolve wrap options. Default mode is "sentence+column".
+	wrapMode := cfg.Fmt.Wrap
 	if wrapMode == "" {
 		wrapMode = "sentence+column"
 	}

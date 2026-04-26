@@ -91,18 +91,27 @@ git-visible, never a hidden side effect.
 ```
 mreview fmt paper.tex                      # default: Tier 1 + Tier 2, paranoid verify, write report
 mreview fmt --diff paper.tex               # show unified diff, no write
+mreview fmt --print paper.tex              # print formatted source to stdout, no write
 mreview fmt --check paper.tex              # exit 1 if changes needed (CI)
-mreview fmt --no-pdf-fix paper.tex         # Tier 1 only (skip Tier-2 PDF-fixers)
 mreview fmt --rule=math.paragraph-suppress paper.tex  # one rule only
-mreview fmt --no-verify paper.tex          # skip PDF rebuild entirely
-mreview fmt --verify-pdf=text paper.tex    # text-layer check only (skip pixel-level)
-mreview fmt --no-report paper.tex          # do not write paper.tex.fmt-report.md
+mreview fmt --no-verify paper.tex          # one-off: skip PDF verification
+mreview fmt --no-report paper.tex          # one-off: do not write paper.tex.fmt-report.md
 mreview fmt --allow-dirty paper.tex        # bypass dirty-tree check
 mreview fmt --clean-tempdir                # remove verification tempdirs
+mreview fmt a.tex b.tex c.tex              # multi-file
 ```
 
 Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 / `git checkout`). Pass `--allow-dirty` to override.
+
+Persistent behaviour (PDF-fix on/off, verifier mode, indent style, wrap mode
+and column, custom verbatim envs, …) lives in `~/.config/mreview/config.toml`
+or a project-local `.mreview.toml` walked up from the cwd to the git root.
+The CLI surface stays small on purpose: only one-off escape hatches
+(`--no-verify`, `--no-report`) and per-invocation modes (`--diff`, `--print`,
+`--check`, `--rule`) are exposed as flags. Run `mreview config` to open the
+global config in `$EDITOR` (auto-creates a starter file). See
+[`config.example.toml`](config.example.toml) for every available option.
 
 ### Rule tiers
 
@@ -115,7 +124,7 @@ Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 | `space.tabs` | Tabs → 4 spaces outside protected regions |
 | `display.style` | `$$…$$` → `\[…\]` |
 
-**Tier 2 — PDF-fixing (on by default; opt out with `--no-pdf-fix`):**
+**Tier 2 — PDF-fixing (on by default; opt out via `[fmt] no_pdf_fix = true`):**
 
 | ID | What it does |
 |---|---|
@@ -142,9 +151,9 @@ Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 The verifier rebuilds before/after PDFs in an isolated tempdir and compares
 `pdftotext` output (whitespace-normalized). Tier-2 rules declare expected-diff
 regions via synctex source-line mapping; diffs outside those regions cause
-refusal. The default `--verify-pdf=visual` also runs a pixel-level `diff-pdf`
-comparison; pass `--verify-pdf=text` to skip the pixel pass, or `--no-verify`
-to skip verification entirely.
+refusal. The default `[fmt] verify_pdf = "visual"` also runs a pixel-level
+`diff-pdf` comparison; set `verify_pdf = "text"` in config to skip the pixel
+pass, or pass `--no-verify` for a one-off skip of verification entirely.
 
 ### Report file
 

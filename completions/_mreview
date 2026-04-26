@@ -26,13 +26,14 @@ _mreview() {
   case $state in
     cmd_or_paper)
       _alternative \
-        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place))' \
+        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place config\:edit\ the\ global\ config\ in\ \$EDITOR))' \
         'files:tex file:_files -g "*.tex"'
       ;;
     args)
       case $line[1] in
-        fmt) _mreview_fmt ;;
-        *)   _files -g '*.tex' ;;
+        fmt)    _mreview_fmt ;;
+        config) ;;
+        *)      _files -g '*.tex' ;;
       esac
       ;;
   esac
@@ -43,14 +44,10 @@ _mreview_fmt() {
     '(--print --check)--diff[show unified diff to stdout, do not write]' \
     '(--diff --check -p --print)'{-p,--print}'[print formatted source to stdout, do not write]' \
     '(--diff --print)--check[exit 1 if changes needed]' \
-    '--no-pdf-fix[disable Tier-2 PDF-fixing rules (Tier-1 only)]' \
-    '--no-indent[disable env-aware reindentation]' \
-    '--wrap=[wrap mode]:mode:(off column sentence sentence+column)' \
     '*--rule=[restrict to these rule IDs]:rule id:' \
     '--allow-dirty[skip dirty-tree check before writing]' \
-    '--no-verify[skip PDF verification entirely]' \
-    '--verify-pdf=[verifier mode (default: visual)]:mode:(text visual)' \
-    '--no-report[do not write paper.tex.fmt-report.md]' \
+    '--no-verify[skip PDF verification entirely (one-off)]' \
+    '--no-report[do not write paper.tex.fmt-report.md (one-off)]' \
     '--clean-tempdir[remove all mr-fmt-* verification tempdirs]' \
     '--config=[path to config file]:config file:_files -g "*.toml"' \
     '--noconfig[ignore config files; use built-in defaults]' \
