@@ -280,6 +280,20 @@ func TestFindRightmostBreakOp(t *testing.T) {
 			wantIdx: 12, // the + after }
 			wantLen: 1,
 		},
+		{
+			name:    "multi-char := treated as atomic",
+			content: "f(x) := a + b",
+			budget:  12,
+			wantIdx: 10, // the + at col 10
+			wantLen: 1,
+		},
+		{
+			name:    ":= not split into : and =",
+			content: "f(x) := a",
+			budget:  7,
+			wantIdx: 5, // the full := at col 5
+			wantLen: 2,
+		},
 	}
 
 	for _, tt := range tests {

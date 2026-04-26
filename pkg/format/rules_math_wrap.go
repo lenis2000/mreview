@@ -311,6 +311,7 @@ func findRightmostBreakOp(content string, budget int) (int, int) {
 						bestIdx = i
 						bestLen = len(op)
 					}
+					i += len(op) - 1 // skip past the full operator
 					break
 				}
 			}
