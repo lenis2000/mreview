@@ -183,3 +183,137 @@ func TestWrap_StructuralLinesAreParagraphBreaks(t *testing.T) {
 	// sentence each), so no reflow occurs.
 	assert.Equal(t, src, got)
 }
+
+// Command-only paragraph: top-matter \title{} \author{} \affil{} blocks must
+// be left exactly as written — never joined with neighbours, never rebroken
+// at the column limit, no matter how long.
+func TestWrap_CommandOnlyParagraph_TopMatter(t *testing.T) {
+	longAffil := "\\affil[c]{Department of Mathematics, University of Virginia, Charlottesville, VA 22904, USA}"
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"",
+		"\\title{Computation and sampling for Schubert specializations}",
+		"",
+		"\\author[a]{David Anderson}",
+		"\\author[b]{Greta Panova}",
+		"\\author[c,1]{Leonid Petrov}",
+		"",
+		"\\affil[a]{Department of Mathematics, Ohio State University, Columbus, OH 43210, USA}",
+		"\\affil[b]{Department of Mathematics, University of Southern California, Los Angeles, CA 90089, USA}",
+		longAffil,
+		"",
+		"\\maketitle",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence+column", 80)
+	assert.Equal(t, src, got, "top-matter command-only lines must be preserved")
+}
+
+// Chained \author{}\address{}\email{} on one line — must stay as one line.
+func TestWrap_CommandOnlyParagraph_Chain(t *testing.T) {
+	src := "\\author{David Anderson} \\address{Ohio State University} \\email{anderson@osu.edu}\n"
+	got := runWrap(src, "sentence+column", 80)
+	assert.Equal(t, src, got, "command chain on one line must not be broken")
+}
+
+// Multi-line \significancestatement{...} with brace continuing across lines:
+// every line in the continuation is structural; reflow must not touch it.
+func TestWrap_CommandOnlyParagraph_MultiLineContinuation(t *testing.T) {
+	src := strings.Join([]string{
+		"\\significancestatement{Schubert specializations encode fundamental",
+		"intersection counts in geometry. We disprove the conjecture and",
+		"present new bounds.}",
+		"",
+		"After the statement.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence+column", 50)
+	// All three lines of the significancestatement stay verbatim; the
+	// "After the statement." line is normal prose.
+	assert.Equal(t, src, got)
+}
+
+// \label{} after \section{} stays on its own line and does NOT merge with
+// the following prose paragraph.
+func TestWrap_CommandOnlyParagraph_LabelDoesNotMergeWithProse(t *testing.T) {
+	src := strings.Join([]string{
+		"\\section{Introduction}",
+		"\\label{sec:intro}",
+		"This is the first sentence. This is the second sentence.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	want := strings.Join([]string{
+		"\\section{Introduction}",
+		"\\label{sec:intro}",
+		"This is the first sentence.",
+		"This is the second sentence.",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}
+
+// Math-environment exclusion: a line whose content looks like a single
+// command (e.g. \frac{a}{b}) but sits inside \begin{align}…\end{align}
+// must NOT be classified as command-only — math rules handle it.
+func TestWrap_CommandOnlyParagraph_NotInsideMath(t *testing.T) {
+	src := strings.Join([]string{
+		"\\begin{align}",
+		"\\frac{a}{b}",
+		"\\end{align}",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	// The wrap rule should leave this alone (each line is structural by
+	// existing rules: \begin/\end), and the new rule must not destabilise
+	// that by treating \frac{a}{b} as a cmd-only-paragraph then merging.
+	assert.Equal(t, src, got)
+}
+
+// \textbf{%…%} pattern is preserved (existing trailing-% heuristic still
+// classifies each interior line as struct; the new rule must not break it).
+func TestWrap_CommandOnlyParagraph_PercentFencedBoldPreserved(t *testing.T) {
+	src := strings.Join([]string{
+		"\\textbf{%",
+		"%",
+		"stuff stuff%",
+		"%",
+		"}",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence+column", 40)
+	assert.Equal(t, src, got, "%-fenced \\textbf block must be preserved verbatim")
+}
+
+// Multi-line \caption{} with hand-laid line breaks: the entire caption is
+// command-only continuation, so internal lines are NOT joined and reflowed.
+func TestWrap_CommandOnlyParagraph_CaptionPreserved(t *testing.T) {
+	src := strings.Join([]string{
+		"\\begin{figure}",
+		"\\caption{\\textbf{Top:} The six tile types used in bumpless pipe dreams.",
+		"\\textbf{Bottom:} A reduced bumpless pipe dream for $n=4$ corresponding",
+		"to the permutation $w=2143$.}",
+		"\\label{fig:bpd}",
+		"\\end{figure}",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence+column", 80)
+	assert.Equal(t, src, got, "multi-line \\caption{} must be preserved")
+}
+
+// A bare prose line that happens to start with a command at column 0
+// followed by trailing text is NOT command-only — it reflows normally.
+func TestWrap_CommandOnlyParagraph_InlineCommandWithTrailingText(t *testing.T) {
+	src := strings.Join([]string{
+		"\\emph{Important}: this is a long sentence that should be reflowed.",
+		"And here is another sentence that follows.",
+		"",
+	}, "\n")
+	got := runWrap(src, "sentence", 200)
+	want := strings.Join([]string{
+		"\\emph{Important}: this is a long sentence that should be reflowed.",
+		"And here is another sentence that follows.",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got)
+}

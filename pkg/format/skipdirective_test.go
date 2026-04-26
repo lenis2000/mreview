@@ -126,3 +126,48 @@ func TestSkipDirective_FiltersDiags(t *testing.T) {
 	assert.NotContains(t, lines, 3, "skipped line must not yield a diagnostic")
 	assert.Contains(t, lines, 4, "un-skipped line must yield a diagnostic")
 }
+
+func TestBuildSkipMask_Preamble(t *testing.T) {
+	src := []byte(strings.Join([]string{
+		`\documentclass{article}`,
+		`\usepackage{amsmath}`,
+		`\newcommand{\foo}{bar}`,
+		`\begin{document}`,
+		`Body line.`,
+		`\end{document}`,
+	}, "\n"))
+	mask := BuildSkipMask(src)
+	assert.True(t, mask[1], "documentclass must be masked (preamble)")
+	assert.True(t, mask[2], "usepackage must be masked (preamble)")
+	assert.True(t, mask[3], "newcommand must be masked (preamble)")
+	assert.True(t, mask[4], `\begin{document} line itself must be masked`)
+	assert.False(t, mask[5], "body must not be masked")
+	assert.False(t, mask[6], `\end{document} must not be masked`)
+}
+
+func TestBuildSkipMask_NoBeginDocument(t *testing.T) {
+	// Fragments without \begin{document} (e.g. \input'd files) must not
+	// have everything masked — only directive-scoped masking applies.
+	src := []byte(strings.Join([]string{
+		`Section body.`,
+		`Another line.`,
+	}, "\n"))
+	mask := BuildSkipMask(src)
+	assert.False(t, mask[1])
+	assert.False(t, mask[2])
+}
+
+func TestBuildSkipMask_BeginDocumentInComment(t *testing.T) {
+	// A commented-out \begin{document} must not be treated as the boundary.
+	src := []byte(strings.Join([]string{
+		`\documentclass{article}`,
+		`% \begin{document} (commented out)`,
+		`\begin{document}`,
+		`Body.`,
+	}, "\n"))
+	mask := BuildSkipMask(src)
+	assert.True(t, mask[1])
+	assert.True(t, mask[2])
+	assert.True(t, mask[3], "real \\begin{document} is the boundary")
+	assert.False(t, mask[4])
+}

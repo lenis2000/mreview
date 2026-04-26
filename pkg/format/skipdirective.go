@@ -23,6 +23,13 @@ var skipDirectiveRe = regexp.MustCompile(`(?i)\bmreview-fmt:\s+(skip|off|on)\s*$
 // The directive is only honoured when the comment starts with an unescaped
 // '%' (so `\%` does not trigger). A `skip` inside an `off…on` block is a
 // no-op (already masked).
+//
+// In addition, the preamble (everything from line 1 through the line that
+// contains \begin{document}, inclusive) is always masked. The preamble is
+// hand-curated by authors — package loads, macro definitions, class options,
+// theorem setup — and reflow has no way to know which whitespace is load-
+// bearing. If \begin{document} is absent (e.g. an \input-included fragment),
+// nothing is masked on that basis.
 func BuildSkipMask(src []byte) []bool {
 	// Count lines: a final line without trailing \n is still a line.
 	nLines := 1
@@ -34,12 +41,16 @@ func BuildSkipMask(src []byte) []bool {
 	mask := make([]bool, nLines+1) // 1-indexed; mask[0] unused
 
 	inBlock := false
+	preambleEnd := 0 // 0 = no \begin{document} seen yet
 	line := 1
 	lineStart := 0
 	for i := 0; i <= len(src); i++ {
 		if i == len(src) || src[i] == '\n' {
 			// process [lineStart, i)
 			body := src[lineStart:i]
+			if preambleEnd == 0 && hasBeginDocument(body) {
+				preambleEnd = line
+			}
 			kind, ok := parseDirective(body)
 			switch {
 			case ok && kind == "off":
@@ -59,7 +70,33 @@ func BuildSkipMask(src []byte) []bool {
 			lineStart = i + 1
 		}
 	}
+	for L := 1; L <= preambleEnd; L++ {
+		mask[L] = true
+	}
 	return mask
+}
+
+// hasBeginDocument reports whether the line contains \begin{document} before
+// any unescaped '%' (i.e. not inside a comment).
+func hasBeginDocument(line []byte) bool {
+	idx := bytes.Index(line, []byte(`\begin{document}`))
+	if idx < 0 {
+		return false
+	}
+	// Reject if there is an unescaped '%' before idx.
+	for j := 0; j < idx; j++ {
+		if line[j] != '%' {
+			continue
+		}
+		n := 0
+		for k := j - 1; k >= 0 && line[k] == '\\'; k-- {
+			n++
+		}
+		if n%2 == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // parseDirective extracts a directive keyword (skip/off/on) from one line of

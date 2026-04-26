@@ -88,6 +88,11 @@ func applyWrap(ctx *Ctx) Result {
 	doSentence := strings.Contains(mode, "sentence")
 	doColumn := strings.Contains(mode, "column")
 
+	// Identify command-only paragraphs (top-matter, \caption{}, \label{},
+	// any line that is exclusively \name[opt]?{...} invocations or a
+	// continuation inside one). These are hand-laid layout — preserve.
+	cmdMask := computeCommandOnlyMask(ctx, nLines)
+
 	// Classify each line. Paragraph-aware reflow joins runs of "prose"
 	// lines, splits the joined string at sentence boundaries (and/or
 	// column limit), and re-emits — that way an already-hand-wrapped
@@ -95,7 +100,11 @@ func applyWrap(ctx *Ctx) Result {
 	// instead of more breaks.
 	kinds := make([]lineKind, nLines+1) // 1-indexed
 	for line := 1; line <= nLines; line++ {
-		kinds[line] = classifyLineForWrap(ctx, line)
+		k := classifyLineForWrap(ctx, line)
+		if k == kindProse && cmdMask[line] {
+			k = kindStruct
+		}
+		kinds[line] = k
 	}
 
 	var out bytes.Buffer
