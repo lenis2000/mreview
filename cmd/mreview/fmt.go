@@ -360,6 +360,9 @@ func runFmtOne(
 			_, _ = fmt.Fprintln(stderr, "mreview fmt: verification FAILED — unexpected PDF text diffs:")
 			format.FormatDiffs(stderr, vr.Unexpected)
 			_, _ = fmt.Fprintf(stderr, "tempdir preserved at %s for inspection\n", format.LastTempDir())
+			// Persist the verifier's unexpected-diff list to the fmt-report
+			// so the user can inspect it after rollback (stderr scrolls away).
+			writeReportIfNeeded(vr)
 			_, _ = fmt.Fprintln(stderr, "hint: pass --no-verify to skip verification")
 			return 1
 		}
