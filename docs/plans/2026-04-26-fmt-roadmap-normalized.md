@@ -41,11 +41,11 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 **Files:**
 - Modify: `cmd/mreview/fmt.go`
 
-- [ ] add `FailOnChange bool` field to `fmtOpts` with `long:"fail-on-change" description:"format in place AND exit 1 when changed (CI/pre-commit)"`
-- [ ] implement: write file in place, exit 1 when `len(Hits) > 0`
-- [ ] allowed with multi-file; mutually exclusive with --check, --diff, --print, --stdin, --summary
-- [ ] write tests: happy path (no changes -> exit 0, changes -> exit 1), multi-file, mutual-exclusion
-- [ ] run `go test ./... && make install`
+- [x] add `FailOnChange bool` field to `fmtOpts` with `long:"fail-on-change" description:"format in place AND exit 1 when changed (CI/pre-commit)"`
+- [x] implement: write file in place, exit 1 when `len(Hits) > 0`
+- [x] allowed with multi-file; mutually exclusive with --check, --diff, --print, --stdin, --summary
+- [x] write tests: happy path (no changes -> exit 0, changes -> exit 1), multi-file, mutual-exclusion
+- [x] run `go test ./... && make install`
 
 ### Task 3: --summary flag
 

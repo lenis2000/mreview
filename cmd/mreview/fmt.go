@@ -29,6 +29,7 @@ type fmtOpts struct {
 	Print        bool     `long:"print" short:"p" description:"print formatted source to stdout, do not write"`
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
 	Stdin        bool     `long:"stdin" description:"read source from stdin, write formatted to stdout"`
+	FailOnChange bool     `long:"fail-on-change" description:"format in place AND exit 1 when changed (CI/pre-commit)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
 	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
@@ -59,6 +60,12 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	// --print is mutually exclusive with --diff and --check.
 	if (o.Print && o.Diff) || (o.Print && o.Check) || (o.Diff && o.Check) {
 		fmt.Fprintln(stderr, "mreview fmt: --diff, --print, and --check are mutually exclusive")
+		return 2
+	}
+
+	// --fail-on-change is mutually exclusive with --check, --diff, --print, --stdin.
+	if o.FailOnChange && (o.Check || o.Diff || o.Print || o.Stdin) {
+		fmt.Fprintln(stderr, "mreview fmt: --fail-on-change is mutually exclusive with --check, --diff, --print, and --stdin")
 		return 2
 	}
 
@@ -360,6 +367,11 @@ func runFmtOne(
 		fmt.Fprintf(stderr, "mreview fmt: wrote %s (1 rewrite)\n", filepath.Base(paperPath))
 	} else {
 		fmt.Fprintf(stderr, "mreview fmt: wrote %s (%d rewrites)\n", filepath.Base(paperPath), nHits)
+	}
+
+	// --fail-on-change: exit 1 when changes were applied (for CI/pre-commit).
+	if o.FailOnChange && nHits > 0 {
+		return 1
 	}
 
 	return 0

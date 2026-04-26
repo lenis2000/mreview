@@ -406,6 +406,78 @@ func TestFmt_NonGitDirWarnAndProceed(t *testing.T) {
 	}
 }
 
+// --- --fail-on-change tests ---
+
+func TestFmt_FailOnChange_NoChanges(t *testing.T) {
+	paper := writeFmtFixtureClean(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--fail-on-change", "--allow-dirty", "--no-verify", "--no-report", paper}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0 when no changes, got %d (stderr=%q)", code, stderr.String())
+	}
+}
+
+func TestFmt_FailOnChange_WithChanges(t *testing.T) {
+	paper := writeFmtFixture(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--fail-on-change", "--allow-dirty", "--no-verify", "--no-report", paper}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit 1 when changes applied, got %d (stderr=%q)", code, stderr.String())
+	}
+	// File should still be written (formatted in place).
+	content, _ := os.ReadFile(paper)
+	if strings.Contains(string(content), "hi  ") {
+		t.Fatalf("expected trailing whitespace to be removed even with --fail-on-change")
+	}
+	if !strings.Contains(string(content), "hi\n") {
+		t.Fatalf("expected clean 'hi' line, got %q", string(content))
+	}
+}
+
+func TestFmt_FailOnChange_MultiFile(t *testing.T) {
+	a := writeFmtFixture(t)
+	b := writeFmtFixtureClean(t)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"fmt", "--fail-on-change", "--allow-dirty", "--no-verify", "--no-report", a, b}, &stdout, &stderr)
+	// File a has changes -> exit 1 (worst code wins).
+	if code != 1 {
+		t.Fatalf("expected exit 1 when any file changed, got %d (stderr=%q)", code, stderr.String())
+	}
+	// File a should be formatted.
+	contentA, _ := os.ReadFile(a)
+	if strings.Contains(string(contentA), "hi  ") {
+		t.Fatalf("expected file a to be formatted")
+	}
+}
+
+func TestFmt_FailOnChange_MutualExclusion(t *testing.T) {
+	paper := writeFmtFixture(t)
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"fail-on-change+check", []string{"fmt", "--fail-on-change", "--check", paper}},
+		{"fail-on-change+diff", []string{"fmt", "--fail-on-change", "--diff", paper}},
+		{"fail-on-change+print", []string{"fmt", "--fail-on-change", "--print", paper}},
+		{"fail-on-change+stdin", []string{"fmt", "--fail-on-change", "--stdin"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run(c.args, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("expected exit 2 for %v, got %d (stderr=%q)", c.args, code, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "mutually exclusive") {
+				t.Fatalf("expected mutually-exclusive message, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 // --- --stdin tests ---
 
 // withStdinReader replaces stdinReader for the duration of a test.
