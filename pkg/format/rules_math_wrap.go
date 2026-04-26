@@ -273,7 +273,7 @@ func findRightmostBreakOp(content string, budget int) (int, int) {
 			}
 		case ch == '\\' && depth == 0:
 			// Check for command break operators.
-			matched := false
+			matchedLen := 0
 			for _, op := range breakOps {
 				if op[0] != '\\' {
 					continue
@@ -283,16 +283,16 @@ func findRightmostBreakOp(content string, budget int) (int, int) {
 					if endIdx < len(content) && isAlpha(content[endIdx]) {
 						continue
 					}
+					matchedLen = len(op)
 					col := visualWidth(content[:i])
 					if col > 0 && col <= budget {
 						bestIdx = i
 						bestLen = len(op)
 					}
-					matched = true
 					break
 				}
 			}
-			if !matched {
+			if matchedLen == 0 {
 				// Skip other backslash sequences.
 				if i+1 < len(content) && isAlpha(content[i+1]) {
 					j := i + 1
@@ -305,7 +305,7 @@ func findRightmostBreakOp(content string, budget int) (int, int) {
 				}
 			} else {
 				// Skip past the matched operator.
-				i += bestLen - 1
+				i += matchedLen - 1
 			}
 		case depth == 0:
 			// Check single-char break operators.

@@ -47,4 +47,4 @@ jobs:
         env:
           CHANGED_FILES: ${{ steps.changed.outputs.files }}
         run: |
-          echo "$CHANGED_FILES" | xargs mreview fmt --check --no-verify
+          echo "$CHANGED_FILES" | xargs -n 1 mreview fmt --check --no-verify

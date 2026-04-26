@@ -235,8 +235,8 @@ func contIndentBody(body []byte) ([]byte, bool) {
 			continue
 		}
 
-		// Compute desired leading whitespace.
-		currentIndent := len(line) - len(trimmed)
+		// Compute desired leading whitespace (visual columns, not byte count).
+		currentIndent := visualWidth(line[:len(line)-len(trimmed)])
 		if currentIndent == targetIndent {
 			continue
 		}
