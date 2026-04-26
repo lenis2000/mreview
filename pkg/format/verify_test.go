@@ -182,8 +182,8 @@ func TestDiscoverTree(t *testing.T) {
 	dir := t.TempDir()
 	writeFile := func(name, content string) {
 		path := filepath.Join(dir, name)
-		os.MkdirAll(filepath.Dir(path), 0o755)
-		os.WriteFile(path, []byte(content), 0o644)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, []byte(content), 0o644)
 	}
 
 	writeFile("paper.tex", `\documentclass{article}\begin{document}Hello\end{document}`)
@@ -226,7 +226,7 @@ func TestCleanTempDirs(t *testing.T) {
 	// Create a temp dir matching the pattern.
 	dir, err := os.MkdirTemp("", "mr-fmt-")
 	require.NoError(t, err)
-	defer os.RemoveAll(dir) // safety
+	defer func() { _ = os.RemoveAll(dir) }() // safety
 
 	// Verify it exists.
 	_, err = os.Stat(dir)

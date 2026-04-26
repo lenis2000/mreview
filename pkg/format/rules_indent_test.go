@@ -332,3 +332,73 @@ func TestIndent_PerEnvOverride_DeeplyNested(t *testing.T) {
 	}, "\n")
 	assert.Equal(t, want, got)
 }
+
+// ---------------------------------------------------------------------------
+// Same-line \begin and \end
+// ---------------------------------------------------------------------------
+
+func TestIndent_SameLineBeginEnd(t *testing.T) {
+	// \begin{theorem}\end{theorem} on same line should net to zero:
+	// the next line must NOT be indented.
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}\\end{theorem}",
+		"next line",
+		"\\end{document}",
+		"",
+	}, "\n")
+	got := runIndent(src, true, 1)
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}\\end{theorem}",
+		"next line",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got, "same-line begin/end must not leak indent to next line")
+}
+
+func TestIndent_SameLineEndThenBegin(t *testing.T) {
+	// \end{A}\begin{B} on same line: A closes, B opens. Next line
+	// should be indented for B only.
+	// Use Rules filter to run ONLY space.indent (other rules may split the line).
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"body of theorem",
+		"\\end{theorem}\\begin{proof}",
+		"body of proof",
+		"\\end{proof}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	res := Apply([]byte(src), Options{
+		Rules:  []string{"space.indent"},
+		Indent: IndentOptions{Enabled: true, UseTab: true, Size: 1},
+	})
+	got := string(res.Src)
+	want := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}",
+		"\tbody of theorem",
+		"\\end{theorem}\\begin{proof}",
+		"\tbody of proof",
+		"\\end{proof}",
+		"\\end{document}",
+		"",
+	}, "\n")
+	assert.Equal(t, want, got, "end-then-begin on same line must transition correctly")
+}
+
+func TestIndent_SameLineBeginEnd_Idempotent(t *testing.T) {
+	src := strings.Join([]string{
+		"\\begin{document}",
+		"\\begin{theorem}\\end{theorem}",
+		"after",
+		"\\end{document}",
+		"",
+	}, "\n")
+	once := runIndent(src, true, 1)
+	twice := runIndent(once, true, 1)
+	assert.Equal(t, once, twice, "same-line begin/end indent must be idempotent")
+}

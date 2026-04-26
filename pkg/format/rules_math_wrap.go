@@ -136,6 +136,15 @@ func applyMathWrap(ctx *Ctx) Result {
 		if sp.bodyEnd <= sp.bodyStart || sp.bodyEnd > len(ctx.Src) {
 			continue
 		}
+		// Skip entire environment if any body line is masked by
+		// % mreview-fmt: off/on or skip directives.
+		if ctx.RangeSkipped(sp.bodyStart, sp.bodyEnd) {
+			tail := ctx.Src[sp.bodyEnd:prev]
+			out = append(tail, out...)
+			out = append(ctx.Src[sp.bodyStart:sp.bodyEnd], out...)
+			prev = sp.bodyStart
+			continue
+		}
 		body := ctx.Src[sp.bodyStart:sp.bodyEnd]
 
 		newBody, ok := wrapBody(body, wrapCol)

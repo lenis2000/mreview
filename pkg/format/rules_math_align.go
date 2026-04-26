@@ -127,6 +127,15 @@ func applyMathAlign(ctx *Ctx) Result {
 		if sp.bodyEnd <= sp.bodyStart || sp.bodyEnd > len(ctx.Src) {
 			continue
 		}
+		// Skip entire environment if any body line is masked by
+		// % mreview-fmt: off/on or skip directives.
+		if ctx.RangeSkipped(sp.bodyStart, sp.bodyEnd) {
+			tail := ctx.Src[sp.bodyEnd:prev]
+			out = append(tail, out...)
+			out = append(ctx.Src[sp.bodyStart:sp.bodyEnd], out...)
+			prev = sp.bodyStart
+			continue
+		}
 		body := ctx.Src[sp.bodyStart:sp.bodyEnd]
 
 		aligned, diag, ok := alignBody(body, sp.name, envSet)
@@ -360,15 +369,12 @@ func splitRows(body []byte) []rowPiece {
 			}
 		case ch == '\\' && depth == 0 && i+1 < len(s) && s[i+1] == '\\':
 			// Found \\ at depth 0.
-			content := s[rowStart:i]
-			// Include any whitespace before \\ in the suffix (typically
-			// one space: "content \\").
+			// Walk back over spaces/tabs before the \\ to include them in the suffix.
 			suffixStart := i
-			// Walk back over spaces/tabs before the \\ to include them.
 			for suffixStart > rowStart && (s[suffixStart-1] == ' ' || s[suffixStart-1] == '\t') {
 				suffixStart--
 			}
-			content = s[rowStart:suffixStart]
+			content := s[rowStart:suffixStart]
 			suffixStart2 := suffixStart // actual suffix start (with leading whitespace)
 			i += 2 // skip \\
 			// Skip optional * (starred row break, inhibits page break).

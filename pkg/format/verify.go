@@ -715,7 +715,7 @@ func setLastTmpDir(dir string) {
 	lastTmpMu.Lock()
 	defer lastTmpMu.Unlock()
 	if lastTmpDir != "" && lastTmpDir != dir {
-		os.RemoveAll(lastTmpDir)
+		_ = os.RemoveAll(lastTmpDir)
 	}
 	lastTmpDir = dir
 }
@@ -728,7 +728,7 @@ func CleanTempDirs() error {
 		return err
 	}
 	for _, m := range matches {
-		os.RemoveAll(m)
+		_ = os.RemoveAll(m)
 	}
 	return nil
 }
@@ -738,11 +738,11 @@ func FormatDiffs(w io.Writer, diffs []Diff) {
 	for _, d := range diffs {
 		if d.Page == 0 && d.LineInPage == 0 {
 			// Page count mismatch or other structural diff.
-			fmt.Fprintf(w, "  %s → %s\n", d.Before, d.After)
+			_, _ = fmt.Fprintf(w, "  %s → %s\n", d.Before, d.After)
 			continue
 		}
-		fmt.Fprintf(w, "  page %d, line %d:\n", d.Page, d.LineInPage)
-		fmt.Fprintf(w, "    before: %s\n", truncExcerpt(d.Before))
-		fmt.Fprintf(w, "    after:  %s\n", truncExcerpt(d.After))
+		_, _ = fmt.Fprintf(w, "  page %d, line %d:\n", d.Page, d.LineInPage)
+		_, _ = fmt.Fprintf(w, "    before: %s\n", truncExcerpt(d.Before))
+		_, _ = fmt.Fprintf(w, "    after:  %s\n", truncExcerpt(d.After))
 	}
 }

@@ -166,6 +166,15 @@ func TestMathWrapProtectedSpan(t *testing.T) {
 	assert.Empty(t, res.Hits)
 }
 
+func TestMathWrapSkipDirectiveInsideBody(t *testing.T) {
+	// A skip directive on an inner line should prevent the entire
+	// environment from being rewritten.
+	input := "\\begin{equation}\nf(x) = a + b + c + d + e + f + g + h % mreview-fmt: skip\n\\end{equation}\n"
+	res := Apply([]byte(input), mathWrapOpts(30))
+	assert.Equal(t, input, string(res.Src), "skip directive inside body must suppress wrapping")
+	assert.Empty(t, res.Hits)
+}
+
 // ---------------------------------------------------------------------------
 // Continuation indent alignment
 // ---------------------------------------------------------------------------

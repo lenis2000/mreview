@@ -89,8 +89,7 @@ func applyTildeRefs(ctx *Ctx) Result {
 		nameStart := m[2] // start of command name (after \)
 		nameEnd := m[3]   // end of command name
 
-		cmdName := string(src[nameStart:nameEnd])
-		if !refSet[cmdName] {
+		if !refSet[string(src[nameStart:nameEnd])] {
 			continue
 		}
 
@@ -208,7 +207,7 @@ func inlineMathRanges(src []byte) [][2]int {
 			if next == '(' {
 				// Find matching \)
 				j := i + 2
-				for j+1 < len(src) && !(src[j] == '\\' && src[j+1] == ')') {
+				for j+1 < len(src) && (src[j] != '\\' || src[j+1] != ')') {
 					j++
 				}
 				if j+1 < len(src) {
@@ -225,7 +224,7 @@ func inlineMathRanges(src []byte) [][2]int {
 			if i+1 < len(src) && src[i+1] == '$' && !inDollar {
 				// Display math $$...$$: find the closing $$.
 				j := i + 2
-				for j+1 < len(src) && !(src[j] == '$' && src[j+1] == '$') {
+				for j+1 < len(src) && (src[j] != '$' || src[j+1] != '$') {
 					j++
 				}
 				if j+1 < len(src) {

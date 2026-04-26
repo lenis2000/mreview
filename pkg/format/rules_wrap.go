@@ -440,7 +440,7 @@ func excludedRanges(s string) [][2]int {
 			if next == '(' {
 				// Find matching \)
 				j := i + 2
-				for j+1 < len(s) && !(s[j] == '\\' && s[j+1] == ')') {
+				for j+1 < len(s) && (s[j] != '\\' || s[j+1] != ')') {
 					j++
 				}
 				if j+1 < len(s) {
@@ -482,9 +482,10 @@ func excludedRanges(s string) [][2]int {
 			depth := 1
 			k++
 			for k < len(s) && depth > 0 {
-				if s[k] == '[' {
+				switch s[k] {
+				case '[':
 					depth++
-				} else if s[k] == ']' {
+				case ']':
 					depth--
 				}
 				k++
@@ -502,9 +503,10 @@ func excludedRanges(s string) [][2]int {
 			depth := 1
 			k++
 			for k < len(s) && depth > 0 {
-				if s[k] == '{' {
+				switch s[k] {
+				case '{':
 					depth++
-				} else if s[k] == '}' {
+				case '}':
 					depth--
 				}
 				k++

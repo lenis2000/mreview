@@ -242,3 +242,24 @@ func TestMathAlignTabular(t *testing.T) {
 	assert.Equal(t, want, string(res.Src))
 	assert.Equal(t, 1, len(res.Hits))
 }
+
+// ---------------------------------------------------------------------------
+// Skip directives inside math env body
+// ---------------------------------------------------------------------------
+
+func TestMathAlignSkipDirectiveInsideBody(t *testing.T) {
+	// A skip directive on an inner line should prevent the entire
+	// environment from being rewritten.
+	input := "\\begin{align*}\na &= b \\\\ % mreview-fmt: skip\nfoo &= bar\n\\end{align*}\n"
+	res := Apply([]byte(input), mathAlignOpts())
+	assert.Equal(t, input, string(res.Src), "skip directive inside body must suppress alignment")
+	assert.Empty(t, res.Hits)
+}
+
+func TestMathAlignOffOnDirectiveInsideBody(t *testing.T) {
+	// An off/on block inside the env body should prevent alignment.
+	input := "\\begin{align*}\na &= b \\\\\n% mreview-fmt: off\nfoo &= bar\n% mreview-fmt: on\n\\end{align*}\n"
+	res := Apply([]byte(input), mathAlignOpts())
+	assert.Equal(t, input, string(res.Src), "off/on block inside body must suppress alignment")
+	assert.Empty(t, res.Hits)
+}

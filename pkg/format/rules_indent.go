@@ -34,16 +34,6 @@ var noIndentEnvs = map[string]bool{
 	"document": true,
 }
 
-// listIndentEnvs are environments where a `\item` line dedents one level
-// relative to the item body. (We do not currently distinguish list items
-// at the indentation level — `\item foo` lives at the same depth as the
-// surrounding env body. This list is reserved for future tuning.)
-var listIndentEnvs = map[string]bool{
-	"itemize":     true,
-	"enumerate":   true,
-	"description": true,
-}
-
 func registerIndentRule() {
 	Registry = append(Registry, Rule{
 		ID:    "space.indent",
@@ -143,11 +133,16 @@ func applyIndent(ctx *Ctx) Result {
 		return globalUnit
 	}
 
-	// Build per-line begin/end counts for the simple depth counter, and
-	// also per-line begin/end name lists for the env-stack approach.
+	// Build per-line ordered event lists preserving token order.
+	// This is critical for same-line \begin{X}\end{X} pairs: the stack
+	// update must process events in document order so that a begin
+	// followed by a matching end nets to zero.
+	type envEvent struct {
+		envName string
+		isBegin bool
+	}
 	type lineEvents struct {
-		begins []string
-		ends   []string
+		ordered []envEvent
 	}
 	lineEvt := make(map[int]*lineEvents)
 	for _, ev := range events {
@@ -156,11 +151,7 @@ func applyIndent(ctx *Ctx) Result {
 			le = &lineEvents{}
 			lineEvt[ev.line] = le
 		}
-		if ev.isBegin {
-			le.begins = append(le.begins, ev.envName)
-		} else {
-			le.ends = append(le.ends, ev.envName)
-		}
+		le.ordered = append(le.ordered, envEvent{envName: ev.envName, isBegin: ev.isBegin})
 	}
 
 	var out bytes.Buffer
@@ -174,13 +165,8 @@ func applyIndent(ctx *Ctx) Result {
 	for line := 1; line <= nLines; line++ {
 		body := lineBytes(ctx, line)
 
-		// Process \end events for this line first (they reduce depth for
-		// the current line).
+		// Collect events for this line.
 		le := lineEvt[line]
-		var lineEnds []string
-		if le != nil {
-			lineEnds = le.ends
-		}
 
 		// Honour skip masks and protected lines: emit verbatim, do not
 		// reindent. The token-level scan above already excluded any
@@ -189,15 +175,24 @@ func applyIndent(ctx *Ctx) Result {
 		if ctx.LineSkipped(line) || lineWhollyProtected(ctx, line) {
 			out.Write(body)
 		} else {
-			// Effective stack for this line: pop \end envs first.
+			// Effective stack for this line: process \end events that
+			// precede \begin events (reduce depth for the current line).
+			// We pop only the leading \end events (those that appear
+			// before the first \begin on this line), since a \begin on
+			// this line opens an env whose body starts on the next line.
 			viewStack := make([]string, len(envStack))
 			copy(viewStack, envStack)
-			for _, endEnv := range lineEnds {
-				// Pop the most recent matching env (inside-out).
-				for i := len(viewStack) - 1; i >= 0; i-- {
-					if viewStack[i] == endEnv {
-						viewStack = append(viewStack[:i], viewStack[i+1:]...)
-						break
+			if le != nil {
+				for _, ev := range le.ordered {
+					if ev.isBegin {
+						break // stop at first \begin
+					}
+					// Pop the most recent matching env (inside-out).
+					for i := len(viewStack) - 1; i >= 0; i-- {
+						if viewStack[i] == ev.envName {
+							viewStack = append(viewStack[:i], viewStack[i+1:]...)
+							break
+						}
 					}
 				}
 			}
@@ -230,17 +225,21 @@ func applyIndent(ctx *Ctx) Result {
 			}
 		}
 
-		// Update the real env stack: pop ends, push begins.
+		// Update the real env stack in token order: process each event
+		// sequentially so that same-line \begin{X}\end{X} pairs balance.
 		if le != nil {
-			for _, endEnv := range le.ends {
-				for i := len(envStack) - 1; i >= 0; i-- {
-					if envStack[i] == endEnv {
-						envStack = append(envStack[:i], envStack[i+1:]...)
-						break
+			for _, ev := range le.ordered {
+				if ev.isBegin {
+					envStack = append(envStack, ev.envName)
+				} else {
+					for i := len(envStack) - 1; i >= 0; i-- {
+						if envStack[i] == ev.envName {
+							envStack = append(envStack[:i], envStack[i+1:]...)
+							break
+						}
 					}
 				}
 			}
-			envStack = append(envStack, le.begins...)
 		}
 
 		if line < nLines || endsWithNewline(ctx.Src) {
@@ -317,10 +316,7 @@ func lineWhollyProtected(ctx *Ctx, line int) bool {
 	}
 	for _, sp := range ctx.Protected {
 		if sp.Start <= start && end <= sp.End {
-			if sp.Kind == "comment-line" {
-				return false
-			}
-			return true
+			return sp.Kind != "comment-line"
 		}
 	}
 	return false

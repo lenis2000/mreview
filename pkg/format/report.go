@@ -50,10 +50,10 @@ func WriteReport(reportPath string, rpt Report) (retErr error) {
 
 	w := bufio.NewWriter(f)
 
-	fmt.Fprintf(w, "# mreview fmt report — %s\n", rpt.File)
-	fmt.Fprintf(w, "date: %s\n", rpt.Date.UTC().Format(time.RFC3339))
-	fmt.Fprintf(w, "tier: %s\n", rpt.Tier)
-	fmt.Fprintf(w, "verify: %s\n", rpt.Verify)
+	_, _ = fmt.Fprintf(w, "# mreview fmt report — %s\n", rpt.File)
+	_, _ = fmt.Fprintf(w, "date: %s\n", rpt.Date.UTC().Format(time.RFC3339))
+	_, _ = fmt.Fprintf(w, "tier: %s\n", rpt.Tier)
+	_, _ = fmt.Fprintf(w, "verify: %s\n", rpt.Verify)
 
 	// Rewrites section.
 	totalHits := 0
@@ -61,7 +61,7 @@ func WriteReport(reportPath string, rpt Report) (retErr error) {
 		totalHits += g.Count
 	}
 	if len(rpt.Rewrites) > 0 {
-		fmt.Fprintf(w, "\n## Rewrites (%d)\n", totalHits)
+		_, _ = fmt.Fprintf(w, "\n## Rewrites (%d)\n", totalHits)
 		for _, g := range rpt.Rewrites {
 			lineStrs := make([]string, 0, len(g.Lines))
 			for _, ln := range g.Lines {
@@ -70,23 +70,23 @@ func WriteReport(reportPath string, rpt Report) (retErr error) {
 			if len(lineStrs) > 5 {
 				lineStrs = append(lineStrs[:5], "…")
 			}
-			fmt.Fprintf(w, "- %s — %d hits (%s)\n", g.RuleID, g.Count, strings.Join(lineStrs, ", "))
+			_, _ = fmt.Fprintf(w, "- %s — %d hits (%s)\n", g.RuleID, g.Count, strings.Join(lineStrs, ", "))
 		}
 	}
 
 	// Verifier warnings.
 	if len(rpt.Warnings) > 0 {
-		fmt.Fprintf(w, "\n## Verifier warnings (%d)\n", len(rpt.Warnings))
+		_, _ = fmt.Fprintf(w, "\n## Verifier warnings (%d)\n", len(rpt.Warnings))
 		for _, warn := range rpt.Warnings {
-			fmt.Fprintf(w, "- %s\n", warn)
+			_, _ = fmt.Fprintf(w, "- %s\n", warn)
 		}
 	}
 
 	// Diagnostics section.
 	if len(rpt.Diags) > 0 {
-		fmt.Fprintf(w, "\n## Diagnostics (Tier 3, %d issues)\n", len(rpt.Diags))
+		_, _ = fmt.Fprintf(w, "\n## Diagnostics (Tier 3, %d issues)\n", len(rpt.Diags))
 		for _, d := range rpt.Diags {
-			fmt.Fprintf(w, "- %s L%d — %s\n", d.RuleID, d.Line, d.Message)
+			_, _ = fmt.Fprintf(w, "- %s L%d — %s\n", d.RuleID, d.Line, d.Message)
 		}
 	}
 
@@ -147,11 +147,7 @@ func BuildReport(file string, opts Options, result PipelineResult, verifyResult 
 
 	// Diagnostics.
 	for _, d := range result.Diags {
-		rpt.Diags = append(rpt.Diags, ReportDiag{
-			RuleID:  d.RuleID,
-			Line:    d.Line,
-			Message: d.Message,
-		})
+		rpt.Diags = append(rpt.Diags, ReportDiag(d))
 	}
 
 	return rpt
