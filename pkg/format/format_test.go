@@ -338,12 +338,13 @@ func TestPipelineStaleStateRecompute(t *testing.T) {
 	//        line1 \n \n \n \n line5
 	// After blank-runs: "text\n\n$$x+y$$\n"  (3 newlines collapsed to 2)
 	// After display.style: "text\n\n\\[x+y\\]\n"
+	// After space.display-delim-per-line: \[ and \] each move to own lines.
 
-	// Run with default Safe rules (all 4).
+	// Run with default Safe rules.
 	res := Apply([]byte(input), Options{})
 
-	// display.style should have fired.
-	assert.Equal(t, "text\n\n\\[x+y\\]\n", string(res.Src))
+	// display.style + display-delim-per-line both fired.
+	assert.Equal(t, "text\n\n\\[\nx+y\n\\]\n", string(res.Src))
 
 	// Check that we got hits from both rules.
 	blankHits := 0
@@ -363,7 +364,7 @@ func TestPipelineStaleStateRecompute(t *testing.T) {
 	assert.Equal(t, 1, displayHits, "display.style should fire once")
 }
 
-// TestPipelineAllSafeRules runs all four safe rules together on a mixed input.
+// TestPipelineAllSafeRules runs every safe rule together on a mixed input.
 func TestPipelineAllSafeRules(t *testing.T) {
 	input := "\thello   \n\n\n\n$$x$$\nworld  \n"
 	// Expected after all rules:
@@ -371,9 +372,12 @@ func TestPipelineAllSafeRules(t *testing.T) {
 	// space.blank-runs: "\thello\n\n$$x$$\nworld\n"
 	// space.tabs: "    hello\n\n$$x$$\nworld\n"
 	// display.style: "    hello\n\n\\[x\\]\nworld\n"
+	// space.display-delim-per-line: \[ and \] each move onto their own line
+	// (only the trailing-newline branch fires here because the line begins
+	// with \[ already, and the closing \] sits at the end of the same line).
 
 	res := Apply([]byte(input), Options{})
-	assert.Equal(t, "    hello\n\n\\[x\\]\nworld\n", string(res.Src))
+	assert.Equal(t, "    hello\n\n\\[\nx\n\\]\nworld\n", string(res.Src))
 	require.True(t, len(res.Hits) > 0, "should have hits")
 }
 
@@ -383,8 +387,8 @@ func TestDefaultOptionsSafeOnly(t *testing.T) {
 	for _, r := range rules {
 		assert.Equal(t, Safe, r.Tier, "default should only enable Safe rules")
 	}
-	// We have exactly 4 safe rules.
-	assert.Equal(t, 4, len(rules))
+	// We have exactly 7 safe rules.
+	assert.Equal(t, 7, len(rules))
 }
 
 // TestRegistryOrder verifies rules are in the expected order.
@@ -398,6 +402,9 @@ func TestRegistryOrder(t *testing.T) {
 		"space.blank-runs",
 		"space.tabs",
 		"display.style",
+		"space.item-per-line",
+		"space.proof-delim-per-line",
+		"space.display-delim-per-line",
 		"math.paragraph-suppress",
 		"env.spacing",
 		"lint.ref-undefined",

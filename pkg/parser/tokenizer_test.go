@@ -418,10 +418,71 @@ func TestTokenize_Cases(t *testing.T) {
 
 func TestTokenKindString(t *testing.T) {
 	// smoke test: every named kind returns a non-empty string.
-	for k := TokBeginEnv; k <= TokCommentLine; k++ {
+	for k := TokBeginEnv; k <= TokItem; k++ {
 		assert.NotEmpty(t, k.String(), "kind %d has empty string", int(k))
 	}
 	assert.Equal(t, "Unknown", TokenKind(999).String())
+}
+
+func TestTokenize_Item(t *testing.T) {
+	cases := []struct {
+		name      string
+		src       string
+		wantCount int
+		wantTitle string // title of the first TokItem; "" if no optional arg
+	}{
+		{
+			name:      "bare item",
+			src:       "\\begin{itemize}\n\\item one\n\\item two\n\\end{itemize}\n",
+			wantCount: 2,
+			wantTitle: "",
+		},
+		{
+			name:      "item with bracket label",
+			src:       "\\begin{description}\n\\item[Lemma] foo\n\\end{description}\n",
+			wantCount: 1,
+			wantTitle: "Lemma",
+		},
+		{
+			name:      "item with nested brackets in label",
+			src:       "\\begin{description}\n\\item[$[a,b]$] interval\n\\end{description}\n",
+			wantCount: 1,
+			wantTitle: "$[a,b]$",
+		},
+		{
+			name:      "multiple items on one line",
+			src:       "\\begin{itemize}\n\\item one \\item two \\item three\n\\end{itemize}\n",
+			wantCount: 3,
+			wantTitle: "",
+		},
+		{
+			name:      "itemsep is not item",
+			src:       "\\setlength{\\itemsep}{0pt}\n\\begin{itemize}\n\\item one\n\\end{itemize}\n",
+			wantCount: 1,
+			wantTitle: "",
+		},
+		{
+			name:      "item inside verbatim is skipped",
+			src:       "\\begin{verbatim}\n\\item not a token\n\\end{verbatim}\n",
+			wantCount: 0,
+			wantTitle: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokens := Tokenize([]byte(tc.src))
+			var items []Token
+			for _, tk := range tokens {
+				if tk.Kind == TokItem {
+					items = append(items, tk)
+				}
+			}
+			assert.Equal(t, tc.wantCount, len(items))
+			if tc.wantCount > 0 {
+				assert.Equal(t, tc.wantTitle, items[0].Title)
+			}
+		})
+	}
 }
 
 func readFixture(t *testing.T, name string) []byte {

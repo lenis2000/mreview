@@ -20,11 +20,15 @@ const SimilarityThreshold = 0.85
 // caller is therefore expected to *not* append old.Detached separately —
 // anything still unresolvable is included in the returned []Annotation.
 //
-// Matching is attempted in three stages for each old annotation:
+// Matching is attempted in four stages for each old annotation:
 //  1. exact BlockID match against newDoc.ByID;
 //  2. label match when the old BlockID looks like a LaTeX label that appears
 //     in newDoc.ByLabel;
-//  3. best-effort source-quote similarity: pick the block whose Source is
+//  3. line-range match: the saved annotation's StartLine/EndLine point at
+//     a unique block in the new doc — handles structural rewrites that
+//     change derived sibling-index IDs without moving line ranges (e.g.,
+//     the parser refactor that introduced container-gap segmentation);
+//  4. best-effort source-quote similarity: pick the block whose Source is
 //     closest to the old SourceQuote by normalised Levenshtein distance,
 //     accepting it only if the similarity ratio is ≥ SimilarityThreshold.
 func Remap(old *Sidecar, doc *parser.Document) (*Sidecar, []Annotation) {
@@ -138,7 +142,113 @@ func resolveBlock(a Annotation, doc *parser.Document) (*parser.Block, bool) {
 	if b, ok := doc.ByLabel[a.BlockID]; ok {
 		return b, true
 	}
+	if b, ok := bestLineRangeMatch(a, doc); ok {
+		return b, true
+	}
 	return bestSimilarityMatch(a.SourceQuote, doc)
+}
+
+// bestLineRangeMatch returns the block whose source range best aligns
+// with the annotation's saved [StartLine, EndLine]. Two regimes:
+//
+//   - Single-line annotations (line-pinned via LineOffset, or whole-line
+//     range a.StartLine == a.EndLine) attach to the deepest block whose
+//     range contains that line. No score threshold; a line-pinned
+//     annotation is structural and should always find its line.
+//
+//   - Multi-line annotations score every overlapping block by F1
+//     (harmonic mean of overlap-precision and overlap-recall) and
+//     accept the highest-scoring block when F1 ≥ 0.5. Exact range
+//     matches preempt the F1 walk because they're unambiguous.
+//
+// The 0.5 floor is well below the 0.85 used by similarity matching, on
+// the reasoning that a line-range hit is structural evidence even when
+// only partial. Returns ok=false when the annotation has no usable
+// range or no block scores high enough.
+func bestLineRangeMatch(a Annotation, doc *parser.Document) (*parser.Block, bool) {
+	if a.StartLine <= 0 || a.EndLine < a.StartLine {
+		return nil, false
+	}
+	annoSpan := a.EndLine - a.StartLine + 1
+	if annoSpan == 1 {
+		return deepestBlockContaining(a.StartLine, doc)
+	}
+
+	var bestExact *parser.Block
+	bestExactSpan := 1 << 30
+	var bestF1 *parser.Block
+	bestF1Score := 0.0
+	bestF1Span := 1 << 30
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if b.StartLine == 0 || b.EndLine == 0 {
+			continue
+		}
+		blockSpan := b.EndLine - b.StartLine + 1
+		if b.StartLine == a.StartLine && b.EndLine == a.EndLine {
+			if blockSpan < bestExactSpan {
+				bestExactSpan = blockSpan
+				bestExact = b
+			}
+			continue
+		}
+		lo := a.StartLine
+		if b.StartLine > lo {
+			lo = b.StartLine
+		}
+		hi := a.EndLine
+		if b.EndLine < hi {
+			hi = b.EndLine
+		}
+		if hi < lo {
+			continue
+		}
+		overlap := float64(hi - lo + 1)
+		precision := overlap / float64(blockSpan)
+		recall := overlap / float64(annoSpan)
+		f1 := 2 * precision * recall / (precision + recall)
+		if f1 > bestF1Score || (f1 == bestF1Score && blockSpan < bestF1Span) {
+			bestF1Score = f1
+			bestF1Span = blockSpan
+			bestF1 = b
+		}
+	}
+	if bestExact != nil {
+		return bestExact, true
+	}
+	if bestF1 != nil && bestF1Score >= 0.5 {
+		return bestF1, true
+	}
+	return nil, false
+}
+
+// deepestBlockContaining returns the smallest-spanning block whose source
+// range covers line. Returns ok=false when no block contains the line.
+func deepestBlockContaining(line int, doc *parser.Document) (*parser.Block, bool) {
+	var best *parser.Block
+	bestSpan := 1 << 30
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if b.StartLine == 0 || b.EndLine == 0 {
+			continue
+		}
+		if b.StartLine > line || b.EndLine < line {
+			continue
+		}
+		span := b.EndLine - b.StartLine + 1
+		if span < bestSpan {
+			bestSpan = span
+			best = b
+		}
+	}
+	if best == nil {
+		return nil, false
+	}
+	return best, true
 }
 
 func bestSimilarityMatch(quote string, doc *parser.Document) (*parser.Block, bool) {

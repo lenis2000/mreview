@@ -79,6 +79,55 @@ func TestRemapLabelRescue(t *testing.T) {
 	assert.Equal(t, b.ID, out.Annotations[0].BlockID)
 }
 
+func TestRemapLineRangeRescue(t *testing.T) {
+	doc := makeDoc(t, sampleTex)
+	thm := doc.ByLabel["thm:main"]
+	require.NotNil(t, thm)
+
+	// Annotation references a stale BlockID and a stale label, but its
+	// line range exactly matches the theorem's. The line-range stage
+	// should reattach it to the theorem block.
+	old := &Sidecar{
+		Annotations: []Annotation{
+			{
+				BlockID:     "stale-id-not-in-doc",
+				StartLine:   thm.StartLine,
+				EndLine:     thm.EndLine,
+				SourceQuote: "totally unrelated text that won't match by similarity",
+			},
+		},
+	}
+	mapped, detached := Remap(old, doc)
+	assert.Empty(t, detached)
+	require.Len(t, mapped.Annotations, 1)
+	assert.Equal(t, thm.ID, mapped.Annotations[0].BlockID)
+}
+
+func TestRemapLineRangeRescueOffByOne(t *testing.T) {
+	doc := makeDoc(t, sampleTex)
+	thm := doc.ByLabel["thm:main"]
+	require.NotNil(t, thm)
+
+	// The annotation's saved EndLine extends one past the theorem's
+	// actual end — simulates a reformat that trimmed a trailing blank.
+	// Containment fails but overlap score is still high, so the rescue
+	// holds.
+	old := &Sidecar{
+		Annotations: []Annotation{
+			{
+				BlockID:     "stale-id",
+				StartLine:   thm.StartLine,
+				EndLine:     thm.EndLine + 1,
+				SourceQuote: "no match",
+			},
+		},
+	}
+	mapped, detached := Remap(old, doc)
+	assert.Empty(t, detached)
+	require.Len(t, mapped.Annotations, 1)
+	assert.Equal(t, thm.ID, mapped.Annotations[0].BlockID)
+}
+
 func TestRemapSimilarityRescue(t *testing.T) {
 	doc := makeDoc(t, sampleTex)
 	proof := findKind(t, doc, parser.KindProof)

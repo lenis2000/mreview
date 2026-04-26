@@ -42,15 +42,19 @@ func TestResolveRefs_SampleFixture_MultiKeyCite(t *testing.T) {
 	doc, err := Parse(src)
 	require.NoError(t, err)
 
-	// Multi-key \cite{GKP1994,Stanley2011} lives in the section paragraph,
-	// above the theorem. The innermost container is the section block.
+	// Multi-key \cite{GKP1994,Stanley2011} lives on the prose paragraph that
+	// segmentContainerGaps lifted out of the section's pre-theorem gap.
+	// The innermost block at that line is now the paragraph, not the section.
 	sec := findBlockByLabel(doc, "sec:main")
 	require.NotNil(t, sec)
 
 	var cites []Ref
-	for _, r := range sec.RefsOut {
-		if r.Kind == "cite" {
-			cites = append(cites, r)
+	for _, cid := range sec.ChildIDs {
+		c := doc.ByID[cid]
+		for _, r := range c.RefsOut {
+			if r.Kind == "cite" {
+				cites = append(cites, r)
+			}
 		}
 	}
 	require.Len(t, cites, 2, "multi-key \\cite should produce two Refs")

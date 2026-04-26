@@ -35,6 +35,24 @@ func registerSafeRules() {
 			Doc:   "Replace $$...$$ with \\[...\\].",
 			Apply: applyDisplayStyle,
 		},
+		Rule{
+			ID:    "space.item-per-line",
+			Tier:  Safe,
+			Doc:   "Force every \\item inside a list env onto its own line.",
+			Apply: applyItemPerLine,
+		},
+		Rule{
+			ID:    "space.proof-delim-per-line",
+			Tier:  Safe,
+			Doc:   "Force \\begin{proof} and \\end{proof} onto their own lines.",
+			Apply: applyProofDelimPerLine,
+		},
+		Rule{
+			ID:    "space.display-delim-per-line",
+			Tier:  Safe,
+			Doc:   "Force \\[, \\], and display-math env delimiters onto their own lines.",
+			Apply: applyDisplayDelimPerLine,
+		},
 	)
 }
 
@@ -256,4 +274,426 @@ func dedupeTabHits(hits []Hit) []Hit {
 		out = append(out, h)
 	}
 	return out
+}
+
+// listEnvNames is the set of LaTeX list environments whose \items the
+// space.item-per-line rule operates inside. Mirrors pkg/parser.listEnvs.
+var listEnvNames = map[string]bool{
+	"itemize":     true,
+	"enumerate":   true,
+	"description": true,
+}
+
+// displayMathEnvNames is the set of math environments whose \begin/\end
+// delimiters space.display-delim-per-line forces onto their own lines.
+var displayMathEnvNames = map[string]bool{
+	"equation":   true,
+	"equation*":  true,
+	"align":      true,
+	"align*":     true,
+	"alignat":    true,
+	"alignat*":   true,
+	"gather":     true,
+	"gather*":    true,
+	"multline":   true,
+	"multline*":  true,
+	"eqnarray":   true,
+	"eqnarray*":  true,
+	"flalign":    true,
+	"flalign*":   true,
+	"displaymath": true,
+}
+
+// applyItemPerLine inserts a newline before any \item that shares a line
+// with non-whitespace content, but only when the \item lies inside an
+// itemize/enumerate/description env. Idempotent: after one pass every
+// \item is the first non-whitespace token on its line, so the precondition
+// is false on a second run.
+func applyItemPerLine(ctx *Ctx) Result {
+	src := ctx.Src
+	depth := 0 // nesting depth inside list envs
+	var inserts []newlineInsert
+
+	for _, tk := range ctx.Tokens {
+		switch tk.Kind {
+		case parser.TokBeginEnv:
+			if listEnvNames[tk.EnvName] {
+				depth++
+			}
+		case parser.TokEndEnv:
+			if listEnvNames[tk.EnvName] && depth > 0 {
+				depth--
+			}
+		case parser.TokItem:
+			if depth == 0 {
+				continue
+			}
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			lineStart := ctx.Lines[tk.Line]
+			if !hasNonWhitespacePrefix(src[lineStart:pos]) {
+				continue
+			}
+			if parser.OverlapsProtected(pos, pos+5, ctx.Protected) {
+				continue
+			}
+			inserts = append(inserts, newlineInsert{pos: pos, line: tk.Line})
+		}
+	}
+
+	if len(inserts) == 0 {
+		return Result{Src: src}
+	}
+
+	out := insertNewlines(src, insertPositions(inserts))
+	hits := make([]Hit, 0, len(inserts))
+	for _, ins := range inserts {
+		hits = append(hits, Hit{
+			RuleID:  "space.item-per-line",
+			Line:    ins.line,
+			Excerpt: `\item`,
+		})
+	}
+	return Result{Src: out, Hits: hits}
+}
+
+// applyProofDelimPerLine forces \begin{proof} (with any optional [arg])
+// and \end{proof} onto their own source lines.
+func applyProofDelimPerLine(ctx *Ctx) Result {
+	return applyEnvDelimPerLine(ctx, "space.proof-delim-per-line", func(env string) bool {
+		return env == "proof"
+	})
+}
+
+// applyDisplayDelimPerLine forces \[ , \] and the begin/end of every
+// displayed-math env onto their own lines.
+func applyDisplayDelimPerLine(ctx *Ctx) Result {
+	src := ctx.Src
+	var inserts []newlineInsert
+
+	addLeading := func(pos int, line int) {
+		if pos < 0 {
+			return
+		}
+		lineStart := ctx.Lines[line]
+		if !hasNonWhitespacePrefix(src[lineStart:pos]) {
+			return
+		}
+		if parser.OverlapsProtected(pos, pos+1, ctx.Protected) {
+			return
+		}
+		inserts = append(inserts, newlineInsert{pos: pos, line: line})
+	}
+	addTrailing := func(endPos int, line int) {
+		if endPos < 0 || endPos >= len(src) {
+			return
+		}
+		// Already at end-of-line (or only whitespace/comment until newline)?
+		if isLineTailEmpty(src, endPos) {
+			return
+		}
+		if parser.OverlapsProtected(endPos, endPos+1, ctx.Protected) {
+			return
+		}
+		inserts = append(inserts, newlineInsert{pos: endPos, line: line})
+	}
+
+	for _, tk := range ctx.Tokens {
+		switch tk.Kind {
+		case parser.TokDisplayOpen, parser.TokDisplayClose:
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			// Skip $$ — display.style converts those first; if any survive
+			// (e.g. inside protected regions), we leave them alone.
+			if pos+1 < len(src) && src[pos] == '$' {
+				continue
+			}
+			addLeading(pos, tk.Line)
+			addTrailing(pos+2, tk.Line) // \[ or \] is two bytes
+		case parser.TokBeginEnv:
+			if !displayMathEnvNames[tk.EnvName] {
+				continue
+			}
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			endPos := delimEndAfterBegin(src, pos)
+			if endPos < 0 {
+				continue
+			}
+			addLeading(pos, tk.Line)
+			addTrailing(endPos, tk.Line)
+		case parser.TokEndEnv:
+			if !displayMathEnvNames[tk.EnvName] {
+				continue
+			}
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			endPos := delimEndAfterEnd(src, pos)
+			if endPos < 0 {
+				continue
+			}
+			addLeading(pos, tk.Line)
+			addTrailing(endPos, tk.Line)
+		}
+	}
+
+	if len(inserts) == 0 {
+		return Result{Src: src}
+	}
+	out := insertNewlines(src, insertPositions(inserts))
+	hits := make([]Hit, 0, len(inserts))
+	for _, ins := range inserts {
+		hits = append(hits, Hit{
+			RuleID:  "space.display-delim-per-line",
+			Line:    ins.line,
+			Excerpt: "display delim",
+		})
+	}
+	return Result{Src: out, Hits: hits}
+}
+
+// applyEnvDelimPerLine is the shared body of the proof- and display-delim
+// rules: for every TokBeginEnv / TokEndEnv whose env name passes the
+// predicate, force the entire `\begin{env}[opt]` / `\end{env}` token
+// span onto its own line.
+func applyEnvDelimPerLine(ctx *Ctx, ruleID string, match func(env string) bool) Result {
+	src := ctx.Src
+	var inserts []newlineInsert
+
+	addBoth := func(startPos, endPos, line int) {
+		lineStart := ctx.Lines[line]
+		if startPos > 0 && hasNonWhitespacePrefix(src[lineStart:startPos]) &&
+			!parser.OverlapsProtected(startPos, startPos+1, ctx.Protected) {
+			inserts = append(inserts, newlineInsert{pos: startPos, line: line})
+		}
+		if endPos > 0 && endPos < len(src) && !isLineTailEmpty(src, endPos) &&
+			!parser.OverlapsProtected(endPos, endPos+1, ctx.Protected) {
+			inserts = append(inserts, newlineInsert{pos: endPos, line: line})
+		}
+	}
+
+	for _, tk := range ctx.Tokens {
+		switch tk.Kind {
+		case parser.TokBeginEnv:
+			if !match(tk.EnvName) {
+				continue
+			}
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			addBoth(pos, delimEndAfterBegin(src, pos), tk.Line)
+		case parser.TokEndEnv:
+			if !match(tk.EnvName) {
+				continue
+			}
+			pos := byteOffsetOf(ctx, tk.Line, tk.Col)
+			if pos < 0 {
+				continue
+			}
+			addBoth(pos, delimEndAfterEnd(src, pos), tk.Line)
+		}
+	}
+
+	if len(inserts) == 0 {
+		return Result{Src: src}
+	}
+	out := insertNewlines(src, insertPositions(inserts))
+	hits := make([]Hit, 0, len(inserts))
+	for _, ins := range inserts {
+		hits = append(hits, Hit{
+			RuleID:  ruleID,
+			Line:    ins.line,
+			Excerpt: "env delim",
+		})
+	}
+	return Result{Src: out, Hits: hits}
+}
+
+// byteOffsetOf returns the byte offset of (line, col) in ctx.Src using the
+// precomputed line-start table. Returns -1 if the position is out of range.
+func byteOffsetOf(ctx *Ctx, line, col int) int {
+	if line < 1 || line >= len(ctx.Lines) || col < 1 {
+		return -1
+	}
+	pos := ctx.Lines[line] + col - 1
+	if pos < 0 || pos >= len(ctx.Src) {
+		return -1
+	}
+	return pos
+}
+
+// hasNonWhitespacePrefix reports whether b contains any non-whitespace byte.
+// Whitespace is space, tab, carriage return.
+func hasNonWhitespacePrefix(b []byte) bool {
+	for _, c := range b {
+		if c != ' ' && c != '\t' && c != '\r' {
+			return true
+		}
+	}
+	return false
+}
+
+// isLineTailEmpty reports whether the bytes from pos to the next newline
+// contain only whitespace (and optionally a `%` comment which already
+// terminates the line). Used to decide whether to insert a trailing newline.
+func isLineTailEmpty(src []byte, pos int) bool {
+	for i := pos; i < len(src); i++ {
+		c := src[i]
+		if c == '\n' {
+			return true
+		}
+		if c == '%' {
+			return true // comment runs to EOL — effectively empty
+		}
+		if c != ' ' && c != '\t' && c != '\r' {
+			return false
+		}
+	}
+	return true
+}
+
+// delimEndAfterBegin returns the byte position immediately after a
+// `\begin{name}` (and any optional `[arg]`), starting from the position
+// of the `\`. Returns -1 if the source isn't well-formed at that point.
+func delimEndAfterBegin(src []byte, start int) int {
+	// Skip the literal "\begin", then a balanced { ... }, then optionally
+	// whitespace and a balanced [ ... ].
+	pos := skipLiteral(src, start, `\begin`)
+	if pos < 0 {
+		return -1
+	}
+	pos = skipBalanced(src, pos, '{', '}')
+	if pos < 0 {
+		return -1
+	}
+	// Optional [arg] only if it begins on the same source line.
+	saved := pos
+	for pos < len(src) && (src[pos] == ' ' || src[pos] == '\t') {
+		pos++
+	}
+	if pos < len(src) && src[pos] == '[' {
+		end := skipBalanced(src, pos, '[', ']')
+		if end > 0 {
+			return end
+		}
+	}
+	return saved
+}
+
+// delimEndAfterEnd returns the byte position immediately after `\end{name}`.
+func delimEndAfterEnd(src []byte, start int) int {
+	pos := skipLiteral(src, start, `\end`)
+	if pos < 0 {
+		return -1
+	}
+	return skipBalanced(src, pos, '{', '}')
+}
+
+// skipLiteral returns the position immediately after lit if src[start:]
+// begins with lit (byte-equal), else -1.
+func skipLiteral(src []byte, start int, lit string) int {
+	if start+len(lit) > len(src) {
+		return -1
+	}
+	for i := 0; i < len(lit); i++ {
+		if src[start+i] != lit[i] {
+			return -1
+		}
+	}
+	return start + len(lit)
+}
+
+// skipBalanced returns the position immediately after a matching close
+// bracket, given that src[start] == open. Returns -1 if no match found
+// before end-of-line (we don't span multi-line braces here — math papers
+// keep delimiter args single-line).
+func skipBalanced(src []byte, start int, open, close byte) int {
+	if start >= len(src) || src[start] != open {
+		return -1
+	}
+	depth := 1
+	for i := start + 1; i < len(src); i++ {
+		c := src[i]
+		if c == '\n' {
+			return -1
+		}
+		if c == '\\' && i+1 < len(src) {
+			i++
+			continue
+		}
+		switch c {
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// newlineInsert is an insertion site: a byte position in the source where
+// a `\n` should be added, plus the (1-based) source line number used for
+// the rule's Hit metadata.
+type newlineInsert struct {
+	pos  int
+	line int
+}
+
+// insertPositions returns just the positions, sorted ascending, deduped.
+func insertPositions(inserts []newlineInsert) []int {
+	if len(inserts) == 0 {
+		return nil
+	}
+	seen := map[int]bool{}
+	out := make([]int, 0, len(inserts))
+	for _, ins := range inserts {
+		if seen[ins.pos] {
+			continue
+		}
+		seen[ins.pos] = true
+		out = append(out, ins.pos)
+	}
+	sortAscInts(out)
+	return out
+}
+
+// insertNewlines returns a new byte slice with '\n' inserted at each of
+// the (sorted, ascending) positions in src.
+func insertNewlines(src []byte, positions []int) []byte {
+	if len(positions) == 0 {
+		return src
+	}
+	out := make([]byte, 0, len(src)+len(positions))
+	prev := 0
+	for _, p := range positions {
+		if p < prev || p > len(src) {
+			continue
+		}
+		out = append(out, src[prev:p]...)
+		out = append(out, '\n')
+		prev = p
+	}
+	out = append(out, src[prev:]...)
+	return out
+}
+
+func sortAscInts(a []int) {
+	// Insertion sort is fine — call sites have a few dozen entries at most.
+	for i := 1; i < len(a); i++ {
+		for j := i; j > 0 && a[j-1] > a[j]; j-- {
+			a[j-1], a[j] = a[j], a[j-1]
+		}
+	}
 }

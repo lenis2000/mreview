@@ -21,6 +21,7 @@ const (
 	TokTheoremStyle
 	TokBlankLine
 	TokCommentLine
+	TokItem
 )
 
 // String returns a short human-readable name for a TokenKind.
@@ -48,6 +49,8 @@ func (k TokenKind) String() string {
 		return "BlankLine"
 	case TokCommentLine:
 		return "CommentLine"
+	case TokItem:
+		return "Item"
 	}
 	return "Unknown"
 }
@@ -333,6 +336,27 @@ func (s *scanner) handleCommand(line []byte, i, cmdStart int, name string, starr
 		s.tokens = append(s.tokens, Token{
 			Kind: TokSection, Level: lvl, Title: title, Starred: starred,
 			Line: s.line, Col: col,
+		})
+		return next
+	}
+	if name == "item" {
+		// Optional [label] is consumed only if it closes on the same line —
+		// math papers don't break \item arguments across lines, so a stray
+		// '[' is more likely raw content (e.g. \item [a,b] meaning "the pair").
+		next := i
+		j := i
+		for j < len(line) && (line[j] == ' ' || line[j] == '\t') {
+			j++
+		}
+		title := ""
+		if j < len(line) && line[j] == '[' {
+			if t, after, ok := readBracketedArg(line, j); ok {
+				title = t
+				next = after
+			}
+		}
+		s.tokens = append(s.tokens, Token{
+			Kind: TokItem, Title: title, Line: s.line, Col: col,
 		})
 		return next
 	}

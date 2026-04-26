@@ -36,11 +36,12 @@ func Parse(src []byte) (*Document, error) {
 	p := newParser(src)
 	p.collectTheoremEnvs()
 	p.buildTree()
-	p.segmentRootProse()
-	p.segmentProofs()
+	p.segmentContainerGaps()
 	p.segmentItemEnvs()
+	p.segmentProofs()
 	p.segmentLeafProse()
 	p.segmentLongParagraphs()
+	p.applyChunkBudget()
 	p.sortBlocksByLine()
 	p.assignStableIDs()
 	p.resolveRefs()
@@ -259,9 +260,9 @@ func (p *parser) buildTree() {
 			}
 		case TokLabel:
 			p.attachLabel(tk.Target)
-		case TokBlankLine, TokCommentLine, TokNewTheorem, TokTheoremStyle, TokRef:
-			// Not used for tree structure in Task 3; refs/newtheorem are
-			// handled by other passes.
+		case TokBlankLine, TokCommentLine, TokNewTheorem, TokTheoremStyle, TokRef, TokItem:
+			// Not used for tree structure; \item is consumed by segmentItemEnvs
+			// and segmentProof; refs/newtheorem are handled by other passes.
 		}
 	}
 	// Close any remaining blocks at end of document (usually an outer section).
@@ -357,15 +358,128 @@ func (p *parser) attachLabel(target string) {
 	p.doc.ByLabel[target] = b
 }
 
-// segmentRootProse creates KindParagraph blocks for prose that lives at the
-// root level — either because the doc has no structural children at all
-// (opinion letters, referee reports) or because the doc has structural
-// children but also has free-floating prose in the gaps before/between/after
-// them (e.g. an intro paragraph between \maketitle and the first \section).
+// containerGapSkip is the set of block kinds whose body should NOT be
+// scanned for prose-bearing gaps: theorem statements stay whole, proofs
+// are split by segmentProof, lists by segmentItemEnvs, displays/figures/
+// bibliography are atomic. Abstract is a leaf prose container handled by
+// segmentLeafProse.
+var containerGapSkip = map[Kind]bool{
+	KindTheoremLike:  true,
+	KindProof:        true,
+	KindFigure:       true,
+	KindDisplay:      true,
+	KindBibliography: true,
+	KindAbstract:     true,
+}
+
+// segmentContainerGaps walks every container that owns a structural body
+// (the document Root and every KindSection block) and emits a KindParagraph
+// child for each prose-bearing gap between, before, or after that
+// container's existing structural children. It generalises the original
+// root-only `segmentRootProse` so prose that sits inside a section between
+// two theorems no longer disappears as its own chunk.
+//
+// For Root, the body bounds come from the \begin{document} / \end{document}
+// envelope (or the whole file if the document env is absent). For sections,
+// the bounds are [StartLine + 1, EndLine] — StartLine itself holds the
+// \section{...} command and is not prose.
+//
 // Spans whose lines are all TeX metadata commands (\title, \maketitle,
 // \medskip, …) are skipped so the outline doesn't fill up with title-block
 // noise.
-func (p *parser) segmentRootProse() {
+func (p *parser) segmentContainerGaps() {
+	containers := []*Block{p.doc.Root}
+	// Snapshot Blocks so appends during the loop don't grow the iteration.
+	snapshot := append([]*Block(nil), p.doc.Blocks...)
+	for _, b := range snapshot {
+		if b.Kind == KindSection {
+			containers = append(containers, b)
+		}
+	}
+	for _, c := range containers {
+		p.extractContainerGaps(c)
+	}
+}
+
+// extractContainerGaps emits KindParagraph children for the prose-bearing
+// gaps in container c. ChildIDs are re-sorted by StartLine after insertion
+// so downstream consumers see siblings in document order.
+func (p *parser) extractContainerGaps(c *Block) {
+	start, end := p.containerBodyBounds(c)
+	if end < start {
+		return
+	}
+
+	// Sort existing children by StartLine for the cursor walk.
+	kids := append([]string(nil), c.ChildIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		return p.doc.ByID[kids[i]].StartLine < p.doc.ByID[kids[j]].StartLine
+	})
+
+	type gap struct{ s, e int }
+	var gaps []gap
+	cursor := start
+	for _, cid := range kids {
+		ch := p.doc.ByID[cid]
+		if ch.StartLine > cursor {
+			gaps = append(gaps, gap{cursor, ch.StartLine - 1})
+		}
+		if ch.EndLine+1 > cursor {
+			cursor = ch.EndLine + 1
+		}
+	}
+	if cursor <= end {
+		gaps = append(gaps, gap{cursor, end})
+	}
+
+	added := false
+	for _, g := range gaps {
+		for _, sp := range p.paragraphSpans(g.s, g.e) {
+			if !p.spanHasProse(sp[0], sp[1]) {
+				continue
+			}
+			b := &Block{
+				ID:        p.newID(),
+				Kind:      KindParagraph,
+				StartLine: sp[0],
+				EndLine:   sp[1],
+				ParentID:  c.ID,
+			}
+			b.Source = p.extractSource(sp[0], sp[1])
+			p.doc.Blocks = append(p.doc.Blocks, b)
+			p.doc.ByID[b.ID] = b
+			c.ChildIDs = append(c.ChildIDs, b.ID)
+			added = true
+		}
+	}
+	if added {
+		sort.SliceStable(c.ChildIDs, func(i, j int) bool {
+			return p.doc.ByID[c.ChildIDs[i]].StartLine < p.doc.ByID[c.ChildIDs[j]].StartLine
+		})
+	}
+}
+
+// containerBodyBounds returns the [start, end] line range that holds the
+// "body" of c — the lines inside which a prose gap may live. Root uses the
+// document env; sections start one line past the \section command itself
+// and are clipped to docEnd so a trailing \end{document} can't end up in a
+// gap when the section auto-closes at end-of-file.
+func (p *parser) containerBodyBounds(c *Block) (int, int) {
+	docStart, docEnd := p.documentBodyRange()
+	if c == p.doc.Root {
+		return docStart, docEnd
+	}
+	start := c.StartLine + 1
+	end := c.EndLine
+	if end > docEnd {
+		end = docEnd
+	}
+	return start, end
+}
+
+// documentBodyRange returns [start, end] of the lines strictly inside the
+// document env (or [1, totalLines] when no \begin{document} is present).
+func (p *parser) documentBodyRange() (int, int) {
 	var docStart, docEnd int
 	for _, tk := range p.tokens {
 		if tk.Kind == TokBeginEnv && tk.EnvName == "document" && docStart == 0 {
@@ -381,56 +495,7 @@ func (p *parser) segmentRootProse() {
 	if docEnd == 0 {
 		docEnd = p.totalLines
 	}
-	if docEnd < docStart {
-		return
-	}
-
-	// Determine the [start,end] ranges at the root that are NOT covered by
-	// an existing structural child. When the root has no children this is
-	// simply [docStart, docEnd].
-	type gap struct{ s, e int }
-	kids := append([]string(nil), p.doc.Root.ChildIDs...)
-	sort.SliceStable(kids, func(i, j int) bool {
-		return p.doc.ByID[kids[i]].StartLine < p.doc.ByID[kids[j]].StartLine
-	})
-	var gaps []gap
-	cursor := docStart
-	for _, cid := range kids {
-		c := p.doc.ByID[cid]
-		if c.StartLine > cursor {
-			gaps = append(gaps, gap{cursor, c.StartLine - 1})
-		}
-		if c.EndLine+1 > cursor {
-			cursor = c.EndLine + 1
-		}
-	}
-	if cursor <= docEnd {
-		gaps = append(gaps, gap{cursor, docEnd})
-	}
-
-	for _, g := range gaps {
-		for _, sp := range p.paragraphSpans(g.s, g.e) {
-			if !p.spanHasProse(sp[0], sp[1]) {
-				continue
-			}
-			b := &Block{
-				ID:        p.newID(),
-				Kind:      KindParagraph,
-				StartLine: sp[0],
-				EndLine:   sp[1],
-				ParentID:  p.doc.Root.ID,
-			}
-			b.Source = p.extractSource(sp[0], sp[1])
-			p.doc.Blocks = append(p.doc.Blocks, b)
-			p.doc.ByID[b.ID] = b
-			p.doc.Root.ChildIDs = append(p.doc.Root.ChildIDs, b.ID)
-		}
-	}
-
-	// Re-sort root children so inserted paragraphs land in document order.
-	sort.SliceStable(p.doc.Root.ChildIDs, func(i, j int) bool {
-		return p.doc.ByID[p.doc.Root.ChildIDs[i]].StartLine < p.doc.ByID[p.doc.Root.ChildIDs[j]].StartLine
-	})
+	return docStart, docEnd
 }
 
 // rootMetadataCommands are the TeX commands that we treat as pure metadata
@@ -443,6 +508,7 @@ var rootMetadataCommands = []string{
 	"newpage", "pagebreak", "clearpage",
 	"tableofcontents", "bibliographystyle", "bibliography",
 	"noindent", "indent", "par",
+	"label",
 }
 
 // spanHasProse returns true if [s,e] contains prose content — i.e. text that
@@ -594,6 +660,24 @@ func (p *parser) segmentProof(proof *Block) {
 		return
 	}
 
+	// Forced-boundary lines: any pre-existing child of the proof (display,
+	// theorem-like, list block) starts a fresh step, and so does any \item
+	// token that fell inside the proof body but isn't yet wrapped in a
+	// list block (defensive — the well-formed case is already covered by
+	// list children).
+	forced := map[int]bool{}
+	for _, cid := range proof.ChildIDs {
+		c := p.doc.ByID[cid]
+		if c != nil && c.StartLine >= startLine && c.StartLine <= endLine {
+			forced[c.StartLine] = true
+		}
+	}
+	for _, tk := range p.tokens {
+		if tk.Kind == TokItem && tk.Line >= startLine && tk.Line <= endLine {
+			forced[tk.Line] = true
+		}
+	}
+
 	var spans [][2]int
 	i := startLine
 	for i <= endLine {
@@ -604,7 +688,8 @@ func (p *parser) segmentProof(proof *Block) {
 			break
 		}
 		s := i
-		for i <= endLine && !p.lineIsBlank(i) {
+		i++
+		for i <= endLine && !p.lineIsBlank(i) && !forced[i] {
 			i++
 		}
 		spans = append(spans, [2]int{s, i - 1})
@@ -706,12 +791,24 @@ func (p *parser) segmentItemEnvs() {
 		if endLine < startLine {
 			continue
 		}
-		// Find lines starting with \item; each marks a new entry.
+		// Token-driven: a single \item somewhere on a body line opens a new
+		// entry. Multiple TokItems on the same source line collapse to one
+		// entry (the line itself is the boundary; we don't subdivide within
+		// a line because the rendered list still has one entry per \item).
 		var itemStarts []int
-		for ln := startLine; ln <= endLine; ln++ {
-			if p.lineStartsWithItem(ln) {
-				itemStarts = append(itemStarts, ln)
+		var lastLine int
+		for _, tk := range p.tokens {
+			if tk.Kind != TokItem {
+				continue
 			}
+			if tk.Line < startLine || tk.Line > endLine {
+				continue
+			}
+			if tk.Line == lastLine {
+				continue
+			}
+			itemStarts = append(itemStarts, tk.Line)
+			lastLine = tk.Line
 		}
 		if len(itemStarts) <= 1 {
 			continue
@@ -734,33 +831,6 @@ func (p *parser) segmentItemEnvs() {
 			b.ChildIDs = append(b.ChildIDs, child.ID)
 		}
 	}
-}
-
-// lineStartsWithItem reports whether the given source line begins (after
-// optional whitespace) with the LaTeX `\item` macro.
-func (p *parser) lineStartsWithItem(line int) bool {
-	if line < 1 || line > p.totalLines {
-		return false
-	}
-	from := p.lineStarts[line-1]
-	var to int
-	if line >= p.totalLines {
-		to = len(p.src)
-	} else {
-		to = p.lineStarts[line]
-	}
-	raw := p.src[from:to]
-	raw = bytes.TrimLeft(raw, " \t")
-	if len(raw) < 5 {
-		return false
-	}
-	return bytes.HasPrefix(raw, []byte(`\item`)) &&
-		(len(raw) == 5 || !isLatexLetter(raw[5]))
-}
-
-// isLatexLetter reports whether b is part of a \command name (ASCII letter).
-func isLatexLetter(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // proseSplittableKinds picks block kinds whose source is plain prose and

@@ -138,13 +138,17 @@ func TestParse_SampleFixture_ProofSteps(t *testing.T) {
 	proof := findFirst(doc, func(b *Block) bool { return b.Kind == KindProof })
 	require.NotNil(t, proof)
 
-	// The proof in sample.tex has three non-blank runs separated by blank lines.
+	// sample.tex proof has three blank-line-separated runs; the third run
+	// embeds an align display, which segmentProof now treats as a forced
+	// boundary, so the last run splits into its leading text and the
+	// align-anchored tail. Total: four steps.
 	steps := collect(doc, func(b *Block) bool {
 		return b.Kind == KindProofStep && b.ParentID == proof.ID
 	})
-	require.Len(t, steps, 3, "sample.tex proof should segment into three steps")
+	require.Len(t, steps, 4, "sample.tex proof should segment into four steps")
 
-	// The align display should live under the last proof step, not directly under the proof.
+	// The align display should live under the step that begins on its own
+	// line — the final step, the one created by the forced boundary.
 	var alignStepID string
 	for _, b := range doc.Blocks {
 		if b.Kind == KindDisplay && b.EnvName == "align" {
@@ -152,7 +156,7 @@ func TestParse_SampleFixture_ProofSteps(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, alignStepID)
-	assert.Equal(t, steps[2].ID, alignStepID, "align should be child of the last proof step")
+	assert.Equal(t, steps[3].ID, alignStepID, "align should be child of the last proof step")
 
 	// Proof's direct children are exactly the ProofStep IDs.
 	for _, cid := range proof.ChildIDs {
