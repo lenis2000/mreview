@@ -11,6 +11,7 @@ func init() {
 	registerWrapRule()       // runs after indent so the lead prefix is stable
 	registerMathAlignRule()  // Tier 1: align & columns in math/tabular envs
 	registerMathContRule()   // Tier 1: continuation-indent in equation envs
+	registerMathWrapRule()   // Tier 1: wrap long equation rows at break ops (opt-in)
 	registerPDFFixRules()
 	registerTildeRule() // Tier 2: insert ~ before \cite/\ref commands
 	registerDiagRules()

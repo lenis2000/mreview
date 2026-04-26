@@ -61,6 +61,8 @@ type Ctx struct {
 	Tilde TildeOptions
 	// MathAlign controls math.align-columns.
 	MathAlign MathAlignOptions
+	// MathWrap controls math.wrap-at-break-op.
+	MathWrap MathWrapOptions
 }
 
 // LineSkipped reports whether the 1-based source line is silenced by a

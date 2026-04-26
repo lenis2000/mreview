@@ -173,14 +173,14 @@ Extend `mreview fmt` with four phases of functionality: CLI ergonomics (--stdin,
 - Modify: `pkg/ui/config.go`
 - Modify: `config.example.toml`
 
-- [ ] implement: for inline display equations exceeding math_wrap_col, split at rightmost break operator within budget
-- [ ] move operator to start of new line, apply math.continuation-indent alignment
-- [ ] off by default (math_wrap = false); enable via --rule or config
-- [ ] add `MathWrap *bool`, `MathWrapCol int` to FmtConfig
-- [ ] register as Tier 1 (whitespace-only, opt-in)
-- [ ] update config.example.toml
-- [ ] write tests: wrap fires only on overflow, respects break-op set, short equation no-op, preserves structure
-- [ ] run `go test ./... && make install`
+- [x] implement: for inline display equations exceeding math_wrap_col, split at rightmost break operator within budget
+- [x] move operator to start of new line, apply math.continuation-indent alignment
+- [x] off by default (math_wrap = false); enable via --rule or config
+- [x] add `MathWrap *bool`, `MathWrapCol int` to FmtConfig
+- [x] register as Tier 1 (whitespace-only, opt-in)
+- [x] update config.example.toml
+- [x] write tests: wrap fires only on overflow, respects break-op set, short equation no-op, preserves structure
+- [x] run `go test ./... && make install`
 
 ### Task 11: PNAS golden tests for new rules
 

@@ -51,6 +51,8 @@ type FmtConfig struct {
 	MathAlign    *bool    `toml:"math_align"`      // default true; set false to disable math.align-columns
 	MathAlignEnvs []string `toml:"math_align_envs"` // override default env list for math.align-columns
 	MathAlignSkip []string `toml:"math_align_skip"` // envs to skip even if in the align list
+	MathWrap      *bool    `toml:"math_wrap"`        // default false (opt-in); set true to enable math.wrap-at-break-op
+	MathWrapCol   int      `toml:"math_wrap_col"`    // target column for math.wrap-at-break-op; 0 = 80
 }
 
 // DefaultConfig returns an empty Config with non-nil maps so callers can
@@ -235,6 +237,13 @@ func mergeFmtConfig(base, overlay *FmtConfig) {
 	}
 	if len(overlay.MathAlignSkip) > 0 {
 		base.MathAlignSkip = append([]string(nil), overlay.MathAlignSkip...)
+	}
+	if overlay.MathWrap != nil {
+		v := *overlay.MathWrap
+		base.MathWrap = &v
+	}
+	if overlay.MathWrapCol > 0 {
+		base.MathWrapCol = overlay.MathWrapCol
 	}
 }
 

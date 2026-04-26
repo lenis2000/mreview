@@ -27,6 +27,8 @@ type Options struct {
 	Tilde TildeOptions
 	// MathAlign controls the math.align-columns rule.
 	MathAlign MathAlignOptions
+	// MathWrap controls the math.wrap-at-break-op rule.
+	MathWrap MathWrapOptions
 	// LineRange, when non-nil, restricts formatting to the given 1-based
 	// inclusive line range [Start, End]. Line-count-changing rules are
 	// force-disabled when set.
@@ -118,6 +120,7 @@ func newCtxWithOpts(src []byte, opts Options) *Ctx {
 		Wrap:         opts.Wrap,
 		Tilde:        opts.Tilde,
 		MathAlign:    opts.MathAlign,
+		MathWrap:     opts.MathWrap,
 	}
 }
 
@@ -153,6 +156,7 @@ var lineCountChangingRules = map[string]bool{
 	"space.blank-runs":         true,
 	"space.wrap":               true,
 	"math.paragraph-suppress":  true,
+	"math.wrap-at-break-op":   true,
 }
 
 // enabledRules filters Registry according to opts.

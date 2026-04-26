@@ -87,6 +87,10 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 # math_align = true                    # default: ON
 # math_align_envs = []                 # override default env list; omit = use defaults
 # math_align_skip = []                 # envs to skip even if in the align list
+
+# Wrap long equation rows at a break operator (opt-in).
+# math_wrap     = false                # default: OFF (opt-in)
+# math_wrap_col = 80                   # target column for wrapping
 `
 
 // runConfig opens the user-global mreview config in $EDITOR. If the file
