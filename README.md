@@ -89,14 +89,14 @@ PDF is preserved. Modeled on `gofmt` / `cargo fmt`: source rewrites are
 git-visible, never a hidden side effect.
 
 ```
-mreview fmt paper.tex                      # Tier 1 (safe), verify, write in place
+mreview fmt paper.tex                      # default: Tier 1 + Tier 2, paranoid verify, write report
 mreview fmt --diff paper.tex               # show unified diff, no write
 mreview fmt --check paper.tex              # exit 1 if changes needed (CI)
-mreview fmt --pdf-fix paper.tex            # Tier 1 + Tier 2, verify, write
+mreview fmt --no-pdf-fix paper.tex         # Tier 1 only (skip Tier-2 PDF-fixers)
 mreview fmt --rule=math.paragraph-suppress paper.tex  # one rule only
-mreview fmt --no-verify paper.tex          # skip PDF rebuild
-mreview fmt --verify-pdf=visual paper.tex  # paranoid pixel-level check
-mreview fmt --report paper.tex             # also write paper.tex.fmt-report.md
+mreview fmt --no-verify paper.tex          # skip PDF rebuild entirely
+mreview fmt --verify-pdf=text paper.tex    # text-layer check only (skip pixel-level)
+mreview fmt --no-report paper.tex          # do not write paper.tex.fmt-report.md
 mreview fmt --allow-dirty paper.tex        # bypass dirty-tree check
 mreview fmt --clean-tempdir                # remove verification tempdirs
 ```
@@ -115,7 +115,7 @@ Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 | `space.tabs` | Tabs → 4 spaces outside protected regions |
 | `display.style` | `$$…$$` → `\[…\]` |
 
-**Tier 2 — PDF-fixing (off by default; `--pdf-fix` or `--rule=<id>`):**
+**Tier 2 — PDF-fixing (on by default; opt out with `--no-pdf-fix`):**
 
 | ID | What it does |
 |---|---|
@@ -142,13 +142,16 @@ Refuses to overwrite a dirty working tree by default (safety net is `git diff`
 The verifier rebuilds before/after PDFs in an isolated tempdir and compares
 `pdftotext` output (whitespace-normalized). Tier-2 rules declare expected-diff
 regions via synctex source-line mapping; diffs outside those regions cause
-refusal. `--verify-pdf=visual` adds pixel-level `diff-pdf` comparison on top.
+refusal. The default `--verify-pdf=visual` also runs a pixel-level `diff-pdf`
+comparison; pass `--verify-pdf=text` to skip the pixel pass, or `--no-verify`
+to skip verification entirely.
 
 ### Report file
 
-`--report` writes `paper.tex.fmt-report.md` listing all rewrites, diagnostics,
-and verifier warnings. The mreview review UI loads this file automatically and
-surfaces diagnostics in the `issues` filter.
+By default `mreview fmt` writes `paper.tex.fmt-report.md` listing all rewrites,
+diagnostics, and verifier warnings. The mreview review UI loads this file
+automatically and surfaces diagnostics in the `issues` filter. Pass
+`--no-report` to suppress it.
 
 ## Keybindings
 

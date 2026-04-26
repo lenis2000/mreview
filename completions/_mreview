@@ -41,12 +41,12 @@ _mreview_fmt() {
   _arguments \
     '--diff[show unified diff to stdout, do not write]' \
     '--check[exit 1 if changes needed]' \
-    '--pdf-fix[enable Tier-2 PDF-fixing rules]' \
+    '--no-pdf-fix[disable Tier-2 PDF-fixing rules (Tier-1 only)]' \
     '*--rule=[restrict to these rule IDs]:rule id:' \
     '--allow-dirty[skip dirty-tree check before writing]' \
-    '--no-verify[skip PDF verification]' \
-    '--verify-pdf=[verifier mode]:mode:(text visual)' \
-    '--report[write paper.tex.fmt-report.md]' \
+    '--no-verify[skip PDF verification entirely]' \
+    '--verify-pdf=[verifier mode (default: visual)]:mode:(text visual)' \
+    '--no-report[do not write paper.tex.fmt-report.md]' \
     '--clean-tempdir[remove all mr-fmt-* verification tempdirs]' \
     '*:tex file:_files -g "*.tex"'
 }

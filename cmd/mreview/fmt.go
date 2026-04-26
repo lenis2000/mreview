@@ -16,15 +16,19 @@ import (
 )
 
 // fmtOpts holds flags for the "mreview fmt" subcommand.
+//
+// Defaults are aggressive: Tier-2 PDF-fix rules on, paranoid pixel-level
+// verification on, and a fmt-report.md emitted next to the paper. Use the
+// --no-* flags or --verify-pdf=text to opt out.
 type fmtOpts struct {
 	Diff         bool     `long:"diff" description:"show unified diff to stdout, do not write"`
 	Check        bool     `long:"check" description:"exit 1 if changes needed (CI / pre-commit)"`
-	PDFFix       bool     `long:"pdf-fix" description:"enable Tier-2 PDF-fixing rules"`
+	NoPDFFix     bool     `long:"no-pdf-fix" description:"disable Tier-2 PDF-fixing rules (Tier-1 only)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
-	NoVerify     bool     `long:"no-verify" description:"skip PDF verification"`
-	VerifyPDF    string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode"`
-	Report       bool     `long:"report" description:"write paper.tex.fmt-report.md"`
+	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely"`
+	VerifyPDF    string   `long:"verify-pdf" choice:"text" choice:"visual" description:"verifier mode (default: visual)"`
+	NoReport     bool     `long:"no-report" description:"do not write paper.tex.fmt-report.md"`
 	CleanTempdir bool     `long:"clean-tempdir" description:"remove all mr-fmt-* verification tempdirs"`
 }
 
@@ -88,18 +92,28 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// Resolve aggressive defaults.
+	pdfFix := !o.NoPDFFix
+	wantReport := !o.NoReport
+	// Empty --verify-pdf means visual (paranoid). --verify-pdf=text opts back
+	// to text-layer only.
+	verifyMode := o.VerifyPDF
+	if verifyMode == "" {
+		verifyMode = "visual"
+	}
+
 	// Build pipeline options.
 	opts := format.Options{
-		PDFFix: o.PDFFix,
+		PDFFix: pdfFix,
 		Rules:  o.Rule,
-		Diag:   o.Report, // enable diagnostics when --report is set
+		Diag:   wantReport, // enable diagnostics when a report will be written
 	}
 
 	result := format.Apply(src, opts)
 
 	// Write report early — both --check and no-changes paths benefit.
 	writeReportIfNeeded := func(verifyResult *format.VerifyResult) {
-		if !o.Report {
+		if !wantReport {
 			return
 		}
 		reportPath := format.ReportPath(paperPath)
@@ -124,7 +138,7 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		if o.Check {
 			return 0
 		}
-		if !o.Report || len(result.Diags) == 0 {
+		if !wantReport || len(result.Diags) == 0 {
 			fmt.Fprintln(stderr, "mreview fmt: no changes")
 		}
 		return 0
@@ -184,8 +198,9 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mreview fmt: verification ok (text layer)")
 		verifyResult = vr
 
-		// Paranoid mode: pixel-level diff-pdf comparison.
-		if o.VerifyPDF == "visual" {
+		// Paranoid mode: pixel-level diff-pdf comparison. Default; opt out
+		// with --verify-pdf=text.
+		if verifyMode == "visual" {
 			if !format.ParanoidAvailable {
 				fmt.Fprintln(stderr, "mreview fmt: paranoid verifier not available — rebuild with -tags=pdfverify")
 				return 1
