@@ -810,6 +810,48 @@ func TestFmt_Lines_SkipsReported(t *testing.T) {
 	}
 }
 
+// prose.tilde-refs is opt-in: skipped by default unless tilde_refs is set
+// in config or --rule=prose.tilde-refs is explicitly passed.
+func TestMergeSkipRulesWith_DefaultSkipsTilde(t *testing.T) {
+	got := mergeSkipRulesWith(nil, nil, nil, nil)
+	if !sliceContains(got, "prose.tilde-refs") {
+		t.Fatalf("expected prose.tilde-refs in default skip, got %v", got)
+	}
+}
+
+func TestMergeSkipRulesWith_ConfigOptInRunsTilde(t *testing.T) {
+	got := mergeSkipRulesWith(nil, nil, []string{"cite", "ref"}, nil)
+	if sliceContains(got, "prose.tilde-refs") {
+		t.Fatalf("config opt-in should remove default skip; got %v", got)
+	}
+}
+
+func TestMergeSkipRulesWith_ExplicitRuleRunsTilde(t *testing.T) {
+	got := mergeSkipRulesWith(nil, nil, nil, []string{"prose.tilde-refs"})
+	if sliceContains(got, "prose.tilde-refs") {
+		t.Fatalf("explicit --rule should remove default skip; got %v", got)
+	}
+}
+
+func TestMergeSkipRulesWith_PreservesUserSkips(t *testing.T) {
+	got := mergeSkipRulesWith([]string{"space.wrap"}, []string{"math.align-columns"}, nil, nil)
+	if !sliceContains(got, "space.wrap") || !sliceContains(got, "math.align-columns") {
+		t.Fatalf("user-supplied skips dropped: %v", got)
+	}
+	if !sliceContains(got, "prose.tilde-refs") {
+		t.Fatalf("default tilde skip should still be added: %v", got)
+	}
+}
+
+func sliceContains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
 // mustGit runs a git command in dir, failing the test on error.
 func mustGit(t *testing.T, dir string, args ...string) {
 	t.Helper()

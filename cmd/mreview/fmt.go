@@ -234,7 +234,7 @@ func runFmtOne(
 	opts := format.Options{
 		PDFFix:       pdfFix,
 		Rules:        o.Rule,
-		SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
+		SkipRules:    mergeSkipRulesWith(cfg.Fmt.SkipRules, o.SkipRule, cfg.Fmt.TildeRefs, o.Rule),
 		Diag:         wantReport, // enable diagnostics when a report will be written
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       indentOpts,
@@ -557,7 +557,7 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	opts := format.Options{
 		PDFFix:       resolved.pdfFix,
 		Rules:        o.Rule,
-		SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
+		SkipRules:    mergeSkipRulesWith(cfg.Fmt.SkipRules, o.SkipRule, cfg.Fmt.TildeRefs, o.Rule),
 		Diag:         false, // no report for stdin
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       resolved.indent,
@@ -624,7 +624,7 @@ func runFmtSummary(
 		opts := format.Options{
 			PDFFix:       pdfFix,
 			Rules:        o.Rule,
-			SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
+			SkipRules:    mergeSkipRulesWith(cfg.Fmt.SkipRules, o.SkipRule, cfg.Fmt.TildeRefs, o.Rule),
 			Diag:         true, // need diags for the count
 			VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 			Indent:       indentOpts,
@@ -680,12 +680,24 @@ func printRulesList(w io.Writer) {
 
 // mergeSkipRules unions the config-provided skip list with the CLI-provided one,
 // dropping duplicates. Order is config-first, then CLI extras.
+//
+// `prose.tilde-refs` is added implicitly unless the user has opted in by
+// setting `tilde_refs = [...]` in config or by passing --rule=prose.tilde-refs
+// on the CLI. The rule rewrites a regular space into a non-breaking space (~),
+// which is the only Tier-2 change that visibly shifts page-line layout in the
+// rendered PDF — so verification fails on every paragraph downstream of any
+// `~` insertion. Off-by-default avoids that surprise.
 func mergeSkipRules(fromCfg, fromCLI []string) []string {
-	if len(fromCfg) == 0 && len(fromCLI) == 0 {
-		return nil
-	}
-	seen := make(map[string]bool, len(fromCfg)+len(fromCLI))
-	out := make([]string, 0, len(fromCfg)+len(fromCLI))
+	return mergeSkipRulesWith(fromCfg, fromCLI, nil, nil)
+}
+
+// mergeSkipRulesWith is mergeSkipRules with the additional ability to skip
+// the implicit `prose.tilde-refs` default when the user has opted in.
+//   - tildeRefs: from config (non-empty means user configured custom refs)
+//   - explicitRules: from --rule (when user explicitly requests tilde-refs)
+func mergeSkipRulesWith(fromCfg, fromCLI []string, tildeRefs, explicitRules []string) []string {
+	seen := map[string]bool{}
+	var out []string
 	for _, id := range fromCfg {
 		if !seen[id] {
 			seen[id] = true
@@ -697,6 +709,19 @@ func mergeSkipRules(fromCfg, fromCLI []string) []string {
 			seen[id] = true
 			out = append(out, id)
 		}
+	}
+	// Implicit default: tilde-refs is opt-in.
+	tildeOptedIn := len(tildeRefs) > 0
+	for _, id := range explicitRules {
+		if id == "prose.tilde-refs" {
+			tildeOptedIn = true
+		}
+	}
+	if !tildeOptedIn && !seen["prose.tilde-refs"] {
+		out = append(out, "prose.tilde-refs")
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
