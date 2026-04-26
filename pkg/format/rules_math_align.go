@@ -119,6 +119,7 @@ func applyMathAlign(ctx *Ctx) Result {
 	out := make([]byte, 0, len(ctx.Src))
 	changed := false
 	var hits []Hit
+	var diags []Diag
 
 	prev := len(ctx.Src)
 	for i := len(spans) - 1; i >= 0; i-- {
@@ -132,10 +133,10 @@ func applyMathAlign(ctx *Ctx) Result {
 		if !ok {
 			// Refusal case: emit as Tier-3 note via a Diag.
 			if diag != "" {
-				hits = append(hits, Hit{
+				diags = append(diags, Diag{
 					RuleID:  "math.align-columns",
 					Line:    sp.beginLine,
-					Excerpt: diag,
+					Message: diag,
 				})
 			}
 			// Prepend unchanged span + tail.
@@ -165,12 +166,12 @@ func applyMathAlign(ctx *Ctx) Result {
 	}
 
 	if !changed {
-		return Result{Src: ctx.Src}
+		return Result{Src: ctx.Src, Diags: diags}
 	}
 
 	// Prepend everything before the first span.
 	out = append(ctx.Src[:prev], out...)
-	return Result{Src: out, Hits: hits}
+	return Result{Src: out, Hits: hits, Diags: diags}
 }
 
 // buildEnvSet constructs the set of env names to align from MathAlignOptions.
