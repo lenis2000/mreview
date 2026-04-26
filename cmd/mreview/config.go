@@ -91,6 +91,10 @@ const defaultGlobalConfig = `# mreview global config — all values shown match 
 # Wrap long equation rows at a break operator (opt-in).
 # math_wrap     = false                # default: OFF (opt-in)
 # math_wrap_col = 80                   # target column for wrapping
+
+# Disable specific rules globally. CLI --skip-rule appends to this list.
+# See ` + "`mreview fmt --list-rules`" + ` for the full set of rule IDs.
+# skip_rules = ["prose.tilde-refs"]
 `
 
 // runConfig opens the user-global mreview config in $EDITOR. If the file

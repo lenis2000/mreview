@@ -53,6 +53,7 @@ type FmtConfig struct {
 	MathAlignSkip []string `toml:"math_align_skip"` // envs to skip even if in the align list
 	MathWrap      *bool    `toml:"math_wrap"`        // default false (opt-in); set true to enable math.wrap-at-break-op
 	MathWrapCol   int      `toml:"math_wrap_col"`    // target column for math.wrap-at-break-op; 0 = 80
+	SkipRules     []string `toml:"skip_rules"`       // disable these rule IDs even when otherwise enabled
 }
 
 // DefaultConfig returns an empty Config with non-nil maps so callers can
@@ -244,6 +245,9 @@ func mergeFmtConfig(base, overlay *FmtConfig) {
 	}
 	if overlay.MathWrapCol > 0 {
 		base.MathWrapCol = overlay.MathWrapCol
+	}
+	if len(overlay.SkipRules) > 0 {
+		base.SkipRules = append([]string(nil), overlay.SkipRules...)
 	}
 }
 

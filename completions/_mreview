@@ -45,6 +45,8 @@ _mreview_fmt() {
     '(--diff --check -p --print)'{-p,--print}'[print formatted source to stdout, do not write]' \
     '(--diff --print)--check[exit 1 if changes needed]' \
     '*--rule=[restrict to these rule IDs]:rule id:' \
+    '*--skip-rule=[disable these rule IDs even when otherwise enabled]:rule id:' \
+    '--list-rules[print all registered rule IDs and exit]' \
     '--allow-dirty[skip dirty-tree check before writing]' \
     '--no-verify[skip PDF verification entirely (one-off)]' \
     '--no-report[do not write paper.tex.fmt-report.md (one-off)]' \

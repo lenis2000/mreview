@@ -391,6 +391,10 @@ func buildInDir(dir, paper string) (*build.Result, error) {
 	texPath := filepath.Join(dir, paper)
 	return build.RunWith(build.Options{
 		TexPath: texPath,
+		// The verifier compares before/after PDFs; it does not care if the
+		// source has pre-existing undefined refs/cites. Linting those is the
+		// job of the Tier-3 diag rules and the user-facing build path.
+		IgnoreUndefinedRefs: true,
 	})
 }
 

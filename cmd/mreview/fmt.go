@@ -33,6 +33,8 @@ type fmtOpts struct {
 	Summary      bool     `long:"summary" description:"scan only; print N rewrites across M files to stderr"`
 	Lines        string   `long:"lines" description:"format only lines START:END (1-based, inclusive)"`
 	Rule         []string `long:"rule" description:"restrict to these rule IDs (repeatable)"`
+	SkipRule     []string `long:"skip-rule" description:"disable these rule IDs even when otherwise enabled (repeatable)"`
+	ListRules    bool     `long:"list-rules" description:"print all registered rule IDs (tier, id, doc) and exit"`
 	AllowDirty   bool     `long:"allow-dirty" description:"skip dirty-tree check before writing"`
 	NoVerify     bool     `long:"no-verify" description:"skip PDF verification entirely (one-off escape hatch)"`
 	NoReport     bool     `long:"no-report" description:"do not write paper.tex.fmt-report.md (one-off)"`
@@ -95,6 +97,13 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	// --list-rules: print rule IDs and exit. Runs before any other validation
+	// so it works even when no file argument is given.
+	if o.ListRules {
+		printRulesList(stdout)
+		return 0
+	}
+
 	// --clean-tempdir: remove all verification tempdirs and exit.
 	if o.CleanTempdir {
 		if err := format.CleanTempDirs(); err != nil {
@@ -134,6 +143,11 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", err)
 		return 2
 	}
+	if err := format.ValidateRuleIDs(o.SkipRule); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: --skip-rule: %v\n", err)
+		return 2
+	}
+	// Note: config skip_rules is validated lazily after LoadConfig below.
 
 	// Parse --lines early so we fail fast on bad input.
 	var lineRange *[2]int
@@ -151,6 +165,10 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 	if cfgErr != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview fmt: %v\n", cfgErr)
 		return 1
+	}
+	if err := format.ValidateRuleIDs(cfg.Fmt.SkipRules); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: config skip_rules: %v\n", err)
+		return 2
 	}
 
 	// Resolve config-driven settings. CLI escape hatches override (only
@@ -216,6 +234,7 @@ func runFmtOne(
 	opts := format.Options{
 		PDFFix:       pdfFix,
 		Rules:        o.Rule,
+		SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
 		Diag:         wantReport, // enable diagnostics when a report will be written
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       indentOpts,
@@ -507,9 +526,17 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 
 	resolved := resolveFormatOpts(cfg.Fmt)
 
-	// Validate --rule IDs.
+	// Validate --rule and --skip-rule IDs.
 	if err := format.ValidateRuleIDs(o.Rule); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: %v\n", err)
+		return 2
+	}
+	if err := format.ValidateRuleIDs(o.SkipRule); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: --skip-rule: %v\n", err)
+		return 2
+	}
+	if err := format.ValidateRuleIDs(cfg.Fmt.SkipRules); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview fmt: <stdin>: config skip_rules: %v\n", err)
 		return 2
 	}
 
@@ -527,6 +554,7 @@ func runFmtStdin(o *fmtOpts, stdout, stderr io.Writer) int {
 	opts := format.Options{
 		PDFFix:       resolved.pdfFix,
 		Rules:        o.Rule,
+		SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
 		Diag:         false, // no report for stdin
 		VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 		Indent:       resolved.indent,
@@ -593,6 +621,7 @@ func runFmtSummary(
 		opts := format.Options{
 			PDFFix:       pdfFix,
 			Rules:        o.Rule,
+			SkipRules:    mergeSkipRules(cfg.Fmt.SkipRules, o.SkipRule),
 			Diag:         true, // need diags for the count
 			VerbatimEnvs: cfg.Fmt.VerbatimEnvs,
 			Indent:       indentOpts,
@@ -624,6 +653,49 @@ func runFmtSummary(
 			totalHits, filesWithHits)
 	}
 	return 0
+}
+
+// printRulesList writes a table of every registered rule to w (tier, id, doc).
+// Used by `mreview fmt --list-rules`.
+func printRulesList(w io.Writer) {
+	rules := format.ListRules()
+	maxID := len("RULE ID")
+	maxTier := len("TIER")
+	for _, r := range rules {
+		if l := len(r.ID); l > maxID {
+			maxID = l
+		}
+		if l := len(r.Tier.String()); l > maxTier {
+			maxTier = l
+		}
+	}
+	_, _ = fmt.Fprintf(w, "%-*s  %-*s  %s\n", maxTier, "TIER", maxID, "RULE ID", "DESCRIPTION")
+	for _, r := range rules {
+		_, _ = fmt.Fprintf(w, "%-*s  %-*s  %s\n", maxTier, r.Tier.String(), maxID, r.ID, r.Doc)
+	}
+}
+
+// mergeSkipRules unions the config-provided skip list with the CLI-provided one,
+// dropping duplicates. Order is config-first, then CLI extras.
+func mergeSkipRules(fromCfg, fromCLI []string) []string {
+	if len(fromCfg) == 0 && len(fromCLI) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(fromCfg)+len(fromCLI))
+	out := make([]string, 0, len(fromCfg)+len(fromCLI))
+	for _, id := range fromCfg {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range fromCLI {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // resolveBool returns the effective bool from (flag, config, default).

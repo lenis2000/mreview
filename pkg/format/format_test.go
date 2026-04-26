@@ -391,6 +391,62 @@ func TestDefaultOptionsSafeOnly(t *testing.T) {
 	assert.Equal(t, 12, len(rules))
 }
 
+// TestSkipRulesFiltersDefault verifies that SkipRules removes a rule from the
+// default Safe-only pipeline.
+func TestSkipRulesFiltersDefault(t *testing.T) {
+	all := enabledRules(Options{})
+	filtered := enabledRules(Options{SkipRules: []string{"space.trailing"}})
+	assert.Equal(t, len(all)-1, len(filtered))
+	for _, r := range filtered {
+		assert.NotEqual(t, "space.trailing", r.ID)
+	}
+}
+
+// TestSkipRulesFiltersPDFFix verifies that SkipRules can disable a Tier-2 rule
+// while leaving the other PDFFix rules running.
+func TestSkipRulesFiltersPDFFix(t *testing.T) {
+	full := enabledRules(Options{PDFFix: true})
+	filtered := enabledRules(Options{PDFFix: true, SkipRules: []string{"prose.tilde-refs"}})
+	assert.Equal(t, len(full)-1, len(filtered))
+	for _, r := range filtered {
+		assert.NotEqual(t, "prose.tilde-refs", r.ID)
+	}
+}
+
+// TestSkipRulesAppliesToWhitelist verifies that SkipRules subtracts even from a
+// `--rule` whitelist (skip-list always wins).
+func TestSkipRulesAppliesToWhitelist(t *testing.T) {
+	got := enabledRules(Options{
+		Rules:     []string{"space.trailing", "space.tabs"},
+		SkipRules: []string{"space.tabs"},
+	})
+	require.Equal(t, 1, len(got))
+	assert.Equal(t, "space.trailing", got[0].ID)
+}
+
+// TestApplyHonoursSkipRules — end-to-end: tilde rule does not insert ~ when
+// disabled via SkipRules.
+func TestApplyHonoursSkipRules(t *testing.T) {
+	src := []byte("See \\cite{foo} below.\n")
+	withTilde := Apply(src, Options{PDFFix: true})
+	withoutTilde := Apply(src, Options{PDFFix: true, SkipRules: []string{"prose.tilde-refs"}})
+	assert.Equal(t, "See~\\cite{foo} below.\n", string(withTilde.Src))
+	assert.Equal(t, string(src), string(withoutTilde.Src))
+}
+
+// TestListRulesSnapshot verifies ListRules returns one entry per Registry rule
+// in registration order with metadata populated.
+func TestListRulesSnapshot(t *testing.T) {
+	got := ListRules()
+	require.Equal(t, len(Registry), len(got))
+	for i, r := range got {
+		assert.Equal(t, Registry[i].ID, r.ID)
+		assert.Equal(t, Registry[i].Tier, r.Tier)
+		assert.Equal(t, Registry[i].Doc, r.Doc)
+		assert.Nil(t, r.Apply, "ListRules must not leak the Apply func")
+	}
+}
+
 // TestRegistryOrder verifies rules are in the expected order.
 func TestRegistryOrder(t *testing.T) {
 	ids := make([]string, len(Registry))

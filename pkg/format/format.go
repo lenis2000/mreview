@@ -15,6 +15,10 @@ type Options struct {
 	Diag bool
 	// Rules, if non-empty, restricts the run to only these rule IDs.
 	Rules []string
+	// SkipRules, if non-empty, removes these rule IDs from the run. Applied
+	// after Rules-based filtering and the tier-based defaulting, so it works
+	// equally with `--rule` whitelists and the default Safe/PDFFix selection.
+	SkipRules []string
 	// VerbatimEnvs adds caller-supplied environments to the protected-span
 	// list (in addition to the built-in verbatim/Verbatim/lstlisting/minted/
 	// comment defaults). Useful for user-defined listing wrappers.
@@ -132,6 +136,16 @@ func reindex(ctx *Ctx) {
 	ctx.Skip = BuildSkipMask(ctx.Src)
 }
 
+// ListRules returns a snapshot of every registered rule (id, tier label, doc).
+// Order matches the registration order (= pipeline execution order).
+func ListRules() []Rule {
+	out := make([]Rule, len(Registry))
+	for i, r := range Registry {
+		out[i] = Rule{ID: r.ID, Tier: r.Tier, Doc: r.Doc}
+	}
+	return out
+}
+
 // ValidateRuleIDs checks that all rule IDs in ids exist in the Registry.
 // Returns an error listing the first unknown ID, or nil if all are valid.
 func ValidateRuleIDs(ids []string) error {
@@ -170,6 +184,10 @@ func enabledRules(opts Options) []Rule {
 	for _, id := range opts.Rules {
 		ruleSet[id] = true
 	}
+	skipSet := make(map[string]bool, len(opts.SkipRules))
+	for _, id := range opts.SkipRules {
+		skipSet[id] = true
+	}
 
 	var out []Rule
 	for _, r := range Registry {
@@ -193,6 +211,10 @@ func enabledRules(opts Options) []Rule {
 				}
 			}
 		}
+		// Skip-list overrides everything else.
+		if skipSet[r.ID] {
+			continue
+		}
 		// Force-disable line-count-changing rules when --lines is active.
 		if opts.LineRange != nil && lineCountChangingRules[r.ID] {
 			continue
@@ -211,6 +233,10 @@ func SkippedLineRangeRules(opts Options) []string {
 	ruleSet := make(map[string]bool, len(opts.Rules))
 	for _, id := range opts.Rules {
 		ruleSet[id] = true
+	}
+	skipSet := make(map[string]bool, len(opts.SkipRules))
+	for _, id := range opts.SkipRules {
+		skipSet[id] = true
 	}
 	var skipped []string
 	for _, r := range Registry {
@@ -233,6 +259,10 @@ func SkippedLineRangeRules(opts Options) []string {
 					continue
 				}
 			}
+		}
+		// Already skipped by SkipRules — don't double-report.
+		if skipSet[r.ID] {
+			continue
 		}
 		skipped = append(skipped, r.ID)
 	}

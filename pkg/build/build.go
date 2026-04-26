@@ -46,6 +46,11 @@ type Options struct {
 	Stderr io.Writer
 	// Ctx is the optional context used for the command.
 	Ctx context.Context
+	// IgnoreUndefinedRefs disables the undefined-reference / undefined-citation
+	// log gate. TeX `!` errors and non-zero exit codes still fail the build.
+	// Used by the format verifier, which only needs identical before/after PDFs
+	// and does not care if the source has pre-existing unresolved refs.
+	IgnoreUndefinedRefs bool
 }
 
 // Run compiles texPath using buildCmd (or the default latexmk invocation if
@@ -99,8 +104,21 @@ func RunWith(opts Options) (*Result, error) {
 
 	logTail, _ := tailLines(res.LogPath, 40)
 	logIssue := scanLogForErrors(res.LogPath)
+	if opts.IgnoreUndefinedRefs && logIssue != "" && isUndefinedRefWarning(logIssue) {
+		logIssue = ""
+	}
 
 	if runErr != nil {
+		// In IgnoreUndefinedRefs mode, treat a non-zero latexmk exit as
+		// success when the PDF was produced and the only log issue (if any)
+		// was an undefined-ref/cite warning we have already filtered.
+		// latexmk returns non-zero when it sees undefined refs even though
+		// the PDF is valid; the verifier cares only about the produced PDF.
+		if opts.IgnoreUndefinedRefs && logIssue == "" {
+			if st, statErr := os.Stat(res.PDFPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
+				return res, nil
+			}
+		}
 		return res, wrapBuildErr(opts.TexPath, fmt.Sprintf("command failed: %v", runErr), logIssue, logTail)
 	}
 	if logIssue != "" {

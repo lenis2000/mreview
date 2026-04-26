@@ -1,0 +1,74 @@
+name: Run examples
+
+on: [push, pull_request]
+
+env:
+  CGO_ENABLED: 0
+
+jobs:
+  run-examples-macos:
+    strategy:
+      matrix:
+        os: [macos-13, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Build dynamic library
+        run: |
+          clang -shared -o libitem.dylib -fPIC examples/structs/item/item.c
+          clang -shared -o libcallback.dylib -fPIC examples/closures/callback/callback.c
+      - name: Run testable examples
+        run: go test -v
+      - name: Run examples
+        run: |
+          go run examples/simple/cos/main.go
+          go run examples/varargs/libc/main.go
+          go run examples/structs/item/main.go
+          go run examples/closures/callback/main.go
+  run-examples-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Build dynamic library
+        run: |
+          gcc -shared -o item.dll -fPIC examples/structs/item/item.c
+          gcc -shared -o callback.dll -fPIC examples/closures/callback/callback.c
+      - name: Run testable examples
+        run: go test -v
+      - name: Run examples
+        run: |
+          go run examples/simple/cos/main.go
+          go run examples/varargs/libc/main.go
+          go run examples/structs/item/main.go
+          go run examples/closures/callback/main.go
+  run-examples-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Build dynamic library
+        run: |
+          gcc -shared -o libitem.so -fPIC examples/structs/item/item.c
+          gcc -shared -o libcallback.so -fPIC examples/closures/callback/callback.c
+      - name: Run testable examples
+        run: go test -v
+      - name: Run examples
+        run: |
+          go run examples/simple/cos/main.go
+          go run examples/varargs/libc/main.go
+          go run examples/structs/item/main.go
+          go run examples/closures/callback/main.go
