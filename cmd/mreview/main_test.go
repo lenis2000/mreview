@@ -187,6 +187,44 @@ func TestRun_UnknownFlag(t *testing.T) {
 	}
 }
 
+func TestRun_TypoSubcommandSuggestsFix(t *testing.T) {
+	cases := []struct {
+		typo string
+		want string
+	}{
+		{"ftm", "fmt"},
+		{"fnt", "fmt"},
+		{"confg", "config"},
+		{"conifg", "config"},
+	}
+	for _, tc := range cases {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{tc.typo}, &stdout, &stderr)
+		if code != 2 {
+			t.Errorf("typo %q: expected exit 2, got %d (stderr=%q)", tc.typo, code, stderr.String())
+			continue
+		}
+		out := stderr.String()
+		if !strings.Contains(out, "unknown subcommand") || !strings.Contains(out, tc.want) {
+			t.Errorf("typo %q: stderr=%q; want hint mentioning %q", tc.typo, out, tc.want)
+		}
+	}
+}
+
+func TestRun_NonSubcommandTypoFallsThrough(t *testing.T) {
+	// A first arg that isn't close to any known subcommand must NOT be
+	// reported as a typo — it should fall through to the normal missing-file
+	// path so users with arbitrary positional args still get a useful error.
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"completely-unrelated-token"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for unknown token")
+	}
+	if strings.Contains(stderr.String(), "unknown subcommand") {
+		t.Fatalf("did not expect typo hint for distant token; stderr=%q", stderr.String())
+	}
+}
+
 func TestRun_HelpExitsZero(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--help"}, &stdout, &stderr)

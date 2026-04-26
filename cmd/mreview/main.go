@@ -111,6 +111,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		case "config":
 			return runConfig(args[1:], stdout, stderr)
 		}
+		// Catch typo'd subcommands: a non-flag first arg that doesn't end in
+		// .tex and isn't a path on disk is unlikely to be a valid paper.
+		// Suggest the closest known subcommand if there is one within edit
+		// distance 2.
+		if first := args[0]; !strings.HasPrefix(first, "-") &&
+			filepath.Ext(first) != ".tex" {
+			if _, err := os.Stat(first); err != nil {
+				if guess := closestSubcommand(first); guess != "" {
+					fmt.Fprintf(stderr, "mreview: unknown subcommand %q (did you mean %q?)\n", first, guess)
+					return 2
+				}
+			}
+		}
 	}
 
 	var o opts
@@ -343,6 +356,69 @@ func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
 		return true
 	}
 	return false
+}
+
+// knownSubcommands lists the dispatch targets recognised by run(). Used by
+// closestSubcommand to suggest fixes for typos.
+var knownSubcommands = []string{"fmt", "config"}
+
+// closestSubcommand returns the known subcommand whose Levenshtein distance
+// from name is smallest, provided that distance is ≤ 2. Returns "" when no
+// candidate is close enough — the caller then falls through to the default
+// argument-parsing path.
+func closestSubcommand(name string) string {
+	best := ""
+	bestDist := 3 // strictly less than this counts as "close"
+	for _, cmd := range knownSubcommands {
+		d := levenshtein(name, cmd)
+		if d < bestDist {
+			best = cmd
+			bestDist = d
+		}
+	}
+	return best
+}
+
+// levenshtein returns the edit distance between a and b. Small inputs only
+// (subcommand names), so the straightforward O(len(a)*len(b)) DP is fine.
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+	for j := 0; j <= lb; j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			del := prev[j] + 1
+			ins := curr[j-1] + 1
+			sub := prev[j-1] + cost
+			m := del
+			if ins < m {
+				m = ins
+			}
+			if sub < m {
+				m = sub
+			}
+			curr[j] = m
+		}
+		prev, curr = curr, prev
+	}
+	return prev[lb]
 }
 
 // loneTexInCwd returns the single .tex file in the current directory and
