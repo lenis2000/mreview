@@ -70,7 +70,7 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter, ex
 		if b == nil {
 			return
 		}
-		if !outlineSuppressed(b, doc) && blockMatchesFilter(b, side, filter, ext) {
+		if !outlineSuppressed(b, doc, side, ext) && blockMatchesFilter(b, side, filter, ext) {
 			rows = append(rows, OutlineRow{
 				BlockID: b.ID,
 				Depth:   depth,
@@ -127,11 +127,22 @@ var noisyInnerEnvs = map[string]bool{
 //     child duplicates the parent's first-snippet title, so emitting both
 //     is duplicate-looking noise; emit only the children.
 //   - A KindOther block whose env name is a known inner-math / inner-
-//     figure construct (split, tikzpicture, scope, …) — these appear
-//     inside a labeled parent (Theorem, Figure, Display) whose row is
-//     already the navigable target.
-func outlineSuppressed(b *parser.Block, doc *parser.Document) bool {
+//     figure construct (split, tikzpicture, scope, …) AND whose ancestor
+//     chain includes a labeled parent (Theorem, Figure, Display, Proof)
+//     or another noisy inner env. A standalone tikzpicture at document
+//     level — its own primary navigable unit — is NOT suppressed.
+//
+// Either rule is overridden if the block carries user-visible state
+// (annotation, reviewed mark, unresolved ref, external diagnostic).
+// Suppressing a stateful block would silently hide its marker — the
+// per-block filters and markersFor are the only places that state is
+// surfaced, so dropping the row drops the user's work from the outline
+// even under FilterAll or FilterAnnotated.
+func outlineSuppressed(b *parser.Block, doc *parser.Document, side *persist.Sidecar, ext map[string][]format.ReportDiag) bool {
 	if b == nil || doc == nil {
+		return false
+	}
+	if blockHasOutlineState(b, side, ext) {
 		return false
 	}
 	if b.Kind == parser.KindParagraph && len(b.ChildIDs) > 0 {
@@ -147,8 +158,54 @@ func outlineSuppressed(b *parser.Block, doc *parser.Document) bool {
 			return true
 		}
 	}
-	if b.Kind == parser.KindOther && noisyInnerEnvs[b.EnvName] {
+	if b.Kind == parser.KindOther && noisyInnerEnvs[b.EnvName] && hasNoisyInnerAncestor(b, doc) {
 		return true
+	}
+	return false
+}
+
+// blockHasOutlineState reports whether b carries any state the outline
+// is uniquely positioned to surface. Used to override structural
+// suppression so a sentence-split parent or an inner-env block that the
+// user has annotated stays visible.
+func blockHasOutlineState(b *parser.Block, side *persist.Sidecar, ext map[string][]format.ReportDiag) bool {
+	if hasAnnotation(side, b.ID) {
+		return true
+	}
+	if isReviewed(side, b.ID) {
+		return true
+	}
+	if blockHasUnresolved(b) {
+		return true
+	}
+	if ext != nil && blockHasExternalIssue(ext, b.ID) {
+		return true
+	}
+	return false
+}
+
+// hasNoisyInnerAncestor walks b's parent chain looking for a labeled
+// container whose own outline row makes b's redundant: a Figure /
+// Display / TheoremLike / Proof, or another noisy inner env (so a
+// `scope` inside a `tikzpicture` inside a `figure` is suppressed too).
+// A b with no such ancestor — e.g. a top-level tikzpicture — is the
+// primary navigable unit at its location and stays visible.
+func hasNoisyInnerAncestor(b *parser.Block, doc *parser.Document) bool {
+	pid := b.ParentID
+	for pid != "" && pid != "root" {
+		p := doc.ByID[pid]
+		if p == nil {
+			return false
+		}
+		switch p.Kind {
+		case parser.KindFigure, parser.KindDisplay, parser.KindTheoremLike, parser.KindProof:
+			return true
+		case parser.KindOther:
+			if noisyInnerEnvs[p.EnvName] {
+				return true
+			}
+		}
+		pid = p.ParentID
 	}
 	return false
 }

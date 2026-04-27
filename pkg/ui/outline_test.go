@@ -106,6 +106,150 @@ This is the eighth sentence.
 		"test fixture must produce at least one segmented paragraph")
 }
 
+// segmentedParagraphID returns the ID of the first KindParagraph block
+// in doc that has KindParagraph children — i.e. the parent emitted by
+// segmentLongParagraphs in the multi-sentence fixture. Fails the test
+// if no such block exists.
+func segmentedParagraphID(t *testing.T, doc *parser.Document) string {
+	t.Helper()
+	for _, b := range doc.Blocks {
+		if b.Kind != parser.KindParagraph || len(b.ChildIDs) == 0 {
+			continue
+		}
+		allP := true
+		for _, cid := range b.ChildIDs {
+			if c := doc.ByID[cid]; c == nil || c.Kind != parser.KindParagraph {
+				allP = false
+				break
+			}
+		}
+		if allP {
+			return b.ID
+		}
+	}
+	t.Fatalf("fixture must produce a sentence-split paragraph parent")
+	return ""
+}
+
+// TestBuildOutline_SuppressedParentVisibleWhenStateful pins the override:
+// a sentence-split paragraph parent that the user has annotated or
+// marked reviewed must STILL appear in the outline so its marker
+// (annotated, reviewed, etc.) doesn't get silently hidden. The outline
+// is the only place that state is rendered per row, and per-block
+// filters operate on the row, not on suppressed ancestors.
+func TestBuildOutline_SuppressedParentVisibleWhenStateful(t *testing.T) {
+	src := `\documentclass{amsart}
+\begin{document}
+\section{Intro}
+This is the first sentence.
+This is the second sentence.
+This is the third sentence.
+This is the fourth sentence.
+This is the fifth sentence.
+This is the sixth sentence.
+This is the seventh sentence.
+This is the eighth sentence.
+\end{document}
+`
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+
+	parentID := segmentedParagraphID(t, doc)
+
+	t.Run("annotated parent stays visible", func(t *testing.T) {
+		side := &persist.Sidecar{
+			Annotations: []persist.Annotation{{BlockID: parentID, Note: "looks good"}},
+		}
+		rows := BuildOutline(doc, side, FilterAll)
+		seen := false
+		for _, r := range rows {
+			if r.BlockID == parentID {
+				seen = true
+				break
+			}
+		}
+		assert.True(t, seen, "annotated sentence-split parent must remain in outline")
+	})
+
+	t.Run("reviewed parent stays visible", func(t *testing.T) {
+		side := &persist.Sidecar{Reviewed: []string{parentID}}
+		rows := BuildOutline(doc, side, FilterAll)
+		seen := false
+		for _, r := range rows {
+			if r.BlockID == parentID {
+				seen = true
+				break
+			}
+		}
+		assert.True(t, seen, "reviewed sentence-split parent must remain in outline")
+	})
+}
+
+// TestBuildOutline_NoisyEnvNotSuppressedAtTopLevel pins the second half
+// of the noisy-inner-env fix: a standalone tikzpicture (or similar
+// graphics env) at document level is the primary navigable unit at
+// that location and must remain visible. We only suppress these when
+// they live inside a labeled container whose row already serves as the
+// navigation target.
+func TestBuildOutline_NoisyEnvNotSuppressedAtTopLevel(t *testing.T) {
+	src := `\documentclass{amsart}
+\begin{document}
+\section{Intro}
+\begin{tikzpicture}
+\draw (0,0) -- (1,1);
+\end{tikzpicture}
+
+\begin{figure}
+\begin{tikzpicture}
+\draw (0,0) -- (2,2);
+\end{tikzpicture}
+\caption{Inside a figure.}
+\end{figure}
+\end{document}
+`
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+
+	rows := BuildOutline(doc, nil, FilterAll)
+	seenIDs := map[string]bool{}
+	for _, r := range rows {
+		seenIDs[r.BlockID] = true
+	}
+
+	var standaloneTikz, figureNestedTikz *parser.Block
+	for _, b := range doc.Blocks {
+		if b.EnvName != "tikzpicture" {
+			continue
+		}
+		// Walk parents to classify.
+		nestedInFigure := false
+		pid := b.ParentID
+		for pid != "" && pid != "root" {
+			p := doc.ByID[pid]
+			if p == nil {
+				break
+			}
+			if p.Kind == parser.KindFigure {
+				nestedInFigure = true
+				break
+			}
+			pid = p.ParentID
+		}
+		if nestedInFigure {
+			figureNestedTikz = b
+		} else {
+			standaloneTikz = b
+		}
+	}
+	require.NotNil(t, standaloneTikz, "fixture must produce a standalone tikzpicture")
+	require.NotNil(t, figureNestedTikz, "fixture must produce a figure-nested tikzpicture")
+
+	assert.True(t, seenIDs[standaloneTikz.ID],
+		"standalone tikzpicture is the primary navigable unit; must not be suppressed")
+	assert.False(t, seenIDs[figureNestedTikz.ID],
+		"tikzpicture inside a figure should still be suppressed in favour of the figure row")
+}
+
 // TestFirstSnippet_SkipsFormattingOnly asserts that a leading line of
 // pure layout commands (\\medskip, \\par, \\vspace{1ex}) doesn't end up
 // as the outline title; the next prose line is used instead.
