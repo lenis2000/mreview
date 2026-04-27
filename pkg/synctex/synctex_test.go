@@ -164,3 +164,60 @@ func TestParseBasenameFallback(t *testing.T) {
 	// basename only.
 	require.NotNil(t, idx.RegionForLines("sample.tex", 10, 10))
 }
+
+// TestSuffixMatch_LongestWins exercises the H1 fix: when two distinct
+// files share a basename (chapters/intro.tex and appendix/intro.tex),
+// the lookup must prefer the entry with the longest matching suffix
+// instead of returning whichever the runtime's randomised map iteration
+// hands back. A request for chapters/intro.tex should land on chapters.
+func TestSuffixMatch_LongestWins(t *testing.T) {
+	body := "SyncTeX Version:1\n" +
+		"Input:1:/proj/chapters/intro.tex\n" +
+		"Input:2:/proj/appendix/intro.tex\n" +
+		"Magnification:1000\nUnit:1\nX Offset:0\nY Offset:0\n" +
+		"Content:\n{1\n" +
+		"[1,5:1000000,2000000:500000,400000,100000\n" +
+		"]\n}1\n{2\n" +
+		"[2,5:9000000,2000000:500000,400000,100000\n" +
+		"]\n}2\n"
+	idx, err := Parse(strings.NewReader(body))
+	require.NoError(t, err)
+
+	// Run the lookup many times: with random map iteration the buggy
+	// fallback would hit both pages; the longest-suffix tiebreak must
+	// always pick chapters/intro.tex (page 1).
+	for i := 0; i < 20; i++ {
+		reg := idx.RegionForLines("chapters/intro.tex", 5, 5)
+		require.NotNil(t, reg)
+		assert.Equal(t, 1, reg.Page, "request for chapters/intro.tex must hit page 1")
+	}
+
+	// A bare "intro.tex" matches both with suffix length 1: it's a tie,
+	// so the lookup must refuse rather than guess.
+	assert.Nil(t, idx.RegionForLines("intro.tex", 5, 5),
+		"basename-only collision must not be resolved arbitrarily")
+}
+
+// TestParseErrors_HeaderAndRecord asserts that malformed Magnification
+// values do NOT clobber the safe default (mag=1000) and that the
+// parseErrors counter increments instead.
+func TestParseErrors_HeaderAndRecord(t *testing.T) {
+	body := "SyncTeX Version:1\n" +
+		"Input:1:/proj/foo.tex\n" +
+		"Magnification:not-a-number\n" + // malformed
+		"Unit:1\nX Offset:0\nY Offset:0\n" +
+		"Content:\n{1\n" +
+		"[1,7:1000000,2000000:500000,400000,100000\n" +
+		"junk-record\n" + // unparseable record
+		"]\n}1\n"
+	idx, err := Parse(strings.NewReader(body))
+	require.NoError(t, err)
+
+	assert.GreaterOrEqual(t, idx.ParseErrors(), 2, "expected at least 2 parse errors")
+
+	// mag default of 1000 must survive — toRegion would otherwise
+	// collapse coordinates to 0 if mag had been zeroed by the bad header.
+	reg := idx.RegionForLines("/proj/foo.tex", 7, 7)
+	require.NotNil(t, reg)
+	assert.Greater(t, reg.X, 0.0, "mag default must keep coords non-zero")
+}

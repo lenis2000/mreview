@@ -45,7 +45,18 @@ type Index struct {
 
 	unit, xOff, yOff int64
 	mag              int64
+
+	// parseErrors counts records and header values rejected during ingest.
+	// Surfaces via ParseErrors so callers can warn the user when a
+	// truncated or partially corrupted .synctex.gz produces a sparse
+	// index instead of failing silently.
+	parseErrors int
 }
+
+// ParseErrors returns the number of records and header values rejected
+// during parsing. A non-zero count usually means the .synctex.gz was
+// truncated (e.g. by a killed latexmk) and the index is incomplete.
+func (idx *Index) ParseErrors() int { return idx.parseErrors }
 
 // Open decompresses and parses a .synctex.gz file.
 func Open(path string) (*Index, error) {
@@ -114,6 +125,7 @@ func Parse(r io.Reader) (*Index, error) {
 		}
 		rec, ok := parseRecord(line)
 		if !ok {
+			idx.parseErrors++
 			continue
 		}
 		file, ok := idx.Files[rec.tag]
@@ -135,42 +147,59 @@ func Parse(r io.Reader) (*Index, error) {
 }
 
 // handleHeader consumes a key:value preamble line. Returns true if the line
-// was recognised and consumed.
+// was recognised and consumed. Malformed numeric values increment the
+// Index's parseErrors counter and leave the existing default in place
+// rather than zeroing it (a `Magnification: garbage` would otherwise set
+// mag=0, collapsing every region's coordinate to (0,0)).
 func (idx *Index) handleHeader(line string) bool {
 	if strings.HasPrefix(line, "Input:") {
 		rest := line[len("Input:"):]
 		colon := strings.IndexByte(rest, ':')
 		if colon < 0 {
+			idx.parseErrors++
 			return true
 		}
 		tag, err := strconv.Atoi(rest[:colon])
 		if err != nil {
+			idx.parseErrors++
 			return true
 		}
 		path := strings.TrimSpace(rest[colon+1:])
 		if path == "" {
+			idx.parseErrors++
 			return true
 		}
 		idx.Files[tag] = filepath.Clean(path)
 		return true
 	}
 	if v, ok := strings.CutPrefix(line, "Unit:"); ok {
-		idx.unit, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		idx.parseInt64Header(strings.TrimSpace(v), &idx.unit)
 		return true
 	}
 	if v, ok := strings.CutPrefix(line, "Magnification:"); ok {
-		idx.mag, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		idx.parseInt64Header(strings.TrimSpace(v), &idx.mag)
 		return true
 	}
 	if v, ok := strings.CutPrefix(line, "X Offset:"); ok {
-		idx.xOff, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		idx.parseInt64Header(strings.TrimSpace(v), &idx.xOff)
 		return true
 	}
 	if v, ok := strings.CutPrefix(line, "Y Offset:"); ok {
-		idx.yOff, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		idx.parseInt64Header(strings.TrimSpace(v), &idx.yOff)
 		return true
 	}
 	return false
+}
+
+// parseInt64Header writes the parsed value into dst on success; on
+// failure dst keeps its previous value and parseErrors goes up by one.
+func (idx *Index) parseInt64Header(s string, dst *int64) {
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		idx.parseErrors++
+		return
+	}
+	*dst = n
 }
 
 // rawRec holds the numeric fields pulled out of a single content record,
@@ -318,20 +347,37 @@ func (idx *Index) RegionForLines(file string, start, end int) *Region {
 }
 
 // linesFor looks up the per-line map for a file, trying exact and then
-// basename matching so callers don't need to worry about /tmp vs /private/tmp
+// suffix matching so callers don't need to worry about /tmp vs /private/tmp
 // symlink differences.
+//
+// On a basename-only collision (two distinct .tex files in the project
+// share the same filename, e.g. chapters/intro.tex and appendix/intro.tex),
+// we prefer the entry that shares the longest path-component suffix with
+// the requested path. If two entries tie on suffix length, the lookup
+// returns nil and the caller treats this as "no region" — better than
+// silently picking the wrong file based on Go's randomised map iteration.
 func (idx *Index) linesFor(file string) map[int][]Region {
 	clean := filepath.Clean(file)
 	if m, ok := idx.Lines[clean]; ok {
 		return m
 	}
-	base := filepath.Base(clean)
-	for k, v := range idx.Lines {
-		if filepath.Base(k) == base {
-			return v
+	bestKey, bestN, tied := "", 0, false
+	for k := range idx.Lines {
+		n := commonSuffixComponents(clean, k)
+		if n == 0 {
+			continue
+		}
+		switch {
+		case n > bestN:
+			bestKey, bestN, tied = k, n, false
+		case n == bestN:
+			tied = true
 		}
 	}
-	return nil
+	if bestN == 0 || tied {
+		return nil
+	}
+	return idx.Lines[bestKey]
 }
 
 // File returns the path recorded for a SyncTeX input tag, if any.
@@ -341,6 +387,11 @@ func (idx *Index) File(tag int) (string, bool) {
 }
 
 // TagFor returns the SyncTeX input tag for a file path if known.
+//
+// As with linesFor, when no exact match is recorded we fall back to
+// the input whose recorded path shares the longest suffix-component
+// match with the requested path. Ties yield (0, false) — see linesFor
+// for the rationale.
 func (idx *Index) TagFor(path string) (int, bool) {
 	clean := filepath.Clean(path)
 	for t, p := range idx.Files {
@@ -348,13 +399,49 @@ func (idx *Index) TagFor(path string) (int, bool) {
 			return t, true
 		}
 	}
-	base := filepath.Base(clean)
+	bestTag, bestN, tied := 0, 0, false
 	for t, p := range idx.Files {
-		if filepath.Base(p) == base {
-			return t, true
+		n := commonSuffixComponents(clean, p)
+		if n == 0 {
+			continue
+		}
+		switch {
+		case n > bestN:
+			bestTag, bestN, tied = t, n, false
+		case n == bestN:
+			tied = true
 		}
 	}
-	return 0, false
+	if bestN == 0 || tied {
+		return 0, false
+	}
+	return bestTag, true
+}
+
+// commonSuffixComponents counts how many trailing path components are
+// equal between a and b. Both arguments should already be filepath.Clean'd.
+// Empty inputs return 0.
+func commonSuffixComponents(a, b string) int {
+	aParts := splitPathComponents(a)
+	bParts := splitPathComponents(b)
+	n := 0
+	for n < len(aParts) && n < len(bParts) && aParts[len(aParts)-1-n] == bParts[len(bParts)-1-n] {
+		n++
+	}
+	return n
+}
+
+// splitPathComponents returns the non-empty components of p, splitting
+// on either path separator so the caller doesn't have to normalise to
+// the platform-native form first.
+func splitPathComponents(p string) []string {
+	if p == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+	return parts
 }
 
 // Pages returns the sorted list of pages that contain any positioned record.
