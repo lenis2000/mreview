@@ -109,6 +109,63 @@ func TestRun_MockSuccess(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "paper.log"), res.LogPath)
 }
 
+// TestResolveBuildOutputsOnDisk_FindsOutdir asserts that when <base>.pdf
+// is missing next to the source but present in a build/ subdir, the
+// returned Result points at the subdir for every artefact path. This
+// covers the layout produced by `latexmk -outdir=build`.
+func TestResolveBuildOutputsOnDisk_FindsOutdir(t *testing.T) {
+	dir := t.TempDir()
+	tex := filepath.Join(dir, "paper.tex")
+	require.NoError(t, os.WriteFile(tex, []byte("x"), 0o644))
+
+	outdir := filepath.Join(dir, "build")
+	require.NoError(t, os.MkdirAll(outdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outdir, "paper.pdf"), []byte("%PDF"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(outdir, "paper.synctex.gz"), []byte{}, 0o644))
+
+	res := ResolveBuildOutputsOnDisk(tex)
+	assert.Equal(t, filepath.Join(outdir, "paper.pdf"), res.PDFPath)
+	assert.Equal(t, filepath.Join(outdir, "paper.synctex.gz"), res.SyncTeXPath)
+	assert.Equal(t, filepath.Join(outdir, "paper.aux"), res.AuxPath)
+}
+
+// TestResolveBuildOutputsOnDisk_PrefersConventional asserts that when
+// the PDF is next to the source the conventional location wins, even
+// if a stale build/ subdir contains an older PDF.
+func TestResolveBuildOutputsOnDisk_PrefersConventional(t *testing.T) {
+	dir := t.TempDir()
+	tex := filepath.Join(dir, "paper.tex")
+	require.NoError(t, os.WriteFile(tex, []byte("x"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "paper.pdf"), []byte("%PDF"), 0o644))
+
+	outdir := filepath.Join(dir, "build")
+	require.NoError(t, os.MkdirAll(outdir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outdir, "paper.pdf"), []byte("%PDF-stale"), 0o644))
+
+	res := ResolveBuildOutputsOnDisk(tex)
+	assert.Equal(t, filepath.Join(dir, "paper.pdf"), res.PDFPath)
+}
+
+// TestRunWith_CustomCmd_DiscoversOutdir wires the rediscovery path: a
+// BuildCmd that writes outputs into build/ must yield a Result with
+// build/ paths so downstream consumers (PDF-pane open, SyncTeX, sidecar)
+// look in the right place.
+func TestRunWith_CustomCmd_DiscoversOutdir(t *testing.T) {
+	dir := t.TempDir()
+	tex := filepath.Join(dir, "paper.tex")
+	require.NoError(t, os.WriteFile(tex, []byte("\\documentclass{article}\\begin{document}hi\\end{document}"), 0o644))
+
+	// Custom command writes the artefacts into ./build/. Use printf
+	// rather than touch so the discovery's non-zero-size check passes.
+	cmd := "mkdir -p build && printf 'Output written on build/paper.pdf (1 page).\\n' > build/paper.log && printf '%%PDF\\n' > build/paper.pdf && printf 'x' > build/paper.synctex.gz && printf 'x' > build/paper.aux && printf 'x' > build/paper.bbl"
+	res, err := RunWith(Options{TexPath: tex, BuildCmd: cmd})
+	require.NoError(t, err)
+
+	assert.Equal(t, filepath.Join(dir, "build", "paper.pdf"), res.PDFPath)
+	assert.Equal(t, filepath.Join(dir, "build", "paper.synctex.gz"), res.SyncTeXPath)
+	assert.Equal(t, filepath.Join(dir, "build", "paper.log"), res.LogPath)
+}
+
 func TestRun_MockNonZeroExit(t *testing.T) {
 	dir := t.TempDir()
 	tex := filepath.Join(dir, "paper.tex")

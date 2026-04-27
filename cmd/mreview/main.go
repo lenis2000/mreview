@@ -211,10 +211,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	// Resolve build artefact paths and optionally run latexmk. --no-build
-	// just resolves the conventional paths next to <paper>.tex. When lmkf
-	// is already watching this file we also skip — lmkf is rebuilding on
-	// every save and a second latexmk would race on the build directory.
-	buildRes := build.ResolveBuildOutputs(o.File)
+	// (or an lmkf-watched paper) skips the run; we then need to find the
+	// outputs the previous build left on disk, which may not be next to
+	// the source if the project's BuildCmd uses -outdir or similar.
+	// When we *do* run, RunWith rediscovers the location itself.
+	buildRes := build.ResolveBuildOutputsOnDisk(o.File)
 	var buildWarning string
 	lmkfActive := ui.LmkfWatching(o.File)
 	if !o.NoBuild && !lmkfActive {

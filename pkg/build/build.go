@@ -62,6 +62,13 @@ func Run(texPath, buildCmd string) (*Result, error) {
 }
 
 // RunWith is the explicit-options form of Run.
+//
+// On success with a non-default BuildCmd, the returned *Result is
+// rediscovered from disk: a custom command that writes outputs into
+// build/, out/, _build/, or latex.out/ has its PDF / synctex / aux /
+// bbl / log paths re-pointed at the actual location. This lets the
+// rest of the application — sidecar metadata, PDF-pane open, SyncTeX
+// open, stale-artefact detection — track the user's chosen layout.
 func RunWith(opts Options) (*Result, error) {
 	if opts.TexPath == "" {
 		return nil, errors.New("build: empty tex path")
@@ -116,7 +123,7 @@ func RunWith(opts Options) (*Result, error) {
 		// the PDF is valid; the verifier cares only about the produced PDF.
 		if opts.IgnoreUndefinedRefs && logIssue == "" {
 			if st, statErr := os.Stat(res.PDFPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
-				return res, nil
+				return rediscoverIfCustom(res, opts), nil
 			}
 		}
 		return res, wrapBuildErr(opts.TexPath, fmt.Sprintf("command failed: %v", runErr), logIssue, logTail)
@@ -124,14 +131,68 @@ func RunWith(opts Options) (*Result, error) {
 	if logIssue != "" {
 		return res, wrapBuildErr(opts.TexPath, "log reported issues", logIssue, logTail)
 	}
-	return res, nil
+	return rediscoverIfCustom(res, opts), nil
+}
+
+// rediscoverIfCustom looks for the build outputs in common outdir
+// candidates when a custom BuildCmd was used. The conventional next-to-
+// source paths in res are kept when the default latexmk command ran.
+func rediscoverIfCustom(res *Result, opts Options) *Result {
+	if opts.BuildCmd == "" {
+		return res
+	}
+	if found := discoverOutputs(filepath.Dir(opts.TexPath), basenameNoExt(opts.TexPath)); found != nil {
+		return found
+	}
+	return res
 }
 
 // ResolveBuildOutputs returns the conventional output paths next to texPath,
 // without invoking the build. Used by --no-build mode and as a base for Run.
 func ResolveBuildOutputs(texPath string) *Result {
+	return resolveAt(filepath.Dir(texPath), basenameNoExt(texPath))
+}
+
+// outdirCandidates lists the subdirectories searched (in order) for build
+// outputs when a custom BuildCmd writes them somewhere other than next
+// to the source. The list covers the conventional latexmk -outdir
+// targets and a few common Makefile patterns.
+var outdirCandidates = []string{"build", "out", "_build", "latex.out"}
+
+// ResolveBuildOutputsOnDisk returns the actual on-disk locations of the
+// build artefacts. If <base>.pdf is missing next to the source, common
+// outdir candidates (build/, out/, _build/, latex.out/) are searched and
+// the first directory containing the PDF wins. Used by callers that
+// observe an already-built project (--no-build, lmkf-driven reloads)
+// where the user's BuildCmd may have written outputs to a custom dir.
+func ResolveBuildOutputsOnDisk(texPath string) *Result {
 	dir := filepath.Dir(texPath)
-	base := strings.TrimSuffix(filepath.Base(texPath), filepath.Ext(texPath))
+	base := basenameNoExt(texPath)
+	if found := discoverOutputs(dir, base); found != nil {
+		return found
+	}
+	return resolveAt(dir, base)
+}
+
+// discoverOutputs returns a *Result whose PDFPath actually exists, by
+// searching dir and the outdirCandidates beneath it. Returns nil if no
+// candidate has the expected <base>.pdf — callers should fall back to
+// the conventional next-to-source paths.
+func discoverOutputs(dir, base string) *Result {
+	for _, sub := range append([]string{""}, outdirCandidates...) {
+		searchDir := dir
+		if sub != "" {
+			searchDir = filepath.Join(dir, sub)
+		}
+		pdf := filepath.Join(searchDir, base+".pdf")
+		if st, err := os.Stat(pdf); err == nil && !st.IsDir() && st.Size() > 0 {
+			return resolveAt(searchDir, base)
+		}
+	}
+	return nil
+}
+
+func resolveAt(dir, base string) *Result {
 	return &Result{
 		PDFPath:     filepath.Join(dir, base+".pdf"),
 		SyncTeXPath: filepath.Join(dir, base+".synctex.gz"),
@@ -139,6 +200,10 @@ func ResolveBuildOutputs(texPath string) *Result {
 		BBLPath:     filepath.Join(dir, base+".bbl"),
 		LogPath:     filepath.Join(dir, base+".log"),
 	}
+}
+
+func basenameNoExt(p string) string {
+	return strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
 }
 
 // scanLogForErrors returns the first offending line in the .log file, or "" if

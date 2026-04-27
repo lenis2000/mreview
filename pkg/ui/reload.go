@@ -208,7 +208,7 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 	}
 	newDoc.File = path
 
-	buildRes := build.ResolveBuildOutputs(path)
+	buildRes := build.ResolveBuildOutputsOnDisk(path)
 	status := ""
 	// buildStale flips to true whenever the reload can't deliver a
 	// coherent (Doc, PDF, SyncTeX) triple back to the model. Sources:
