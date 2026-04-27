@@ -278,14 +278,21 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 	// the TI renders wider than the pane and lipgloss wraps the line,
 	// making the content look like it's being eaten onto a second row.
 	prefix := styles.SourceGutter.Render(fmt.Sprintf("%4d ", p.AbsoluteLine))
-	w := innerW - 6
+	// Render the original indent verbatim with tabs expanded so the
+	// editing surface visually lines up with the rest of the source
+	// pane. The indent is hidden from bubbles (which sanitises tabs);
+	// SubmitLineEdit re-prepends it on save, so what the user sees
+	// here is exactly what hits disk.
+	indent := strings.ReplaceAll(p.Indent, "\t", "    ")
+	indentW := len([]rune(indent))
+	w := innerW - 6 - indentW
 	if w < 10 {
 		w = 10
 	}
 	if p.TI.Width != w {
 		p.TI.Width = w
 	}
-	body := prefix + p.TI.View()
+	body := prefix + indent + p.TI.View()
 	_ = innerH
 	return body + "\n\n" + styles.OutlineMuted.Render(hint)
 }

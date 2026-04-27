@@ -40,6 +40,10 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 		m.Status = "E: save sidecar: " + err.Error()
 		return m, nil
 	}
+	if err := (&m).pushEditSnapshot("external editor"); err != nil {
+		m.Status = "E: snapshot: " + err.Error()
+		return m, nil
+	}
 	lineArgs := buildEditorLineArgs(head, m.Doc.File, line)
 	argv := append(append([]string{}, userArgs...), lineArgs...)
 	cmd := exec.Command(head, argv...)
@@ -230,6 +234,44 @@ type LineEditPopup struct {
 	Original     string
 	NormalMode   bool
 	Count        string
+	// Indent holds the leading whitespace (tabs and/or spaces) of the
+	// original line. bubbles textinput sanitises tabs to spaces on
+	// SetValue, so indenting characters can't live inside the
+	// textinput; we strip them at start, hide them from the editor,
+	// and re-prepend them on submit so the .tex stays byte-faithful
+	// outside the body of the line.
+	Indent string
+	// History stacks the textinput value just before each mutation so
+	// `u` in normal mode can step a typo back. Capped by
+	// maxLineEditHistory; older states drop off the bottom.
+	History []string
+}
+
+const maxLineEditHistory = 500
+
+// pushHistory records prev as the pre-mutation value if it differs
+// from the current textinput value (i.e. a real change happened).
+// Idempotent for no-op key presses.
+func (p *LineEditPopup) pushHistory(prev string) {
+	if p.TI.Value() == prev {
+		return
+	}
+	p.History = append(p.History, prev)
+	if len(p.History) > maxLineEditHistory {
+		p.History = p.History[len(p.History)-maxLineEditHistory:]
+	}
+}
+
+// popHistory pops the most recent pre-mutation value, or returns ("", false)
+// when the stack is empty.
+func (p *LineEditPopup) popHistory() (string, bool) {
+	n := len(p.History)
+	if n == 0 {
+		return "", false
+	}
+	v := p.History[n-1]
+	p.History = p.History[:n-1]
+	return v, true
 }
 
 func (*LineEditPopup) popup() {}
@@ -250,8 +292,10 @@ func (m Model) StartLineEdit() (tea.Model, tea.Cmd) {
 	if line-1 >= len(lines) {
 		return m, nil
 	}
+	full := lines[line-1]
+	indent, body := splitLeadingIndent(full)
 	ti := textinput.New()
-	ti.SetValue(lines[line-1])
+	ti.SetValue(body)
 	ti.Prompt = ""
 	ti.Width = 120
 	ti.CharLimit = 4000
@@ -259,10 +303,22 @@ func (m Model) StartLineEdit() (tea.Model, tea.Cmd) {
 	m.Popup = &LineEditPopup{
 		TI:           ti,
 		AbsoluteLine: line,
-		Original:     lines[line-1],
+		Original:     full,
+		Indent:       indent,
 	}
 	m.CountBuf = ""
 	return m, cmd
+}
+
+// splitLeadingIndent slices off the leading run of tab/space bytes so
+// the inline editor can keep them invisible to bubbles' textinput
+// (which collapses tabs to spaces). Returns (indent, rest).
+func splitLeadingIndent(s string) (string, string) {
+	i := 0
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	return s[:i], s[i:]
 }
 
 // SubmitLineEdit commits the textinput contents back to the .tex on
@@ -272,10 +328,14 @@ func (m Model) SubmitLineEdit() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	newLine := p.TI.Value()
+	newLine := p.Indent + p.TI.Value()
 	m.Popup = nil
 	if newLine == p.Original {
 		m.Status = "line edit: no change"
+		return m, nil
+	}
+	if err := (&m).pushEditSnapshot(fmt.Sprintf("line %d", p.AbsoluteLine)); err != nil {
+		m.Status = "line edit: snapshot: " + err.Error()
 		return m, nil
 	}
 	if err := writeSourceLine(m.Doc.File, p.AbsoluteLine, newLine); err != nil {
@@ -292,12 +352,57 @@ func (m Model) CancelLineEdit() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// --- Undo for in-place edits ------------------------------------------------
+
+// pushEditSnapshot reads the current paper.tex and pushes its bytes
+// onto the in-memory undo stack so a later `u` can restore it. Called
+// from SubmitLineEdit and editInExternalEditor *before* they write the
+// new contents. Pointer receiver so the slice mutation is visible to
+// the caller's Model copy.
+func (m *Model) pushEditSnapshot(label string) error {
+	if m.Doc == nil || m.Doc.File == "" {
+		return fmt.Errorf("no source file")
+	}
+	data, err := os.ReadFile(m.Doc.File)
+	if err != nil {
+		return err
+	}
+	m.EditUndo = append(m.EditUndo, EditSnapshot{
+		Path:  m.Doc.File,
+		Bytes: data,
+		Label: label,
+	})
+	if len(m.EditUndo) > maxEditUndo {
+		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
+	}
+	return nil
+}
+
+// UndoEdit pops the most recent edit snapshot, writes it back to disk,
+// and kicks the reload pipeline so parser/sidecar/PDF catch up. Empty
+// stack is a no-op with a status hint. Annotations live in the sidecar
+// (untouched) and get remapped onto the restored source by the normal
+// reload — this only reverts the .tex.
+func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
+	if len(m.EditUndo) == 0 {
+		m.Status = "u: nothing to undo"
+		return m, nil
+	}
+	snap := m.EditUndo[len(m.EditUndo)-1]
+	m.EditUndo = m.EditUndo[:len(m.EditUndo)-1]
+	if err := writeFileAtomic(snap.Path, snap.Bytes); err != nil {
+		m.Status = "u: " + err.Error()
+		return m, nil
+	}
+	m.Status = fmt.Sprintf("undid %s · rebuilding…", snap.Label)
+	return m.startReload()
+}
+
 // writeSourceLine rewrites line N (1-based) of path with newContent,
 // preserving every other line exactly and keeping the file's trailing
-// newline if the original had one. Writes atomically via os.CreateTemp
-// + rename so a crash mid-write can't leave a truncated .tex, and
-// preserves the original file's mode bits so a `0600` paper doesn't
-// get widened to `0644` by the edit.
+// newline if the original had one. Delegates the actual disk write to
+// writeFileAtomic so the temp-file + chmod + rename dance is shared
+// with the undo path.
 func writeSourceLine(path string, n int, newContent string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -318,7 +423,15 @@ func writeSourceLine(path string, n int, newContent string) error {
 	if hadTrailingNL {
 		out += "\n"
 	}
+	return writeFileAtomic(path, []byte(out))
+}
 
+// writeFileAtomic writes data to path via os.CreateTemp + rename so a
+// crash mid-write can't leave a truncated file, and preserves the
+// original file's mode bits so a `0600` paper doesn't get widened to
+// `0644` by the edit. Used by both the inline-edit writer and the
+// undo restore.
+func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	f, err := os.CreateTemp(dir, base+".mreview-edit.*")
@@ -326,7 +439,7 @@ func writeSourceLine(path string, n int, newContent string) error {
 		return err
 	}
 	tmp := f.Name()
-	if _, err := f.Write([]byte(out)); err != nil {
+	if _, err := f.Write(data); err != nil {
 		f.Close()
 		os.Remove(tmp)
 		return err

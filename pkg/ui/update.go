@@ -342,6 +342,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m.StartLineEdit()
 	}
+	if matches(key, m.Keymap.Undo) {
+		m.CountBuf = ""
+		return m.UndoEdit()
+	}
 	if matches(key, m.Keymap.OCRReport) {
 		m.CountBuf = ""
 		return m.startOCRReport()
@@ -704,8 +708,10 @@ func (m Model) updateLineEditPopup(p *LineEditPopup, msg tea.KeyMsg) (tea.Model,
 		p.Count = ""
 		return m, nil
 	}
+	prev := p.TI.Value()
 	var cmd tea.Cmd
 	p.TI, cmd = p.TI.Update(msg)
+	p.pushHistory(prev)
 	return m, cmd
 }
 
@@ -777,9 +783,9 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 			pos = motionWORDEnd(runes, pos)
 		}
 		p.TI.SetCursor(pos)
-	case "h":
+	case "h", "left":
 		p.TI.SetCursor(pos - n)
-	case "l":
+	case "l", "right":
 		p.TI.SetCursor(pos + n)
 	case "0":
 		p.TI.CursorStart()
@@ -812,6 +818,7 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 		if len(runes) == 0 {
 			return m, nil
 		}
+		prev := p.TI.Value()
 		end := pos + n
 		if end > len(runes) {
 			end = len(runes)
@@ -823,6 +830,17 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 			pos = len(newRunes)
 		}
 		p.TI.SetCursor(pos)
+		p.pushHistory(prev)
+	case "u":
+		// In-popup undo: revert one mutation. Empty stack is a no-op.
+		// Cursor is clamped to the restored value's length so we never
+		// land past EOL.
+		if v, ok := p.popHistory(); ok {
+			p.TI.SetValue(v)
+			if pos := p.TI.Position(); pos > len([]rune(v)) {
+				p.TI.SetCursor(len([]rune(v)))
+			}
+		}
 	case "q":
 		return m.CancelLineEdit()
 	}

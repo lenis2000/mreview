@@ -64,6 +64,22 @@ type Popup interface {
 	popup()
 }
 
+// EditSnapshot captures the full pre-edit contents of paper.tex so an
+// in-place edit (E or e) can be reverted from inside the TUI. Full-file
+// rather than per-line because $EDITOR can rewrite arbitrary regions;
+// papers are small enough that the bytes-cost is negligible.
+type EditSnapshot struct {
+	Path  string
+	Bytes []byte
+	Label string
+}
+
+// maxEditUndo bounds the in-memory undo stack. Generous because a
+// .tex snapshot is tiny (a few hundred KB at most) and a long review
+// session can rack up many small wording fixes the user might want to
+// walk back through. Older snapshots drop off the bottom.
+const maxEditUndo = 500
+
 // Model is the bubbletea root model. The fields named in the Task 9 spec
 // are populated; later tasks fill `JumpStack`, `Popup`, and the not-yet-
 // existent navigation state.
@@ -185,6 +201,11 @@ type Model struct {
 	// that might render them as literal garbage. Set by main.go from
 	// KittyGraphicsAvailable() during startup.
 	KittyAvailable bool
+
+	// EditUndo holds in-memory snapshots of paper.tex captured just
+	// before each in-place edit (E / e). Pop on `u` to revert. Bounded
+	// by maxEditUndo; cleared on quit — git is the durable safety net.
+	EditUndo []EditSnapshot
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
