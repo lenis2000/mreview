@@ -272,10 +272,12 @@ func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
 }
 
 // TestSchedulePDFRender_SuppressedWhenBuildStale covers the render-
-// side half of the contract: even with a real *pdf.Doc attached,
-// scheduling must short-circuit while BuildStale is true. Uses the
-// same fixture as the existing PDF tests so we exercise the actual
-// early-return path rather than a synthetic mock.
+// side half of the contract: with BuildStale=true, the cursor-following
+// crop short-circuits (it would lookup new line numbers against a stale
+// SyncTeX index), but manual mode keeps rendering — page rasterisation
+// doesn't go through SyncTeX, so a failed rebuild can't make it wrong.
+// Uses the same fixture as the existing PDF tests so we exercise the
+// actual early-return path rather than a synthetic mock.
 func TestSchedulePDFRender_SuppressedWhenBuildStale(t *testing.T) {
 	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
@@ -290,7 +292,12 @@ func TestSchedulePDFRender_SuppressedWhenBuildStale(t *testing.T) {
 	m.Width, m.Height = 120, 40
 	m.BuildStale = true
 
-	assert.Nil(t, m.schedulePDFRender(), "BuildStale=true must short-circuit the render scheduler")
+	assert.Nil(t, m.schedulePDFRender(), "BuildStale=true must short-circuit the cursor-following render scheduler")
+
+	// Manual mode keeps rendering across stale builds.
+	m.PDFManual = true
+	require.NotNil(t, m.schedulePDFRender(), "manual mode must render even while BuildStale is true")
+	m.PDFManual = false
 
 	// Clearing the flag restores normal scheduling.
 	m.BuildStale = false

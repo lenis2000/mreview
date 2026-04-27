@@ -59,23 +59,17 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 		// The pane shows a placeholder via pdfPaneBody instead.
 		return nil
 	}
-	if m.BuildStale {
-		// The current m.Doc was parsed from a freshly-edited .tex but
-		// the rebuild that should have produced matching PDF + SyncTeX
-		// failed (or the artefacts couldn't be paired). Auto rendering
-		// would feed new line numbers into the old SyncTeX index, and
-		// the resulting region is meaningless. Manual mode is page-
-		// based and could in principle still render, but suppressing
-		// it too keeps the contract simple — "stale build = no new
-		// crops until the next successful rebuild".
-		return nil
-	}
 	w, h := pdfPaneCells(m.Width, m.Height, m.Layout)
 	cellW, cellH := pdf.DetectCellPixelSize()
 	if m.PDFManual {
 		// Manual mode renders the current page directly — no SyncTeX
 		// needed and no debounce, since user-driven page/zoom keys want
-		// instant feedback.
+		// instant feedback. Runs regardless of BuildStale: the page
+		// rasterisation is page-indexed, not line-indexed, so a
+		// stale-vs-fresh SyncTeX has no bearing on its correctness,
+		// and suppressing manual render during a failed rebuild left
+		// the user staring at the previous cursor-following crop with
+		// no way to drive the PDF pane.
 		m.pdfGen++
 		gen := m.pdfGen
 		inputs := manualRenderInputs{
@@ -97,6 +91,15 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 			img, status := renderManualPDF(inputs)
 			return pdfRenderMsg{Generation: gen, Image: img, Status: status}
 		}
+	}
+	if m.BuildStale {
+		// The current m.Doc was parsed from a freshly-edited .tex but
+		// the rebuild that should have produced matching PDF + SyncTeX
+		// failed (or the artefacts couldn't be paired). Auto rendering
+		// would feed new line numbers into the old SyncTeX index, and
+		// the resulting region is meaningless — keep the previous crop
+		// on screen until the next successful rebuild lands.
+		return nil
 	}
 	if m.Synctex == nil {
 		return nil
