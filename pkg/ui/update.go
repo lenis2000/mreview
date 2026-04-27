@@ -358,6 +358,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m.openInSkim()
 	}
+	if matches(key, m.Keymap.ReloadSkim) {
+		m.CountBuf = ""
+		return m.reloadSkim()
+	}
 
 	// When the source pane has focus, hijack the standard sibling-nav
 	// keys (j/k/down/up) to walk source lines instead of blocks. Crossing

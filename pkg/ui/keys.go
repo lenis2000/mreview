@@ -99,6 +99,11 @@ type Keymap struct {
 	// under the cursor via Skim's `displayline` SyncTeX helper.
 	OpenInSkim []string // S
 
+	// Reload the current PDF in Skim.app — revert any open document so it
+	// re-reads the file on disk, without forward-searching to a line.
+	// Useful after lmkf rebuilds while Skim has the previous PDF cached.
+	ReloadSkim []string // R
+
 	// Pane resize. `<` shrinks the focused pane, `>` grows it. The
 	// source pane absorbs the change in 3-col layout; in stacked
 	// layout, source/PDF focus moves the horizontal split between
@@ -160,6 +165,7 @@ func DefaultKeymap() Keymap {
 		FocusSource:  []string{"l", "right"},
 
 		OpenInSkim: []string{"S"},
+		ReloadSkim: []string{"R"},
 
 		ResizeShrink: []string{"<"},
 		ResizeGrow:   []string{">"},

@@ -111,3 +111,43 @@ end tell`, pdfPath, page)
 	m.Status = ""
 	return m, nil
 }
+
+// reloadSkim forces Skim to re-read the current PDF from disk — without
+// the displayline forward-search S triggers. Useful after a background
+// rebuild (lmkf) when Skim still shows a stale render and the user
+// doesn't want the cursor to jump in the process.
+//
+// Iterates documents one-by-one rather than passing the list to revert,
+// which Skim has historically been finicky about. If no document is
+// currently open we fall back to opening the file so a `R` press always
+// produces a fresh view.
+func (m Model) reloadSkim() (tea.Model, tea.Cmd) {
+	if m.PDF == nil || m.PDF.Path() == "" {
+		m.Status = "R: no PDF loaded"
+		return m, nil
+	}
+	pdfPath := m.PDF.Path()
+	script := fmt.Sprintf(
+		`set theFile to POSIX file %q
+tell application "Skim"
+  set didRevert to false
+  try
+    set theDocs to documents whose path is (get POSIX path of theFile)
+    repeat with d in theDocs
+      revert d
+      set didRevert to true
+    end repeat
+  end try
+  if not didRevert then
+    open theFile
+  end if
+end tell`, pdfPath)
+	cmd := exec.Command("osascript", "-e", script)
+	if err := cmd.Start(); err != nil {
+		m.Status = "R: " + err.Error()
+		return m, nil
+	}
+	go cmd.Wait()
+	m.Status = "Skim reloaded"
+	return m, nil
+}
