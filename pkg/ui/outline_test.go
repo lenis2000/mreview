@@ -46,6 +46,88 @@ func outlineDoc(t *testing.T) *parser.Document {
 	return doc
 }
 
+// TestBuildOutline_SuppressesSentenceSplitParent asserts that a long
+// paragraph segmented into sentence-children doesn't appear twice in the
+// outline (parent + first child both reading the same first-snippet).
+// We emit the children only.
+func TestBuildOutline_SuppressesSentenceSplitParent(t *testing.T) {
+	// Build a long paragraph (10+ sentence-terminated lines) so
+	// segmentLongParagraphs kicks in.
+	src := `\documentclass{amsart}
+\begin{document}
+\section{Intro}
+This is the first sentence.
+This is the second sentence.
+This is the third sentence.
+This is the fourth sentence.
+This is the fifth sentence.
+This is the sixth sentence.
+This is the seventh sentence.
+This is the eighth sentence.
+\end{document}
+`
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+
+	rows := BuildOutline(doc, nil, FilterAll)
+
+	// Walk doc.Blocks: a KindParagraph parent that has KindParagraph
+	// children must NOT appear in rows; its children must.
+	seenIDs := map[string]bool{}
+	for _, r := range rows {
+		seenIDs[r.BlockID] = true
+	}
+	suppressedAny := false
+	for _, b := range doc.Blocks {
+		if b.Kind != parser.KindParagraph || len(b.ChildIDs) == 0 {
+			continue
+		}
+		// All children also paragraph?
+		allP := true
+		for _, cid := range b.ChildIDs {
+			if c := doc.ByID[cid]; c == nil || c.Kind != parser.KindParagraph {
+				allP = false
+				break
+			}
+		}
+		if !allP {
+			continue
+		}
+		assert.Falsef(t, seenIDs[b.ID],
+			"sentence-split parent %s should be suppressed", b.ID)
+		// Children must still be rendered.
+		for _, cid := range b.ChildIDs {
+			assert.Truef(t, seenIDs[cid],
+				"sentence-split child %s should still appear", cid)
+		}
+		suppressedAny = true
+	}
+	require.True(t, suppressedAny,
+		"test fixture must produce at least one segmented paragraph")
+}
+
+// TestFirstSnippet_SkipsFormattingOnly asserts that a leading line of
+// pure layout commands (\\medskip, \\par, \\vspace{1ex}) doesn't end up
+// as the outline title; the next prose line is used instead.
+func TestFirstSnippet_SkipsFormattingOnly(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"medskip then prose", "\\medskip\nReal content here.", "Real content here."},
+		{"vspace then prose", "\\vspace{1ex}\nReal content here.", "Real content here."},
+		{"par+noindent then prose", "\\par\\noindent\nReal content here.", "Real content here."},
+		{"prose first wins", "Hello world.\n\\medskip", "Hello world."},
+		{"only formatting", "\\medskip\n\\par\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, firstSnippet(tc.src, 80))
+		})
+	}
+}
+
 func TestBuildOutline_AllFilter_IncludesEveryBlock(t *testing.T) {
 	doc := outlineDoc(t)
 	rows := BuildOutline(doc, nil, FilterAll)

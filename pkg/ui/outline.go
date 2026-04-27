@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -69,7 +70,7 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter, ex
 		if b == nil {
 			return
 		}
-		if blockMatchesFilter(b, side, filter, ext) {
+		if !outlineSuppressed(b, doc) && blockMatchesFilter(b, side, filter, ext) {
 			rows = append(rows, OutlineRow{
 				BlockID: b.ID,
 				Depth:   depth,
@@ -86,6 +87,70 @@ func BuildOutline(doc *parser.Document, side *persist.Sidecar, filter Filter, ex
 		walk(id, 0)
 	}
 	return rows
+}
+
+// noisyInnerEnvs lists environments that are structural building blocks
+// of math / figure constructs and should not appear as standalone outline
+// rows. They live inside a parent block whose label (Theorem 3.1, Figure
+// 2, etc.) is the navigable target; surfacing the inner env name as well
+// just adds duplicate rows that read "split", "tikzpicture", "scope".
+var noisyInnerEnvs = map[string]bool{
+	"split":          true,
+	"aligned":        true,
+	"alignedat":      true,
+	"gathered":       true,
+	"cases":          true,
+	"dcases":         true,
+	"rcases":         true,
+	"matrix":         true,
+	"pmatrix":        true,
+	"bmatrix":        true,
+	"vmatrix":        true,
+	"smallmatrix":    true,
+	"subarray":       true,
+	"array":          true,
+	"tikzpicture":    true,
+	"scope":          true,
+	"tikzcd":         true,
+	"pgfpicture":     true,
+	"axis":           true,
+	"semilogxaxis":   true,
+	"semilogyaxis":   true,
+	"loglogaxis":     true,
+}
+
+// outlineSuppressed reports whether b should be omitted from the outline
+// even though its children may still be walked. Two cases:
+//
+//   - A KindParagraph carrying KindParagraph children is the holder of
+//     a sentence-split set produced by segmentLongParagraphs. The first
+//     child duplicates the parent's first-snippet title, so emitting both
+//     is duplicate-looking noise; emit only the children.
+//   - A KindOther block whose env name is a known inner-math / inner-
+//     figure construct (split, tikzpicture, scope, …) — these appear
+//     inside a labeled parent (Theorem, Figure, Display) whose row is
+//     already the navigable target.
+func outlineSuppressed(b *parser.Block, doc *parser.Document) bool {
+	if b == nil || doc == nil {
+		return false
+	}
+	if b.Kind == parser.KindParagraph && len(b.ChildIDs) > 0 {
+		allParagraph := true
+		for _, cid := range b.ChildIDs {
+			c := doc.ByID[cid]
+			if c == nil || c.Kind != parser.KindParagraph {
+				allParagraph = false
+				break
+			}
+		}
+		if allParagraph {
+			return true
+		}
+	}
+	if b.Kind == parser.KindOther && noisyInnerEnvs[b.EnvName] {
+		return true
+	}
+	return false
 }
 
 // anyBlockHasRegion reports whether at least one non-root block has a
@@ -196,22 +261,44 @@ func titleCase(s string) string {
 	return string(r)
 }
 
-// firstSnippet returns at most maxRunes runes from the first non-empty line
-// of s, collapsing internal whitespace to single spaces.
+// firstSnippet returns at most maxRunes runes from the first prose-bearing
+// line of s, collapsing internal whitespace to single spaces. Leading
+// whitespace, blank lines, and lines consisting entirely of LaTeX
+// formatting commands (\medskip, \par, \vspace{…}, …) are skipped so an
+// outline row never reads "\medskip" instead of the actual content that
+// follows it.
 func firstSnippet(s string, maxRunes int) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
+	for _, line := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if isFormattingOnlyLine(t) {
+			continue
+		}
+		t = collapseSpaces(t)
+		if runewidth.StringWidth(t) <= maxRunes {
+			return t
+		}
+		return truncateToWidth(t, maxRunes)
 	}
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	s = strings.TrimSpace(s)
-	s = collapseSpaces(s)
-	if runewidth.StringWidth(s) <= maxRunes {
-		return s
-	}
-	return truncateToWidth(s, maxRunes)
+	return ""
+}
+
+// formattingOnlyRe matches a line whose entire content is one or more
+// LaTeX layout/spacing commands chained together (with any whitespace
+// between). Anything else — even a formatting command followed by prose
+// on the same line — does NOT match, so we don't strip a line that
+// genuinely contains content the user might recognise.
+var formattingOnlyRe = regexp.MustCompile(
+	`^\s*(?:` +
+		`\\(?:medskip|smallskip|bigskip|par|noindent|indent|hfill|vfill|hrulefill|newpage|clearpage|pagebreak|linebreak|centering|raggedright|raggedleft|maketitle)\b\s*\*?` +
+		`|\\(?:vspace|hspace|vskip|hskip|smash|phantom|hphantom|vphantom)\*?\s*\{[^{}]*\}` +
+		`)+\s*$`,
+)
+
+func isFormattingOnlyLine(s string) bool {
+	return formattingOnlyRe.MatchString(s)
 }
 
 func collapseSpaces(s string) string {
