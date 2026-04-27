@@ -21,11 +21,20 @@ const (
 
 // Comment is one item in the anchored-comments JSON. The schema is the
 // contract between `pdf-comments` (writer) and `pdf-review` (reader).
+//
+// Quote vs QuoteFocus: Quote is broad context (a sentence or labeled
+// declaration line) used as the page anchor and rendered as a faint
+// yellow fill. QuoteFocus, when present, is a narrow substring on the
+// same page identifying the precise locus of the issue (a typo, a
+// changed word, a missing/extra punctuation mark) — rendered as a
+// strong yellow fill with an orange border so the eye lands on the
+// actual problem inside the broader context. Optional and may be empty.
 type Comment struct {
 	ID           int    `json:"id"`
 	OriginalText string `json:"original_text"`
 	Page         int    `json:"page"`
 	Quote        string `json:"quote"`
+	QuoteFocus   string `json:"quote_focus,omitempty"`
 	Confidence   string `json:"confidence"`
 	Kind         string `json:"kind"`
 	Status       string `json:"status"`

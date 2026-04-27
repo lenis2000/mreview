@@ -144,6 +144,7 @@ func (m Model) applyEditFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 		}
 		c.Page = doc.Page
 		c.Quote = doc.Quote
+		c.QuoteFocus = doc.QuoteFocus
 		c.Status = StatusEdited
 		m.Dirty = true
 		// Verify the user-supplied quote against the page text. We DON'T
@@ -151,6 +152,12 @@ func (m Model) applyEditFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 		if c.Quote != "" && c.Page > 0 {
 			if rects, ok := m.BBox.FindQuote(c.Page, c.Quote); !ok || len(rects) == 0 {
 				m.Status = fmt.Sprintf("comment #%d edited (warning: quote not found on p.%d — highlight will be page-only)", c.ID, c.Page)
+				return m, clearStatusAfter(6 * time.Second)
+			}
+		}
+		if c.QuoteFocus != "" && c.Page > 0 {
+			if rects, ok := m.BBox.FindQuote(c.Page, c.QuoteFocus); !ok || len(rects) == 0 {
+				m.Status = fmt.Sprintf("comment #%d edited (warning: quote_focus not found on p.%d — strong highlight will be skipped)", c.ID, c.Page)
 				return m, clearStatusAfter(6 * time.Second)
 			}
 		}
@@ -165,25 +172,30 @@ func (m Model) applyEditFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
 }
 
 type editYAMLDoc struct {
-	Page  int    `yaml:"page"`
-	Quote string `yaml:"quote"`
-	Kind  string `yaml:"kind"`
-	Text  string `yaml:"text"`
+	Page       int    `yaml:"page"`
+	Quote      string `yaml:"quote"`
+	QuoteFocus string `yaml:"quote_focus"`
+	Kind       string `yaml:"kind"`
+	Text       string `yaml:"text"`
 }
 
 const editYAMLHeader = `# Edit any field, save & quit ($EDITOR) to apply.
-# page: integer in [0, NumPages]; 0 means unanchored.
-# quote: verbatim PDF span; "" disables highlighting.
-# kind:  comment | minor | framing-intro | framing-outro | meta
-# text:  the body text; YAML literal block (preserves newlines).
+# page:        integer in [0, NumPages]; 0 means unanchored.
+# quote:       broad context — verbatim PDF span; "" disables highlighting.
+# quote_focus: optional narrow phrase pointing at the precise issue locus
+#              (verbatim substring of the page; rendered as a strong
+#              highlight on top of the faint quote).
+# kind:        comment | minor | framing-intro | framing-outro | meta
+# text:        the body text; YAML literal block (preserves newlines).
 `
 
 func writeEditYAMLTmp(c *Comment) (string, error) {
 	doc := editYAMLDoc{
-		Page:  c.Page,
-		Quote: c.Quote,
-		Kind:  c.Kind,
-		Text:  c.OriginalText,
+		Page:       c.Page,
+		Quote:      c.Quote,
+		QuoteFocus: c.QuoteFocus,
+		Kind:       c.Kind,
+		Text:       c.OriginalText,
 	}
 	body, err := yaml.Marshal(doc)
 	if err != nil {

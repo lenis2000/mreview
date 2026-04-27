@@ -13,11 +13,16 @@ import (
 // a translucent yellow overlay covering each rect. paneWcells/paneHcells
 // are the target terminal cell counts. Caller is expected to memoise.
 //
+// Two-tier highlighting: when focus is non-empty AND found on the page,
+// the broad quote (if any) is drawn with a faint context fill and the
+// focus run is drawn with the strong fill+border. When only quote is
+// present, it gets the strong treatment by itself.
+//
 // On bbox failure (pdftotext crash, no match for the quote) the page is
 // rendered without overlay; the caller decides whether to surface a
 // "anchor approximate" warning. We never fail the render itself for a
 // missing highlight — page-only navigation is the floor.
-func renderPageEscape(doc *pdf.Doc, bbox *BBoxCache, page int, quote string, dpi float64, paneWcells, paneHcells int) (string, bool, error) {
+func renderPageEscape(doc *pdf.Doc, bbox *BBoxCache, page int, quote, focus string, dpi float64, paneWcells, paneHcells int) (string, bool, error) {
 	if page < 1 || page > doc.NumPage() {
 		return "", false, fmt.Errorf("page %d out of range (1..%d)", page, doc.NumPage())
 	}
@@ -31,11 +36,29 @@ func renderPageEscape(doc *pdf.Doc, bbox *BBoxCache, page int, quote string, dpi
 	copy(out.Pix, src.Pix)
 
 	highlighted := false
+	var quoteRects, focusRects []PageRect
 	if quote != "" && bbox != nil {
-		if rects, ok := bbox.FindQuote(page, quote); ok {
-			DrawHighlights(out, rects, dpi, DefaultHighlight)
-			highlighted = true
+		if rs, ok := bbox.FindQuote(page, quote); ok {
+			quoteRects = rs
 		}
+	}
+	if focus != "" && bbox != nil {
+		if rs, ok := bbox.FindQuote(page, focus); ok {
+			focusRects = rs
+		}
+	}
+	switch {
+	case len(focusRects) > 0 && len(quoteRects) > 0:
+		// Faint context behind, strong focus on top.
+		DrawHighlightsFill(out, quoteRects, dpi, ContextHighlight)
+		DrawHighlights(out, focusRects, dpi, DefaultHighlight)
+		highlighted = true
+	case len(focusRects) > 0:
+		DrawHighlights(out, focusRects, dpi, DefaultHighlight)
+		highlighted = true
+	case len(quoteRects) > 0:
+		DrawHighlights(out, quoteRects, dpi, DefaultHighlight)
+		highlighted = true
 	}
 
 	var buf bytes.Buffer

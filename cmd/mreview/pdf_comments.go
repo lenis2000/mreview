@@ -66,48 +66,64 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	logf := func(format string, args ...any) {
+		fmt.Fprintf(stderr, "mreview pdf-comments: "+format+"\n", args...)
+	}
+
 	mdBytes, err := os.ReadFile(mdPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: read %q: %v\n", mdPath, err)
+		logf("read %q: %v", mdPath, err)
 		return 1
 	}
-	if _, err := os.Stat(pdfPath); err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: stat %q: %v\n", pdfPath, err)
+	if st, err := os.Stat(pdfPath); err != nil {
+		logf("stat %q: %v", pdfPath, err)
 		return 1
+	} else {
+		logf("inputs: md=%s (%d bytes), pdf=%s (%d bytes)",
+			mdPath, len(mdBytes), pdfPath, st.Size())
 	}
 
 	if _, err := exec.LookPath("pdftotext"); err != nil {
-		fmt.Fprintln(stderr, "mreview pdf-comments: pdftotext not found on PATH (install poppler)")
+		logf("pdftotext not found on PATH (install poppler)")
 		return 1
 	}
 	if _, err := exec.LookPath("claude"); err != nil {
-		fmt.Fprintln(stderr, "mreview pdf-comments: claude CLI not found on PATH")
+		logf("claude CLI not found on PATH")
 		return 1
 	}
 
+	logf("extracting PDF text via pdftotext -layout…")
+	t0 := time.Now()
 	pagedText, err := extractPagedPDFText(pdfPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
+		logf("%v", err)
 		return 1
 	}
+	pages := splitPages(pagedText)
+	logf("extracted %d page(s), %d chars total in %s",
+		len(pages), len(pagedText), time.Since(t0).Round(time.Millisecond))
 
 	prompt := buildAnchoringPrompt(string(mdBytes), pagedText)
 
-	fmt.Fprintf(stderr, "mreview pdf-comments: calling claude (model=%s, prompt=%d chars)…\n", o.Model, len(prompt))
-	rawResult, err := invokeClaude(prompt, o.Model)
+	logf("calling claude (model=%s, prompt=%d chars)…", o.Model, len(prompt))
+	claudeStart := time.Now()
+	rawResult, err := invokeClaudeVerbose(prompt, o.Model, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: claude: %v\n", err)
+		logf("claude: %v", err)
 		return 1
 	}
+	logf("claude returned %d chars in %s",
+		len(rawResult), time.Since(claudeStart).Round(time.Second))
 
 	comments, err := parseCommentsArray(rawResult)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: parse claude output: %v\n", err)
+		logf("parse claude output: %v", err)
 		fmt.Fprintf(stderr, "----- raw claude result -----\n%s\n----- end -----\n", rawResult)
 		return 1
 	}
+	logf("parsed %d item(s); anchoring against %d page(s)…", len(comments), len(pages))
 
-	pages := splitPages(pagedText)
+	kindCounts := map[string]int{}
 	anchored, unanchored := 0, 0
 	for i := range comments {
 		c := &comments[i]
@@ -137,12 +153,26 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 		} else if c.Quote != "" && (c.Page <= 0 || c.Page > len(pages)) {
 			c.Quote = ""
 		}
+		// QuoteFocus must also be a verbatim substring of the page text;
+		// blank it (without touching the broader Quote anchor) if not.
+		if c.QuoteFocus != "" {
+			if c.Page <= 0 || c.Page > len(pages) || !strings.Contains(pages[c.Page-1], c.QuoteFocus) {
+				c.QuoteFocus = ""
+			}
+		}
 		if c.Page > 0 {
 			anchored++
 		} else {
 			unanchored++
 		}
+		kindCounts[c.Kind]++
 	}
+	logf("kinds: comment=%d minor=%d framing-intro=%d framing-outro=%d meta=%d",
+		kindCounts[pdfreview.KindComment],
+		kindCounts[pdfreview.KindMinor],
+		kindCounts[pdfreview.KindFramingIntro],
+		kindCounts[pdfreview.KindFramingOutro],
+		kindCounts[pdfreview.KindMeta])
 
 	report := pdfreview.Report{
 		SourceMD:  mdPath,
@@ -338,6 +368,24 @@ ANCHORING — QUOTE
   verbatim span, set quote: "".
 - A non-empty quote with page: 0 is invalid — never produce that.
 
+ANCHORING — QUOTE_FOCUS (optional, narrow highlight)
+- quote_focus is a SHORT verbatim substring of the page text that
+  pinpoints the EXACT phrase the comment is about. The viewer renders
+  it as a strong highlight on top of the broader (faint) quote, so the
+  reader's eye lands on the precise locus of the issue.
+- Populate quote_focus only when the comment has a localized target —
+  typically "minor" items: a typo, an extra/missing punctuation mark, a
+  changed word, a single mistyped phrase. Examples:
+    * "should lose the extra period" → quote_focus = ". bound."
+    * "should be 'bringing the total'" → quote_focus = "which the total"
+    * "missing 'by' in this clause" → quote_focus = "Ce−dT the preceding"
+- Do NOT populate quote_focus for global / structural / multi-paragraph
+  comments where there is no single phrase to point at; leave it "".
+- quote_focus must be a verbatim substring of the page (same rule as
+  quote). If you cannot find one, set quote_focus: "".
+- Length: aim for <=60 characters. Shorter is better.
+- It need not be a substring of quote, but usually is.
+
 CONFIDENCE
 - "high":   comment names an explicit page or a unique labeled object that
             appears exactly once in the PDF, and the quote was found verbatim.
@@ -355,6 +403,7 @@ Output ONLY a JSON array. Each element:
   "kind":          "comment" | "minor" | "framing-intro" | "framing-outro" | "meta",
   "page":          <integer; 0 for framing/meta or when not anchorable>,
   "quote":         <verbatim PDF substring or "">,
+  "quote_focus":   <short verbatim PDF substring or "" — see rules above>,
   "confidence":    "high" | "medium" | "low",
   "status":        "pending"
 }
@@ -387,23 +436,109 @@ func buildAnchoringPrompt(md, pagedPDFText string) string {
 // the prompt on stdin. Returns the assistant's `result` field (which itself
 // must be a JSON array per the prompt's instructions).
 func invokeClaude(prompt, model string) (string, error) {
+	return invokeClaudeVerbose(prompt, model, io.Discard)
+}
+
+// invokeClaudeVerbose is invokeClaude with a periodic "still waiting" heartbeat
+// written to progress so the user sees signs of life during the long call.
+func invokeClaudeVerbose(prompt, model string, progress io.Writer) (string, error) {
 	cmd := exec.Command("claude", "-p", "--model", model, "--output-format", "json")
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
+
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		start := time.Now()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				fmt.Fprintf(progress, "mreview pdf-comments:   …still waiting on claude (%s elapsed)\n",
+					time.Since(start).Round(time.Second))
+			}
+		}
+	}()
+	err := cmd.Wait()
+	close(done)
+	if err != nil {
 		stderrTail := strings.TrimSpace(errBuf.String())
 		if stderrTail != "" {
 			return "", fmt.Errorf("%w (stderr: %s)", err, stderrTail)
 		}
 		return "", err
 	}
+	return extractClaudeResult(out.Bytes(), progress)
+}
+
+// extractClaudeResult pulls the assistant's `result` payload out of the
+// `claude -p --output-format json` stdout. Two shapes are accepted:
+//
+//   - older CLI:   {"result": "..."}
+//   - newer CLI:   [ {"type":"system",...}, {"type":"assistant",...},
+//                    ..., {"type":"result", "result":"...", ...} ]
+//
+// When the event-array form is present, also reports a one-line summary of
+// duration / cost / token usage to progress so the user gets a feel for what
+// just happened.
+func extractClaudeResult(raw []byte, progress io.Writer) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var events []struct {
+			Type       string  `json:"type"`
+			Subtype    string  `json:"subtype"`
+			Result     string  `json:"result"`
+			IsError    bool    `json:"is_error"`
+			StopReason string  `json:"stop_reason"`
+			Duration   int64   `json:"duration_ms"`
+			TotalCost  float64 `json:"total_cost_usd"`
+			NumTurns   int     `json:"num_turns"`
+			Usage      struct {
+				InputTokens              int `json:"input_tokens"`
+				OutputTokens             int `json:"output_tokens"`
+				CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal(trimmed, &events); err != nil {
+			return "", fmt.Errorf("claude output appears truncated (no closing `]`, %d bytes); the model probably hit CLAUDE_CODE_MAX_OUTPUT_TOKENS mid-array. Try a model that produces more compact output (e.g. opus). Underlying decode error: %v", len(raw), err)
+		}
+		for i := len(events) - 1; i >= 0; i-- {
+			ev := events[i]
+			if ev.Type != "result" {
+				continue
+			}
+			if ev.IsError {
+				return "", fmt.Errorf("claude reported error in result event (stop_reason=%q)", ev.StopReason)
+			}
+			fmt.Fprintf(progress,
+				"mreview pdf-comments:   claude usage: turns=%d, in=%d, out=%d, cache_read=%d, cache_create=%d, cost=$%.4f, api_duration=%s, stop=%s\n",
+				ev.NumTurns,
+				ev.Usage.InputTokens, ev.Usage.OutputTokens,
+				ev.Usage.CacheReadInputTokens, ev.Usage.CacheCreationInputTokens,
+				ev.TotalCost,
+				(time.Duration(ev.Duration) * time.Millisecond).Round(time.Second),
+				ev.StopReason)
+			if ev.StopReason == "max_tokens" {
+				return "", fmt.Errorf("claude hit max output tokens (stop_reason=max_tokens) — response truncated. Either raise CLAUDE_CODE_MAX_OUTPUT_TOKENS (current ceiling 64000) or use a model whose output is more compact (opus has worked for this task)")
+			}
+			return ev.Result, nil
+		}
+		return "", fmt.Errorf("no result event in claude output (%d events parsed); the stream likely cut off before the final result", len(events))
+	}
 	var wrap struct {
 		Result string `json:"result"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &wrap); err != nil {
-		return "", fmt.Errorf("decode wrapper: %w; raw=%s", err, out.String())
+	if err := json.Unmarshal(trimmed, &wrap); err != nil {
+		return "", fmt.Errorf("decode wrapper: %w; raw=%s", err, string(raw))
 	}
 	return wrap.Result, nil
 }

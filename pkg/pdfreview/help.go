@@ -12,6 +12,13 @@ type HelpPopup struct{}
 
 func (*HelpPopup) popup() {}
 
+// CommentDetailPopup shows the full original_text plus metadata for the
+// currently-selected comment. Stateless — the renderer reads the current
+// selection — so j/k navigation keeps the popup in sync.
+type CommentDetailPopup struct{}
+
+func (*CommentDetailPopup) popup() {}
+
 // HelpRow pairs a key binding with its one-line description.
 type HelpRow struct {
 	Keys, Desc string
@@ -23,14 +30,14 @@ func HelpRows() []HelpRow {
 	return []HelpRow{
 		{"", "Navigation"},
 		{"j / k  ↓ / ↑", "next / prev comment"},
-		{"J / K", "next / prev kind bucket"},
+		{"} / {", "next / prev kind bucket"},
 		{"g / G", "first / last comment"},
 		{"enter, space", "jump PDF to current comment's page (highlight quote)"},
 		{"] / [", "next / prev page (PDF only, decoupled from selection)"},
 		{"+ / -", "zoom PDF in / out"},
 
 		{"", "Status"},
-		{"K (capital)", "mark current comment kept"},
+		{"K", "mark current comment kept"},
 		{"D", "mark dropped"},
 		{"c", "cycle kind (comment → minor → framing-* → meta → …)"},
 
@@ -45,6 +52,8 @@ func HelpRows() []HelpRow {
 		{"Q", "save JSON only, no letter, exit"},
 
 		{"", "Misc"},
+		{"v", "view full comment text (non-modal; esc or v to close)"},
+		{"S", "open current page in Skim (macOS)"},
 		{"?", "toggle this help"},
 	}
 }

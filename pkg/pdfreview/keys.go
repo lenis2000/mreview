@@ -9,8 +9,8 @@ type Keymap struct {
 
 	Down    []string // j, down
 	Up      []string // k, up
-	NextBkt []string // J — next kind bucket
-	PrevBkt []string // K — prev kind bucket
+	NextBkt []string // } — next kind bucket
+	PrevBkt []string // { — prev kind bucket
 	First   []string // g
 	Last    []string // G
 
@@ -29,6 +29,8 @@ type Keymap struct {
 	NewItem   []string // n
 
 	WriteNow []string // w — write PAPER.review.md without exiting
+	ViewItem []string // v — popup with full comment text + metadata
+	OpenSkim []string // S — open current page in Skim (macOS)
 	Help     []string // ? — toggle help modal
 }
 
@@ -41,8 +43,8 @@ func DefaultKeymap() Keymap {
 
 		Down:    []string{"j", "down"},
 		Up:      []string{"k", "up"},
-		NextBkt: []string{"J"},
-		PrevBkt: []string{"K"},
+		NextBkt: []string{"}"},
+		PrevBkt: []string{"{"},
 		First:   []string{"g"},
 		Last:    []string{"G"},
 
@@ -61,6 +63,8 @@ func DefaultKeymap() Keymap {
 		NewItem:   []string{"n"},
 
 		WriteNow: []string{"w"},
+		ViewItem: []string{"v"},
+		OpenSkim: []string{"S"},
 		Help:     []string{"?"},
 	}
 }

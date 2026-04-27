@@ -37,7 +37,11 @@ func (m Model) View() string {
 	frame := lipgloss.JoinVertical(lipgloss.Left, main, status)
 
 	if m.Popup != nil {
-		return overlayCenter(frame, m.renderPopup(), m.Width, m.Height)
+		// Confine the popup to the left (comments) pane so the kitty
+		// image on the right keeps rendering unobstructed. The kitty
+		// graphics plane sits above the text plane in most terminals,
+		// so any text overlay over the PDF area would be invisible.
+		return overlayCenterIn(frame, m.renderPopup(listW-2), 0, 0, listW, paneH)
 	}
 	return frame
 }
@@ -134,6 +138,16 @@ func (m Model) renderPDFPane(w, h int) string {
 	if m.HighlightApprox {
 		title += "· ⚠ anchor approximate "
 	}
+	// Distinguish "no quote on file" (the anchoring step blanked the quote
+	// because it didn't match verbatim) from "quote present but not found
+	// in pdftotext-bbox-layout output" (HighlightApprox above). In the
+	// no-quote case there's no fill to draw, so without this hint the
+	// PDF pane would just look like a plain page with no indication that
+	// the current comment is supposed to live somewhere on it.
+	if c := m.currentComment(); c != nil && c.Page == m.Page && c.Quote == "" &&
+		(c.Kind == KindComment || c.Kind == KindMinor) {
+		title += "· ⚠ page-only (no quote — press E to re-anchor) "
+	}
 
 	body := m.renderPDFBody(innerW, innerH)
 	titled := m.HeaderStyle.Render(title) + "\n" + body
@@ -195,18 +209,65 @@ func (m Model) renderPDFBodyText(w, h int) string {
 	return clampLines(body, h)
 }
 
-func (m Model) renderPopup() string {
+func (m Model) renderPopup(maxW int) string {
 	switch m.Popup.(type) {
 	case *HelpPopup:
-		return m.renderHelpPopup()
+		return m.renderHelpPopup(maxW)
+	case *CommentDetailPopup:
+		return m.renderCommentDetailPopup(maxW)
 	}
 	return ""
 }
 
-func (m Model) renderHelpPopup() string {
+func (m Model) renderCommentDetailPopup(maxW int) string {
+	c := m.currentComment()
+	if c == nil {
+		return ""
+	}
+	w := maxW
+	if w > 100 {
+		w = 100
+	}
+	if w < 20 {
+		w = 20
+	}
+	maxBodyH := m.Height - 8
+	if maxBodyH < 6 {
+		maxBodyH = 6
+	}
+	innerW := w - 4
+
+	page := "—"
+	if c.Page > 0 {
+		page = fmt.Sprintf("%d", c.Page)
+	}
+	header := fmt.Sprintf("comment #%d  ·  %s  ·  page %s  ·  status %s  ·  confidence %s",
+		c.ID, kindLabel(c.Kind), page, c.Status, c.Confidence)
+
+	textBlock := wrapAll(c.OriginalText, innerW)
+	quoteBlock := ""
+	if c.Quote != "" {
+		quoteBlock = "\n\n" + m.DimStyle.Render(wrapAll(`Quote: "`+c.Quote+`"`, innerW))
+	}
+
+	body := textBlock + quoteBlock
+	body = clampLines(body, maxBodyH)
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("12")).
+		Padding(0, 1).
+		Width(w).
+		Render(m.HeaderStyle.Render(header) + "\n\n" + body + "\n\n" + m.DimStyle.Render("(esc or v to close · other keys still work)"))
+}
+
+func (m Model) renderHelpPopup(maxW int) string {
 	w := 70
-	if w > m.Width-4 {
-		w = m.Width - 4
+	if w > maxW {
+		w = maxW
+	}
+	if w < 20 {
+		w = 20
 	}
 	body := RenderHelpBody(w-4, m.SectionLabel)
 	return lipgloss.NewStyle().
@@ -217,9 +278,11 @@ func (m Model) renderHelpPopup() string {
 		Render(m.HeaderStyle.Render("mreview pdf-review · keybindings") + "\n\n" + body + "\n\n" + m.DimStyle.Render("(any key to dismiss)"))
 }
 
-// overlayCenter draws overlay centered over base. base must already be a
-// rendered string of (totalW × totalH); the result has the same shape.
-func overlayCenter(base, overlay string, totalW, totalH int) string {
+// overlayCenterIn draws overlay centered within the rect (rectX, rectY,
+// rectW, rectH) of base. base must already be a rendered string; the result
+// has the same shape. Used to confine popups to a single pane so the kitty
+// graphics surface in adjacent panes stays untouched.
+func overlayCenterIn(base, overlay string, rectX, rectY, rectW, rectH int) string {
 	overlayLines := strings.Split(overlay, "\n")
 	oH := len(overlayLines)
 	oW := 0
@@ -228,13 +291,13 @@ func overlayCenter(base, overlay string, totalW, totalH int) string {
 			oW = w
 		}
 	}
-	startY := (totalH - oH) / 2
-	startX := (totalW - oW) / 2
-	if startY < 0 {
-		startY = 0
+	startY := rectY + (rectH-oH)/2
+	startX := rectX + (rectW-oW)/2
+	if startY < rectY {
+		startY = rectY
 	}
-	if startX < 0 {
-		startX = 0
+	if startX < rectX {
+		startX = rectX
 	}
 	baseLines := strings.Split(base, "\n")
 	for i, ol := range overlayLines {
@@ -376,6 +439,44 @@ func wrapLines(s string, w, maxLines int) string {
 		lines[len(lines)-1] = string(last) + "…"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// wrapAll word-wraps s into lines of at most w cells, preserving paragraph
+// breaks (a blank line in the input stays a blank line in the output).
+// Unlike wrapLines this does not truncate; the caller clamps the height.
+func wrapAll(s string, w int) string {
+	if w < 8 {
+		w = 8
+	}
+	var out []string
+	for _, para := range strings.Split(s, "\n") {
+		if strings.TrimSpace(para) == "" {
+			out = append(out, "")
+			continue
+		}
+		flat := strings.Join(strings.Fields(para), " ")
+		r := []rune(flat)
+		for len(r) > 0 {
+			take := w
+			if take > len(r) {
+				take = len(r)
+			}
+			if take < len(r) {
+				for i := take; i > 8; i-- {
+					if r[i-1] == ' ' {
+						take = i
+						break
+					}
+				}
+			}
+			out = append(out, strings.TrimRight(string(r[:take]), " "))
+			r = r[take:]
+			for len(r) > 0 && r[0] == ' ' {
+				r = r[1:]
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func clampLines(s string, h int) string {

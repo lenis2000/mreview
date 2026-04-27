@@ -3,10 +3,14 @@ package pdfreview
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"mreview/pkg/pdf"
 )
 
 // pdfRenderedMsg is delivered by the async render command with the kitty
@@ -63,9 +67,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
 
 	if m.Popup != nil {
-		// Any key dismisses the popup.
-		m.Popup = nil
-		return m, nil
+		// CommentDetailPopup is non-modal: it just shows full text for
+		// the current selection. Only `esc` (or pressing `v` again)
+		// dismisses it; every other key falls through to its normal
+		// action so the user can navigate, jump, edit, open in Skim,
+		// etc. while keeping the popup visible.
+		if _, isDetail := m.Popup.(*CommentDetailPopup); isDetail {
+			if s == "esc" || keyMatches(s, m.Keymap.ViewItem) {
+				m.Popup = nil
+				return m, nil
+			}
+			// fall through to normal handling
+		} else {
+			// HelpPopup and any future modal: any key dismisses.
+			m.Popup = nil
+			return m, nil
+		}
 	}
 
 	k := m.Keymap
@@ -73,6 +90,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyMatches(s, k.Help):
 		m.Popup = &HelpPopup{}
 		m.Status = ""
+		return m, nil
+
+	case keyMatches(s, k.ViewItem):
+		if m.currentComment() != nil {
+			m.Popup = &CommentDetailPopup{}
+			m.Status = ""
+		}
 		return m, nil
 
 	case keyMatches(s, k.Quit):
@@ -143,8 +167,40 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case keyMatches(s, k.WriteNow):
 		return m.writeLetterNow()
+
+	case keyMatches(s, k.OpenSkim):
+		return m.openInSkim()
 	}
 	return m, nil
+}
+
+// openInSkim launches Skim (macOS) at the currently-displayed PDF page via
+// AppleScript. Runs in the background so the TUI keeps responding; if Skim
+// isn't installed the AppleScript exits without affecting us.
+func (m Model) openInSkim() (tea.Model, tea.Cmd) {
+	abs, err := filepath.Abs(m.PDFPath)
+	if err != nil {
+		m.Status = "skim: " + err.Error()
+		return m, clearStatusAfter(3 * time.Second)
+	}
+	page := m.Page
+	if page < 1 {
+		page = 1
+	}
+	script := fmt.Sprintf(`tell application "Skim"
+	activate
+	open POSIX file %q
+	delay 0.15
+	tell front document to go to page %d
+end tell`, abs, page)
+	cmd := exec.Command("osascript", "-e", script)
+	if err := cmd.Start(); err != nil {
+		m.Status = "skim: " + err.Error()
+		return m, clearStatusAfter(3 * time.Second)
+	}
+	go cmd.Wait() // reap the child; we don't care about the result
+	m.Status = fmt.Sprintf("opened page %d in Skim", page)
+	return m, clearStatusAfter(2 * time.Second)
 }
 
 func (m Model) moveCursor(delta int) Model {
@@ -334,16 +390,19 @@ func (m *Model) writeLetter() error {
 
 // pdfRenderKey returns the memo key for the current PDF render state.
 // Different selections of the same comment on the same page reuse the
-// cached escape; changing page, quote, dpi, or pane size invalidates.
+// cached escape; changing page, quote, ZoomDPI, or pane size invalidates.
+// fitDPI is a pure function of (page bounds, pane size) so it doesn't
+// need to appear in the key — pane size already does.
 func (m Model) pdfRenderKey() string {
-	q := ""
+	q, f := "", ""
 	if c := m.currentComment(); c != nil && c.Page == m.Page {
 		q = c.Quote
+		f = c.QuoteFocus
 	}
 	listW, pdfW := splitWidths(m.Width)
 	_ = listW
-	return fmt.Sprintf("p%d|dpi=%g|w=%d|h=%d|q=%s",
-		m.Page, m.ZoomDPI, pdfW, m.Height-statusBarHeight, q)
+	return fmt.Sprintf("p%d|zoom=%g|w=%d|h=%d|q=%s|f=%s",
+		m.Page, m.ZoomDPI, pdfW, m.Height-statusBarHeight, q, f)
 }
 
 // schedulePDFRender returns a tea.Cmd that renders the current PDF state
@@ -373,16 +432,31 @@ func (m Model) schedulePDFRender() tea.Cmd {
 		innerH = 1
 	}
 	quote := ""
+	focus := ""
 	if c := m.currentComment(); c != nil && c.Page == page {
 		quote = c.Quote
+		focus = c.QuoteFocus
 	}
-	wantHL := quote != ""
-	dpi := m.ZoomDPI
+	wantHL := quote != "" || focus != ""
 	doc := m.PDF
 	bbox := m.BBox
+	// Render at the DPI that makes the PDF bitmap match (or slightly exceed)
+	// the pane's pixel dimensions, so kitty doesn't have to upscale on
+	// HiDPI/Retina terminals — that upscale was the source of blurry text.
+	// Fall back to ZoomDPI if the page bounds are unavailable for any reason.
+	dpi := m.ZoomDPI
+	if b, err := doc.Bounds(page - 1); err == nil {
+		cellW, cellH := pdf.DetectCellPixelSize()
+		paneWPx := int(float64(innerW) * cellW)
+		paneHPx := int(float64(innerH) * cellH)
+		fit := pdf.SuggestDPI(float64(b.Dx()), float64(b.Dy()), paneWPx, paneHPx)
+		if fit > dpi {
+			dpi = fit
+		}
+	}
 	key := m.pdfRenderKey()
 	return func() tea.Msg {
-		esc, hl, err := renderPageEscape(doc, bbox, page, quote, dpi, innerW, innerH)
+		esc, hl, err := renderPageEscape(doc, bbox, page, quote, focus, dpi, innerW, innerH)
 		return pdfRenderedMsg{
 			key:         key,
 			escape:      esc,
