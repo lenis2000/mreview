@@ -320,7 +320,7 @@ func TestBuildOutline_ExternalIssueMarker(t *testing.T) {
 	rows := BuildOutline(doc, nil, FilterAll, ext)
 	for _, r := range rows {
 		if r.BlockID == fig.ID {
-			assert.Contains(t, r.Markers, MarkerExternal, "figure with external issue should have external marker")
+			assert.Contains(t, r.Markers, markerForRule("lint.todo-marker"), "figure with external issue should have its rule's marker")
 			return
 		}
 	}

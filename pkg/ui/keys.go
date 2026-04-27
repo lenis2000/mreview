@@ -81,6 +81,9 @@ type Keymap struct {
 	// Undo reverts the most recent in-place edit (E or e). In-memory
 	// per-session stack; survives across edits but clears on quit.
 	Undo []string
+	// Redo replays the most recent undone edit. A fresh in-place edit
+	// after an undo abandons the redo branch.
+	Redo []string
 
 	// OCR debug — renders the current PDF crop, runs tesseract, and
 	// saves a bug report (PNG + similarity score + source vs OCR text)
@@ -150,6 +153,7 @@ func DefaultKeymap() Keymap {
 		ExternalEdit: []string{"E"},
 		InlineEdit:   []string{"e"},
 		Undo:         []string{"u"},
+		Redo:         []string{"ctrl+r"},
 		OCRReport:    []string{"B"},
 
 		FocusOutline: []string{"h", "left"},

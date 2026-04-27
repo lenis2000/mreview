@@ -245,13 +245,19 @@ type LineEditPopup struct {
 	// `u` in normal mode can step a typo back. Capped by
 	// maxLineEditHistory; older states drop off the bottom.
 	History []string
+	// Redo is the inverse stack: each `u` pop captures the
+	// pre-restore value here so Ctrl-R can replay it. A fresh
+	// mutation (typing, x) clears Redo — same vim-style branch
+	// abandonment as the file-level redo.
+	Redo []string
 }
 
 const maxLineEditHistory = 500
 
 // pushHistory records prev as the pre-mutation value if it differs
 // from the current textinput value (i.e. a real change happened).
-// Idempotent for no-op key presses.
+// Idempotent for no-op key presses. Mutating the buffer abandons
+// the redo branch.
 func (p *LineEditPopup) pushHistory(prev string) {
 	if p.TI.Value() == prev {
 		return
@@ -260,10 +266,12 @@ func (p *LineEditPopup) pushHistory(prev string) {
 	if len(p.History) > maxLineEditHistory {
 		p.History = p.History[len(p.History)-maxLineEditHistory:]
 	}
+	p.Redo = nil
 }
 
-// popHistory pops the most recent pre-mutation value, or returns ("", false)
-// when the stack is empty.
+// popHistory pops the most recent pre-mutation value and pushes the
+// *current* value onto Redo so a follow-up Ctrl-R can replay it.
+// Returns ("", false) when the undo stack is empty.
 func (p *LineEditPopup) popHistory() (string, bool) {
 	n := len(p.History)
 	if n == 0 {
@@ -271,6 +279,27 @@ func (p *LineEditPopup) popHistory() (string, bool) {
 	}
 	v := p.History[n-1]
 	p.History = p.History[:n-1]
+	p.Redo = append(p.Redo, p.TI.Value())
+	if len(p.Redo) > maxLineEditHistory {
+		p.Redo = p.Redo[len(p.Redo)-maxLineEditHistory:]
+	}
+	return v, true
+}
+
+// popRedo is the symmetric counterpart for Ctrl-R: pop the most
+// recent post-undo value and push the current value back onto
+// History so a follow-up `u` can walk back through the redone edit.
+func (p *LineEditPopup) popRedo() (string, bool) {
+	n := len(p.Redo)
+	if n == 0 {
+		return "", false
+	}
+	v := p.Redo[n-1]
+	p.Redo = p.Redo[:n-1]
+	p.History = append(p.History, p.TI.Value())
+	if len(p.History) > maxLineEditHistory {
+		p.History = p.History[len(p.History)-maxLineEditHistory:]
+	}
 	return v, true
 }
 
@@ -359,6 +388,10 @@ func (m Model) CancelLineEdit() (tea.Model, tea.Cmd) {
 // from SubmitLineEdit and editInExternalEditor *before* they write the
 // new contents. Pointer receiver so the slice mutation is visible to
 // the caller's Model copy.
+//
+// Also clears the redo stack: a fresh edit after an undo means the
+// user is moving forward on a new branch; replaying the abandoned
+// branch would no longer make sense.
 func (m *Model) pushEditSnapshot(label string) error {
 	if m.Doc == nil || m.Doc.File == "" {
 		return fmt.Errorf("no source file")
@@ -375,6 +408,7 @@ func (m *Model) pushEditSnapshot(label string) error {
 	if len(m.EditUndo) > maxEditUndo {
 		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
 	}
+	m.EditRedo = nil
 	return nil
 }
 
@@ -383,18 +417,67 @@ func (m *Model) pushEditSnapshot(label string) error {
 // stack is a no-op with a status hint. Annotations live in the sidecar
 // (untouched) and get remapped onto the restored source by the normal
 // reload — this only reverts the .tex.
+//
+// Before restoring, the *current* file contents are captured onto
+// EditRedo so Ctrl-R can replay the edit. A failed undo leaves both
+// stacks unchanged.
 func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
 	if len(m.EditUndo) == 0 {
 		m.Status = "u: nothing to undo"
 		return m, nil
 	}
 	snap := m.EditUndo[len(m.EditUndo)-1]
-	m.EditUndo = m.EditUndo[:len(m.EditUndo)-1]
+	current, err := os.ReadFile(snap.Path)
+	if err != nil {
+		m.Status = "u: " + err.Error()
+		return m, nil
+	}
 	if err := writeFileAtomic(snap.Path, snap.Bytes); err != nil {
 		m.Status = "u: " + err.Error()
 		return m, nil
 	}
+	m.EditUndo = m.EditUndo[:len(m.EditUndo)-1]
+	m.EditRedo = append(m.EditRedo, EditSnapshot{
+		Path:  snap.Path,
+		Bytes: current,
+		Label: snap.Label,
+	})
+	if len(m.EditRedo) > maxEditUndo {
+		m.EditRedo = m.EditRedo[len(m.EditRedo)-maxEditUndo:]
+	}
 	m.Status = fmt.Sprintf("undid %s · rebuilding…", snap.Label)
+	return m.startReload()
+}
+
+// RedoEdit reverses the most recent UndoEdit by restoring the
+// post-edit bytes captured at undo time. The corresponding undo
+// snapshot is pushed back onto EditUndo so a follow-up `u` can walk
+// back again. Empty redo stack is a no-op with a status hint.
+func (m Model) RedoEdit() (tea.Model, tea.Cmd) {
+	if len(m.EditRedo) == 0 {
+		m.Status = "ctrl-r: nothing to redo"
+		return m, nil
+	}
+	snap := m.EditRedo[len(m.EditRedo)-1]
+	current, err := os.ReadFile(snap.Path)
+	if err != nil {
+		m.Status = "ctrl-r: " + err.Error()
+		return m, nil
+	}
+	if err := writeFileAtomic(snap.Path, snap.Bytes); err != nil {
+		m.Status = "ctrl-r: " + err.Error()
+		return m, nil
+	}
+	m.EditRedo = m.EditRedo[:len(m.EditRedo)-1]
+	m.EditUndo = append(m.EditUndo, EditSnapshot{
+		Path:  snap.Path,
+		Bytes: current,
+		Label: snap.Label,
+	})
+	if len(m.EditUndo) > maxEditUndo {
+		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
+	}
+	m.Status = fmt.Sprintf("redid %s · rebuilding…", snap.Label)
 	return m.startReload()
 }
 

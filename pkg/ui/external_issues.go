@@ -7,8 +7,80 @@ import (
 	"mreview/pkg/parser"
 )
 
-// MarkerExternal is the outline marker for blocks with fmt-report diagnostics.
+// MarkerExternal is the fallback marker for fmt-report diagnostics
+// whose RuleID we don't have a dedicated emoji for. Per-rule markers
+// (see markerForRule) take precedence; this only shows up when a new
+// lint check is added without a corresponding entry here.
 const MarkerExternal = "🔧"
+
+// IssueMarker pairs a fmt-report rule family with the emoji rendered
+// in the outline and listed in the help legend. Source-of-truth for
+// both the per-block marker rendering and the help table — adding a
+// row here is the single change needed to teach mreview about a new
+// rule.
+type IssueMarker struct {
+	RuleID string
+	Glyph  string
+	Desc   string
+}
+
+// IssueMarkers lists the lint diagnostics that drive the issues filter
+// and their per-rule glyphs. Order is the order shown in the help
+// legend; per-block render order matches this so multiple markers on
+// one block stay visually consistent across rows.
+func IssueMarkers() []IssueMarker {
+	return []IssueMarker{
+		{"lint.label-unused", "🏷", "unused label (\\label declared, never \\ref'd)"},
+		{"lint.label-duplicate", "👯", "duplicate \\label"},
+		{"lint.ref-undefined", "🔗", "undefined \\ref / \\Cref"},
+		{"lint.ref-should-eqref", "✏️", "\\ref to equation should be \\eqref"},
+		{"lint.cite-undefined", "📚", "undefined \\cite"},
+		{"lint.thm-unlabeled", "❓", "theorem-like has no \\label"},
+		{"lint.thm-no-proof", "📐", "theorem-like has no following proof"},
+		{"lint.thm-orphan-proof", "👻", "proof with no preceding theorem"},
+		{"lint.block-too-long", "📏", "block exceeds line budget"},
+		{"lint.todo-marker", "🚧", "TODO / FIXME marker"},
+	}
+}
+
+// markerForRule returns the per-rule emoji for ruleID, falling back
+// to MarkerExternal when the rule has no dedicated entry.
+func markerForRule(ruleID string) string {
+	for _, m := range IssueMarkers() {
+		if m.RuleID == ruleID {
+			return m.Glyph
+		}
+	}
+	return MarkerExternal
+}
+
+// externalMarkersFor returns the distinct per-rule markers for the
+// fmt-report diagnostics attached to this block, preserving the order
+// declared in IssueMarkers so multi-marker rows look consistent.
+// Returns nil when the block has no diagnostics.
+func externalMarkersFor(issues map[string][]format.ReportDiag, id string) []string {
+	diags := issues[id]
+	if len(diags) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(diags))
+	for _, d := range diags {
+		seen[markerForRule(d.RuleID)] = true
+	}
+	out := make([]string, 0, len(seen))
+	for _, m := range IssueMarkers() {
+		if seen[m.Glyph] {
+			out = append(out, m.Glyph)
+			delete(seen, m.Glyph)
+		}
+	}
+	// Any glyphs not in IssueMarkers (i.e. fallback MarkerExternal) get
+	// appended last, also de-duplicated by the seen map.
+	if seen[MarkerExternal] {
+		out = append(out, MarkerExternal)
+	}
+	return out
+}
 
 // LoadExternalIssues loads a fmt-report.md file and maps its diagnostics
 // to owning blocks by line number. Returns nil (not an error) when the

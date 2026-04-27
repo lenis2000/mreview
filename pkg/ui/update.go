@@ -346,6 +346,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m.UndoEdit()
 	}
+	if matches(key, m.Keymap.Redo) {
+		m.CountBuf = ""
+		return m.RedoEdit()
+	}
 	if matches(key, m.Keymap.OCRReport) {
 		m.CountBuf = ""
 		return m.startOCRReport()
@@ -699,6 +703,18 @@ func (m Model) updateLineEditPopup(p *LineEditPopup, msg tea.KeyMsg) (tea.Model,
 	}
 	if msg.Type == tea.KeyCtrlC {
 		return m.CancelLineEdit()
+	}
+	// Ctrl-R is the in-popup redo — symmetric to `u` in normal mode.
+	// Bound at the popup level so it works from either mode without
+	// the user having to hop into normal first.
+	if msg.Type == tea.KeyCtrlR {
+		if v, ok := p.popRedo(); ok {
+			p.TI.SetValue(v)
+			if pos := p.TI.Position(); pos > len([]rune(v)) {
+				p.TI.SetCursor(len([]rune(v)))
+			}
+		}
+		return m, nil
 	}
 	if p.NormalMode {
 		return m.updateLineEditNormal(p, msg)

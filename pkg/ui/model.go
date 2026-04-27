@@ -206,6 +206,12 @@ type Model struct {
 	// before each in-place edit (E / e). Pop on `u` to revert. Bounded
 	// by maxEditUndo; cleared on quit — git is the durable safety net.
 	EditUndo []EditSnapshot
+	// EditRedo holds the inverse stack: each entry is a post-edit
+	// snapshot captured by UndoEdit, so Ctrl-R can replay the edit it
+	// just walked back through. A fresh in-place edit (E / e) clears
+	// this stack — vim-style: editing after an undo abandons the
+	// redo branch.
+	EditRedo []EditSnapshot
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.

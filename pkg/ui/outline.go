@@ -273,8 +273,8 @@ func markersFor(b *parser.Block, side *persist.Sidecar, syncAvailable bool, ext 
 	if blockHasUnresolved(b) {
 		parts = append(parts, MarkerUnresolved)
 	}
-	if len(ext) > 0 && blockHasExternalIssue(ext[0], b.ID) {
-		parts = append(parts, MarkerExternal)
+	if len(ext) > 0 {
+		parts = append(parts, externalMarkersFor(ext[0], b.ID)...)
 	}
 	if syncAvailable && b.PDFRegion == nil && b.Kind != parser.KindSection && b.ID != "root" {
 		parts = append(parts, MarkerNoRegion)

@@ -1,6 +1,10 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/mattn/go-runewidth"
+)
 
 // HelpPopup is the `?` keybinding-table overlay. It carries no state — the
 // rendered rows come straight from HelpRows.
@@ -18,7 +22,10 @@ func (m Model) OpenHelp() Model {
 	return m
 }
 
-// HelpRow pairs a key binding with its one-line description.
+// HelpRow pairs a key binding (or marker glyph) with its one-line
+// description. A row with empty Keys *and* empty Desc renders as a
+// blank separator between sections; a row with empty Keys and
+// non-empty Desc renders as a bold section header.
 type HelpRow struct {
 	Keys string
 	Desc string
@@ -27,7 +34,7 @@ type HelpRow struct {
 // HelpRows returns the keybinding table presented by the help overlay. The
 // rows are deterministic so tests can assert on individual entries.
 func HelpRows() []HelpRow {
-	return []HelpRow{
+	rows := []HelpRow{
 		{"j / k", "next / prev outer sibling"},
 		{"J / K", "next / prev inner block (proof-step, display, …)"},
 		{"{ / }", "previous / next section"},
@@ -40,6 +47,8 @@ func HelpRows() []HelpRow {
 		{"a / A", "annotate current line / block"},
 		{"Ctrl-A", "edit existing annotation at cursor"},
 		{"e / E", "inline edit source line / open $EDITOR on paper.tex"},
+		{"u", "undo last in-place edit (e or E)"},
+		{"Ctrl-R", "redo (replay an undone edit)"},
 		{"d", "delete annotation (y/N)"},
 		{"space", "toggle reviewed (auto-advance on unreviewed filter)"},
 		{"/", "fuzzy search"},
@@ -50,23 +59,54 @@ func HelpRows() []HelpRow {
 		{"S", "open current PDF in Skim at cursor line"},
 		{"?", "toggle this help overlay"},
 		{"q", "quit and emit annotations"},
+		{"", ""},
+		{"", "Outline markers"},
+		{MarkerAnnotated, "block has an annotation"},
+		{MarkerReviewed, "block marked reviewed"},
+		{MarkerUnresolved, "block has an unresolved \\ref / \\cite"},
+		{MarkerNoRegion, "no PDF region (SyncTeX miss)"},
+		{"", ""},
+		{"", "Issue markers (filter:issues)"},
 	}
+	for _, m := range IssueMarkers() {
+		rows = append(rows, HelpRow{Keys: m.Glyph, Desc: m.Desc})
+	}
+	rows = append(rows, HelpRow{Keys: MarkerExternal, Desc: "other fmt-report diagnostic (rule with no dedicated marker)"})
+	return rows
 }
 
 // RenderHelpBody formats the rows into a two-column table of width innerW.
 // When innerW is too small to fit the full line, the description is
-// truncated; keys are never truncated.
+// truncated; keys are never truncated. Display width (runewidth) is
+// used so emoji-keyed marker rows align with text-keyed binding rows.
+// Rows with empty Keys render as section headers (or blank lines if
+// Desc is also empty).
 func RenderHelpBody(innerW int) string {
 	rows := HelpRows()
 	keyW := 0
 	for _, r := range rows {
-		if n := len(r.Keys); n > keyW {
-			keyW = n
+		if r.Keys == "" {
+			continue
+		}
+		if w := runewidth.StringWidth(r.Keys); w > keyW {
+			keyW = w
 		}
 	}
 	var sb strings.Builder
 	for i, r := range rows {
-		line := r.Keys + strings.Repeat(" ", keyW-len(r.Keys)+2) + r.Desc
+		var line string
+		switch {
+		case r.Keys == "" && r.Desc == "":
+			line = ""
+		case r.Keys == "":
+			line = r.Desc
+		default:
+			pad := keyW - runewidth.StringWidth(r.Keys) + 2
+			if pad < 1 {
+				pad = 1
+			}
+			line = r.Keys + strings.Repeat(" ", pad) + r.Desc
+		}
 		sb.WriteString(truncateToWidth(line, innerW))
 		if i < len(rows)-1 {
 			sb.WriteByte('\n')

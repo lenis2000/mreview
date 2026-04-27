@@ -269,9 +269,9 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 		if p.Count != "" {
 			tail = " · " + p.Count
 		}
-		hint = "[NORMAL · w/b/e/0/$/h/l · i/a insert · Enter submit · Esc cancel" + tail + "]"
+		hint = "[NORMAL · w/b/e/0/$/h/l · u undo · Ctrl-R redo · i/a insert · Enter submit · Esc cancel" + tail + "]"
 	} else {
-		hint = "[INSERT · Enter submit · Esc → normal · Ctrl-C cancel]"
+		hint = "[INSERT · Ctrl-R redo · Enter submit · Esc → normal · Ctrl-C cancel]"
 	}
 	// Reserve columns for the "NNNN " gutter prefix (5 visible cells) plus
 	// one for the textinput's trailing cursor cell — without this budget
