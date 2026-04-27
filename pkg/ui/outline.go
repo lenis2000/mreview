@@ -446,10 +446,50 @@ func cursorOutlineIndex(rows []OutlineRow, cursor string) int {
 	return -1
 }
 
+// scrollAnchorIndex returns the row index that should anchor the
+// outline's scroll position. When the cursor block has its own row,
+// that's the answer. When the cursor block is filtered out (e.g. it
+// was reviewed and the filter is "unreviewed") or structurally
+// suppressed (sentence-split parent, nested noisy env), we fall back
+// to the visible row whose block most closely precedes the cursor's
+// source line. Without this fallback the outline would snap to row 0
+// every time navigation lands on a hidden block, decoupling it from
+// the source pane the user is reading. Returns -1 when no row applies.
+func scrollAnchorIndex(rows []OutlineRow, doc *parser.Document, cursorID string) int {
+	if cur := cursorOutlineIndex(rows, cursorID); cur >= 0 {
+		return cur
+	}
+	if doc == nil || cursorID == "" {
+		return -1
+	}
+	cursor := doc.ByID[cursorID]
+	if cursor == nil {
+		return -1
+	}
+	best := -1
+	for i, r := range rows {
+		b := doc.ByID[r.BlockID]
+		if b == nil {
+			continue
+		}
+		if b.StartLine <= cursor.StartLine {
+			best = i
+			continue
+		}
+		break
+	}
+	return best
+}
+
 // RenderOutline produces the bordered-pane body for the outline. The width
 // argument is the inner width of the pane (without border). The cursor row
 // is highlighted via styles.OutlineCursor.
-func RenderOutline(rows []OutlineRow, cursor string, width, height int, focused bool, styles Styles) string {
+//
+// doc is consulted only to resolve the scroll anchor when the cursor's
+// own row isn't visible (filtered out, or structurally suppressed):
+// without it, navigating to a hidden block would snap the outline to
+// the top of the document. Pass nil to disable the fallback.
+func RenderOutline(rows []OutlineRow, doc *parser.Document, cursor string, width, height int, focused bool, styles Styles) string {
 	if height < 1 {
 		height = 1
 	}
@@ -459,12 +499,14 @@ func RenderOutline(rows []OutlineRow, cursor string, width, height int, focused 
 	if len(rows) == 0 {
 		return styles.OutlineMuted.Render("(no blocks)")
 	}
-	// Scroll so the cursor is on-screen; keep a 2-row margin from the top/
-	// bottom when possible.
+	// Cursor row index for the highlight; scroll anchor for the
+	// viewport. They diverge when the cursor block is filtered out —
+	// the row vanishes but we still want the outline near it.
 	cur := cursorOutlineIndex(rows, cursor)
+	anchor := scrollAnchorIndex(rows, doc, cursor)
 	offset := 0
-	if cur >= 0 && cur >= height {
-		offset = cur - height + 1
+	if anchor >= 0 && anchor >= height {
+		offset = anchor - height + 1
 	}
 	end := offset + height
 	if end > len(rows) {

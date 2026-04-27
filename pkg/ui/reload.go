@@ -238,10 +238,24 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 		// lmkf (latexmk -pvc wrapper) is already watching this paper.
 		// Skip our own latexmk and poll the log file for the pass-
 		// completion marker triggered by our edit.
+		//
+		// Timeout is set generously: a heavy paper rebuild (50+ pages,
+		// many figures) routinely takes 30-60s, and timing out before
+		// lmkf finishes leaves the model with a stale PDF + new doc
+		// pair, which the user reads as "PDF didn't reload after vim".
+		// Two minutes is long enough for any paper that builds at all.
 		logPath, _ := lmkfLogPath(path)
-		result, errLine := waitForLmkfComplete(logPath, editTime, 25*time.Second)
+		result, errLine := waitForLmkfComplete(logPath, editTime, 2*time.Minute)
 		switch result {
 		case "ok":
+			// lmkf wrote the log marker, but on slower volumes the PDF
+			// and synctex may not have hit disk visibly yet (latexmk
+			// uses an atomic rename — between log flush and rename the
+			// PDFPath is the OLD file). Briefly wait for both artefacts
+			// to be at least as new as the edit before we hand them to
+			// pdf.Open / synctex.Open — otherwise we'd open the stale
+			// pre-edit copies and present them as the rebuild output.
+			waitForArtefactsFresh(buildRes.PDFPath, buildRes.SyncTeXPath, editTime, 5*time.Second)
 			status = fmt.Sprintf("lmkf rebuild ok · %d blocks", len(newDoc.Blocks))
 		case "error":
 			status = "lmkf rebuild error — " + errLine
@@ -450,6 +464,25 @@ func logContainsMarker(data []byte) bool {
 		data = data[len(data)-tailBytes:]
 	}
 	return strings.Contains(string(data), latexmkCompleteMarker)
+}
+
+// waitForArtefactsFresh polls pdfPath and synctexPath until each one's
+// mtime is at least as recent as editTime, or the timeout elapses. The
+// log-marker poll proves lmkf finished a pass; the artefact poll proves
+// the resulting files are visible to the next pdf.Open / synctex.Open.
+// Falls through silently on timeout — the caller has its own staleness
+// fallback when the opens don't produce a coherent pair.
+func waitForArtefactsFresh(pdfPath, synctexPath string, editTime time.Time, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		ps, perr := os.Stat(pdfPath)
+		ss, serr := os.Stat(synctexPath)
+		if perr == nil && serr == nil &&
+			!ps.ModTime().Before(editTime) && !ss.ModTime().Before(editTime) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // firstLogError surfaces the first TeX error or undefined-ref/citation

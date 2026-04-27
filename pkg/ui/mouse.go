@@ -104,10 +104,20 @@ func (m Model) scrollSource(delta int) Model {
 	// Prefer the tightest leaf block covering newAbs — a neighbouring
 	// paragraph, figure, theorem, or display. Snapping to a leaf sibling
 	// is what the user expects in the common case (scrolling out of one
-	// paragraph into the next).
+	// paragraph into the next). Then SnapToVisible promotes a hit on a
+	// suppressed block (sentence-split paragraph child below a parent
+	// the outline hides, or a noisy inner env nested in a figure) to
+	// the nearest visible ancestor, so the outline always has a matching
+	// row to highlight.
 	if leaf := leafContainingLine(m.Doc, newAbs); leaf != nil {
-		m.CursorBlockID = leaf.ID
-		m.SourceLineCursor = newAbs - leaf.StartLine + 1
+		anchor := SnapToVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues, leaf.ID)
+		m.CursorBlockID = anchor
+		anchorBlock := m.Doc.ByID[anchor]
+		if anchorBlock != nil {
+			m.SourceLineCursor = newAbs - anchorBlock.StartLine + 1
+		} else {
+			m.SourceLineCursor = newAbs - leaf.StartLine + 1
+		}
 		return m
 	}
 	// Gap line covered only by an ancestor (e.g. a blank between a
@@ -117,8 +127,14 @@ func (m Model) scrollSource(delta int) Model {
 	// "reset to 1 on block change" is guarded by a beforeLine==afterLine
 	// check, so the offset we set here survives.
 	if other := blockContainingLine(m.Doc, newAbs); other != nil {
-		m.CursorBlockID = other.ID
-		m.SourceLineCursor = newAbs - other.StartLine + 1
+		anchor := SnapToVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues, other.ID)
+		m.CursorBlockID = anchor
+		anchorBlock := m.Doc.ByID[anchor]
+		if anchorBlock != nil {
+			m.SourceLineCursor = newAbs - anchorBlock.StartLine + 1
+		} else {
+			m.SourceLineCursor = newAbs - other.StartLine + 1
+		}
 		return m
 	}
 	// Unreachable for well-formed docs (root covers everything).
@@ -235,7 +251,7 @@ func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, ex
 		return ""
 	}
 	rows := BuildOutline(doc, side, filter, ext)
-	offset := outlineScrollOffset(rows, cursor, bodyH)
+	offset := outlineScrollOffset(rows, doc, cursor, bodyH)
 	idx := offset + row
 	if idx < 0 || idx >= len(rows) {
 		return ""
@@ -245,13 +261,17 @@ func outlineRowAt(doc *parser.Document, side *persist.Sidecar, filter Filter, ex
 
 // outlineScrollOffset mirrors the scroll-to-keep-cursor-visible math in
 // RenderOutline so click-hit-testing and render see the same first row.
-func outlineScrollOffset(rows []OutlineRow, cursor string, bodyH int) int {
+// When the cursor block is filtered out we fall back to the visible row
+// whose block most closely precedes the cursor's source line — same
+// rule the renderer uses, so a click in the outline still maps to the
+// row the user is looking at.
+func outlineScrollOffset(rows []OutlineRow, doc *parser.Document, cursor string, bodyH int) int {
 	if bodyH < 1 {
 		return 0
 	}
-	cur := cursorOutlineIndex(rows, cursor)
-	if cur >= 0 && cur >= bodyH {
-		return cur - bodyH + 1
+	anchor := scrollAnchorIndex(rows, doc, cursor)
+	if anchor >= 0 && anchor >= bodyH {
+		return anchor - bodyH + 1
 	}
 	return 0
 }

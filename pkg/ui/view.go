@@ -171,7 +171,7 @@ func (m Model) renderOutlinePane(width, height int) string {
 	if bodyH < 1 {
 		bodyH = 1
 	}
-	body := RenderOutline(rows, m.CursorBlockID, innerW, bodyH, m.Focus == PaneOutline, m.Styles)
+	body := RenderOutline(rows, m.Doc, m.CursorBlockID, innerW, bodyH, m.Focus == PaneOutline, m.Styles)
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)
 }

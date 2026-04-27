@@ -73,8 +73,12 @@ func (s *JumpStack) Redo(current string) (string, bool) {
 	return target, true
 }
 
-// visibleOrder walks the document tree in pre-order and returns the IDs of
-// blocks passing the filter. Root is not emitted.
+// visibleOrder walks the document tree in pre-order and returns the IDs
+// of blocks that BuildOutline would emit: same outlineSuppressed and
+// blockMatchesFilter predicates. The two functions must agree on what
+// counts as visible — otherwise j/k can land the cursor on a block the
+// outline doesn't render, leaving the outline with no row to highlight
+// or scroll to. Root is never emitted.
 func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) []string {
 	if doc == nil || doc.Root == nil {
 		return nil
@@ -90,7 +94,7 @@ func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...
 		if b == nil {
 			return
 		}
-		if blockMatchesFilter(b, side, f, extMap) {
+		if !outlineSuppressed(b, doc, side, extMap) && blockMatchesFilter(b, side, f, extMap) {
 			out = append(out, b.ID)
 		}
 		for _, c := range b.ChildIDs {
@@ -101,6 +105,28 @@ func visibleOrder(doc *parser.Document, side *persist.Sidecar, f Filter, ext ...
 		walk(id)
 	}
 	return out
+}
+
+// SnapToVisible returns id if its block is visible in the outline
+// (passes both outlineSuppressed and blockMatchesFilter); otherwise the
+// nearest visible ancestor's ID, walked via ParentID. When no visible
+// ancestor exists, returns id unchanged so callers see a deterministic
+// no-op rather than "". Used by paths that set CursorBlockID outside
+// the j/k pipeline (mouse source-line motion, search jumps, label
+// resolution) so the cursor never lingers on a block the outline
+// doesn't render.
+func SnapToVisible(doc *parser.Document, side *persist.Sidecar, f Filter, ext map[string][]format.ReportDiag, id string) string {
+	if doc == nil || id == "" {
+		return id
+	}
+	cur := doc.ByID[id]
+	for cur != nil && cur.ID != "" && cur.ID != "root" {
+		if !outlineSuppressed(cur, doc, side, ext) && blockMatchesFilter(cur, side, f, ext) {
+			return cur.ID
+		}
+		cur = doc.ByID[cur.ParentID]
+	}
+	return id
 }
 
 // isInnerBlock reports whether b is considered "inner" — reachable only via

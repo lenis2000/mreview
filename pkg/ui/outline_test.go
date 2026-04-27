@@ -250,6 +250,89 @@ func TestBuildOutline_NoisyEnvNotSuppressedAtTopLevel(t *testing.T) {
 		"tikzpicture inside a figure should still be suppressed in favour of the figure row")
 }
 
+// TestVisibleOrder_AgreesWithOutline pins the unification fix: every
+// block visibleOrder hands back to the navigator must also appear in
+// the outline rows for the same (doc, side, filter, ext). j/k landing
+// the cursor on a block the outline hides was the regression behind
+// "outline doesn't scroll with the source": the renderer found no row
+// for the cursor and stayed at the top.
+func TestVisibleOrder_AgreesWithOutline(t *testing.T) {
+	src := `\documentclass{amsart}
+\begin{document}
+\section{S}
+This is the first sentence.
+This is the second sentence.
+This is the third sentence.
+This is the fourth sentence.
+This is the fifth sentence.
+This is the sixth sentence.
+This is the seventh sentence.
+This is the eighth sentence.
+
+\begin{figure}
+\begin{tikzpicture}
+\draw (0,0) -- (1,1);
+\end{tikzpicture}
+\caption{F}
+\end{figure}
+\end{document}
+`
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+
+	rows := BuildOutline(doc, nil, FilterAll)
+	rowSet := map[string]bool{}
+	for _, r := range rows {
+		rowSet[r.BlockID] = true
+	}
+	for _, id := range visibleOrder(doc, nil, FilterAll) {
+		assert.Truef(t, rowSet[id],
+			"visibleOrder produced %s but outline hides it — j/k can land on a row that doesn't render", id)
+	}
+}
+
+// TestSnapToVisible_PromotesSuppressedHit asserts that a mouse / search
+// hit on a suppressed block (sentence-split paragraph child below a
+// hidden parent, or a tikzpicture inside a figure) gets promoted to
+// the nearest visible ancestor before the cursor is committed. Without
+// this, the outline highlight goes blank when the user clicks into an
+// inner unit the outline doesn't render.
+func TestSnapToVisible_PromotesSuppressedHit(t *testing.T) {
+	src := `\documentclass{amsart}
+\begin{document}
+\section{S}
+\begin{figure}
+\begin{tikzpicture}
+\draw (0,0) -- (1,1);
+\end{tikzpicture}
+\caption{F}
+\end{figure}
+\end{document}
+`
+	doc, err := parser.Parse([]byte(src))
+	require.NoError(t, err)
+
+	var tikz, fig *parser.Block
+	for _, b := range doc.Blocks {
+		if b.EnvName == "tikzpicture" {
+			tikz = b
+		}
+		if b.Kind == parser.KindFigure {
+			fig = b
+		}
+	}
+	require.NotNil(t, tikz, "fixture must produce a tikzpicture block")
+	require.NotNil(t, fig, "fixture must produce a figure block")
+
+	got := SnapToVisible(doc, nil, FilterAll, nil, tikz.ID)
+	assert.Equal(t, fig.ID, got,
+		"a hit on a suppressed nested env must promote to the figure ancestor")
+
+	// A hit on something already visible is returned unchanged.
+	assert.Equal(t, fig.ID,
+		SnapToVisible(doc, nil, FilterAll, nil, fig.ID))
+}
+
 // TestFirstSnippet_SkipsFormattingOnly asserts that a leading line of
 // pure layout commands (\\medskip, \\par, \\vspace{1ex}) doesn't end up
 // as the outline title; the next prose line is used instead.
@@ -419,7 +502,7 @@ func TestRenderOutline_HighlightsCursor(t *testing.T) {
 	require.NotEmpty(t, rows)
 	cursor := rows[0].BlockID
 
-	out := RenderOutline(rows, cursor, 40, 10, true, DefaultStyles())
+	out := RenderOutline(rows, doc, cursor, 40, 10, true, DefaultStyles())
 	assert.NotEmpty(t, out)
 	// The cursor row is always padded to the full pane width so the highlight
 	// extends across the line. Any trailing spaces on row[0] prove Width() was
@@ -432,7 +515,7 @@ func TestRenderOutline_HighlightsCursor(t *testing.T) {
 }
 
 func TestRenderOutline_EmptyRows(t *testing.T) {
-	out := RenderOutline(nil, "", 30, 5, true, DefaultStyles())
+	out := RenderOutline(nil, nil, "", 30, 5, true, DefaultStyles())
 	assert.Contains(t, out, "no blocks")
 }
 
@@ -451,7 +534,7 @@ func TestRenderOutline_MarkersAppear(t *testing.T) {
 		Annotations: []persist.Annotation{{BlockID: thm.ID, Note: "x"}},
 	}
 	rows := BuildOutline(doc, side, FilterAll)
-	out := RenderOutline(rows, "", 60, 20, true, DefaultStyles())
+	out := RenderOutline(rows, doc, "", 60, 20, true, DefaultStyles())
 	assert.Contains(t, out, MarkerAnnotated)
 	assert.Contains(t, out, MarkerReviewed)
 	// unresolved ref marker should also appear.
