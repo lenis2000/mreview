@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/pmezard/go-difflib/difflib"
@@ -187,13 +190,18 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		return runFmtSummary(rest, &o, resolved.pdfFix, resolved.indent, resolved.wrap, resolved.tilde, resolved.mathAlign, resolved.mathWrap, cfg, stderr)
 	}
 
+	// Plumb a SIGINT-aware context through verifier and build subprocesses
+	// so a long latexmk/pdftotext can be interrupted cleanly with Ctrl-C.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Loop the per-file work; aggregate exit codes.
 	worst := 0
 	for i, paperPath := range rest {
 		if len(rest) > 1 {
 			_, _ = fmt.Fprintf(stderr, "mreview fmt: [%d/%d] %s\n", i+1, len(rest), filepath.Base(paperPath))
 		}
-		code := runFmtOne(paperPath, &o, cfg, resolved.pdfFix, noVerify, wantReport, verifyMode, resolved.indent, resolved.wrap, resolved.tilde, resolved.mathAlign, resolved.mathWrap, lineRange, stdout, stderr)
+		code := runFmtOne(ctx, paperPath, &o, cfg, resolved.pdfFix, noVerify, wantReport, verifyMode, resolved.indent, resolved.wrap, resolved.tilde, resolved.mathAlign, resolved.mathWrap, lineRange, stdout, stderr)
 		if code > worst {
 			worst = code
 		}
@@ -204,7 +212,11 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 // runFmtOne runs the format pipeline for a single .tex file. Returns 0 on
 // success, 1 on per-file errors, 2 on usage errors. Caller pre-validates
 // shared inputs (--rule, config) and resolves the aggressive defaults.
+//
+// ctx is the SIGINT-aware context propagated to verifier subprocesses so
+// the user can interrupt a long latexmk / pdftotext / diff-pdf with C-c.
 func runFmtOne(
+	ctx context.Context,
 	paperPath string,
 	o *fmtOpts,
 	cfg *ui.Config,
@@ -350,7 +362,7 @@ func runFmtOne(
 		}
 
 		_, _ = fmt.Fprintln(stderr, "mreview fmt: verifying PDF text layer...")
-		vr, verifyErr := format.Verify(*tree, src, result.Src, result.Hits)
+		vr, verifyErr := format.Verify(ctx, *tree, src, result.Src, result.Hits)
 		if verifyErr != nil {
 			_, _ = fmt.Fprintf(stderr, "mreview fmt: verification error: %v\n", verifyErr)
 			_, _ = fmt.Fprintf(stderr, "hint: pass --no-verify to skip, or inspect %s\n", format.LastTempDir())
@@ -380,7 +392,7 @@ func runFmtOne(
 				return 1
 			}
 			_, _ = fmt.Fprintln(stderr, "mreview fmt: running paranoid pixel-level verification...")
-			pr, prErr := format.VerifyParanoid(vr.BeforePDF, vr.AfterPDF)
+			pr, prErr := format.VerifyParanoid(ctx, vr.BeforePDF, vr.AfterPDF)
 			if prErr != nil {
 				_, _ = fmt.Fprintf(stderr, "mreview fmt: paranoid verification error: %v\n", prErr)
 				return 1

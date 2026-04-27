@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,9 +10,20 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"mreview/pkg/build"
 	"mreview/pkg/synctex"
+)
+
+// Per-tool timeouts for the verifier's external subprocess calls.
+// These are upper bounds chosen to be loose enough for legitimate runs
+// on a 200-page paper, and tight enough that a wedged poppler doesn't
+// hang `mreview fmt` indefinitely.
+const (
+	pdfinfoTimeout   = 30 * time.Second
+	pdftotextTimeout = 120 * time.Second
+	diffPDFTimeout   = 180 * time.Second
 )
 
 // Tree describes the set of build inputs needed to compile a paper.
@@ -53,7 +65,12 @@ type VerifyResult struct {
 //
 // Returns ok=true if all diffs are whitelisted. Callers should refuse to write
 // when ok=false.
-func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, error) {
+//
+// ctx scopes the underlying latexmk / pdfinfo / pdftotext subprocesses; each
+// individual subprocess additionally gets a per-tool deadline so a wedged
+// poppler can't hang the whole pipeline. Cancelling ctx (e.g. on SIGINT)
+// terminates the running child.
+func Verify(ctx context.Context, tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, error) {
 	// Create isolated tempdirs. setLastTmpDir cleans the previous run's
 	// tempdir so /tmp/mr-fmt-* doesn't accumulate unboundedly.
 	tmpBase, err := os.MkdirTemp("", "mr-fmt-")
@@ -109,21 +126,21 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 	}
 
 	// Build both.
-	beforeRes, err := buildInDir(beforeDir, paperRel)
+	beforeRes, err := buildInDir(ctx, beforeDir, paperRel)
 	if err != nil {
 		return nil, fmt.Errorf("verify: build before: %w", err)
 	}
-	afterRes, err := buildInDir(afterDir, paperRel)
+	afterRes, err := buildInDir(ctx, afterDir, paperRel)
 	if err != nil {
 		return nil, fmt.Errorf("verify: build after: %w", err)
 	}
 
 	// Page-count precondition via pdfinfo.
-	beforePages, err := pdfPageCount(beforeRes.PDFPath)
+	beforePages, err := pdfPageCount(ctx, beforeRes.PDFPath)
 	if err != nil {
 		return nil, fmt.Errorf("verify: pdfinfo before: %w", err)
 	}
-	afterPages, err := pdfPageCount(afterRes.PDFPath)
+	afterPages, err := pdfPageCount(ctx, afterRes.PDFPath)
 	if err != nil {
 		return nil, fmt.Errorf("verify: pdfinfo after: %w", err)
 	}
@@ -138,11 +155,11 @@ func Verify(tree Tree, beforeSrc, afterSrc []byte, hits []Hit) (*VerifyResult, e
 	}
 
 	// Extract text via pdftotext (default mode, NOT -layout).
-	beforeText, err := runPdftotext(beforeRes.PDFPath)
+	beforeText, err := runPdftotext(ctx, beforeRes.PDFPath)
 	if err != nil {
 		return nil, fmt.Errorf("verify: pdftotext before: %w", err)
 	}
-	afterText, err := runPdftotext(afterRes.PDFPath)
+	afterText, err := runPdftotext(ctx, afterRes.PDFPath)
 	if err != nil {
 		return nil, fmt.Errorf("verify: pdftotext after: %w", err)
 	}
@@ -387,10 +404,11 @@ func detectNoOps(entries []whitelistEntry, beforePages, afterPages [][]string, h
 // defaults to the paper's own subdirectory (filepath.Dir(texPath)) so that
 // relative \graphicspath entries like {../img/} resolve as the original
 // project expects.
-func buildInDir(dir, paper string) (*build.Result, error) {
+func buildInDir(ctx context.Context, dir, paper string) (*build.Result, error) {
 	texPath := filepath.Join(dir, paper)
 	return build.RunWith(build.Options{
 		TexPath: texPath,
+		Ctx:     ctx,
 		// The verifier compares before/after PDFs; it does not care if the
 		// source has pre-existing undefined refs/cites. Linting those is the
 		// job of the Tier-3 diag rules and the user-facing build path.
@@ -399,8 +417,10 @@ func buildInDir(dir, paper string) (*build.Result, error) {
 }
 
 // pdfPageCount returns the number of pages in a PDF using pdfinfo.
-func pdfPageCount(pdfPath string) (int, error) {
-	out, err := exec.Command("pdfinfo", pdfPath).Output()
+func pdfPageCount(ctx context.Context, pdfPath string) (int, error) {
+	cctx, cancel := context.WithTimeout(ctx, pdfinfoTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, "pdfinfo", pdfPath).Output()
 	if err != nil {
 		return 0, fmt.Errorf("pdfinfo: %w", err)
 	}
@@ -417,8 +437,10 @@ func pdfPageCount(pdfPath string) (int, error) {
 }
 
 // runPdftotext runs pdftotext (default mode, NOT -layout) and returns stdout.
-func runPdftotext(pdfPath string) ([]byte, error) {
-	cmd := exec.Command("pdftotext", pdfPath, "-")
+func runPdftotext(ctx context.Context, pdfPath string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, pdftotextTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "pdftotext", pdfPath, "-")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("pdftotext: %w", err)

@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -302,7 +303,7 @@ func TestVerifyIntegration_Tier1(t *testing.T) {
 	tree, err := DiscoverTree(samplePath)
 	require.NoError(t, err)
 
-	vr, err := Verify(*tree, src, result.Src, result.Hits)
+	vr, err := Verify(context.Background(), *tree, src, result.Src, result.Hits)
 	require.NoError(t, err)
 
 	// Tier-1 rules should produce identical PDF text.
@@ -327,7 +328,7 @@ func TestParanoidAvailable(t *testing.T) {
 	} else {
 		t.Log("pdfverify build tag not active — paranoid verifier is a stub")
 		// Calling the stub should return an error.
-		_, err := VerifyParanoid("/nonexistent/before.pdf", "/nonexistent/after.pdf")
+		_, err := VerifyParanoid(context.Background(), "/nonexistent/before.pdf", "/nonexistent/after.pdf")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not available")
 	}
@@ -375,12 +376,12 @@ func TestVerifyParanoidIntegration(t *testing.T) {
 	tree, err := DiscoverTree(samplePath)
 	require.NoError(t, err)
 
-	vr, err := Verify(*tree, src, result.Src, result.Hits)
+	vr, err := Verify(context.Background(), *tree, src, result.Src, result.Hits)
 	require.NoError(t, err)
 	require.True(t, vr.OK, "text-layer verification should pass")
 
 	// Now run paranoid verification on the same PDFs.
-	pr, err := VerifyParanoid(vr.BeforePDF, vr.AfterPDF)
+	pr, err := VerifyParanoid(context.Background(), vr.BeforePDF, vr.AfterPDF)
 	require.NoError(t, err)
 	assert.True(t, pr.OK, "paranoid verification should pass for Tier-1 rewrites: %s", pr.Message)
 }

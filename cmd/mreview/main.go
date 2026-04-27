@@ -2,12 +2,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
@@ -56,8 +59,10 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 //
 // On exit we emit a kitty-delete APC to the TTY (when we have one and the
 // terminal supports kitty) so any lingering PDF image is retired before
-// control returns to the user's shell. Without this, kitty keeps painting
-// the last crop under the shell prompt until the next TIOCGWINSZ clear.
+// control returns to the user's shell. The cleanup is deferred so panics
+// and abnormal termination paths get the same treatment as a normal
+// prog.Run() return — without this, kitty keeps painting the last crop
+// under the shell prompt until the next TIOCGWINSZ clear.
 var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
@@ -71,12 +76,13 @@ var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	} else {
 		opts = append(opts, tea.WithOutput(stdout))
 	}
+	defer func() {
+		if ttyFile != nil && ui.KittyGraphicsAvailable() {
+			fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
+		}
+	}()
 	prog := tea.NewProgram(model, opts...)
-	final, runErr := prog.Run()
-	if ttyFile != nil && ui.KittyGraphicsAvailable() {
-		fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
-	}
-	return final, runErr
+	return prog.Run()
 }
 
 // version is the mreview release version. Overridable at build time via -ldflags.
@@ -197,6 +203,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	cfg = ui.ApplyThemeEnv(cfg)
 
+	// SIGINT-aware context for any subprocess we kick off (latexmk, etc).
+	// bubbletea installs its own SIGINT handler for the TUI's own quit
+	// path; this context is for whatever runs *before* the TUI takes
+	// over the terminal — primarily the startup latexmk.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Resolve build artefact paths and optionally run latexmk. --no-build
 	// just resolves the conventional paths next to <paper>.tex. When lmkf
 	// is already watching this file we also skip — lmkf is rebuilding on
@@ -213,6 +226,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			TexPath:  o.File,
 			BuildCmd: buildCmd,
 			Stderr:   stderr,
+			Ctx:      ctx,
 		})
 		if berr != nil {
 			if !o.Draft {
