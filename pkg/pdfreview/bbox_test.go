@@ -48,8 +48,8 @@ func TestNormalizeWS(t *testing.T) {
 		{"   ", ""},
 	}
 	for _, tc := range cases {
-		if got := normalizeWS(tc.in); got != tc.want {
-			t.Errorf("normalizeWS(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := NormalizeWS(tc.in); got != tc.want {
+			t.Errorf("NormalizeWS(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

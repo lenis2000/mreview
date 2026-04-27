@@ -145,8 +145,19 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 			c.Page = 0
 			c.Quote = ""
 		}
+		// The anchoring prompt allows the model to collapse runs of
+		// spaces, tabs, and newlines when producing quote / quote_focus,
+		// so we must validate against a likewise-normalised page text.
+		// pdfreview.NormalizeWS is the same routine the runtime viewer
+		// applies in FindQuote — keeping the validator and the
+		// highlighter on one normaliser guarantees a quote that passes
+		// here is locatable on screen.
+		var normPage string
+		if c.Page > 0 && c.Page <= len(pages) {
+			normPage = pdfreview.NormalizeWS(pages[c.Page-1])
+		}
 		if c.Page > 0 && c.Page <= len(pages) && c.Quote != "" {
-			if !strings.Contains(pages[c.Page-1], c.Quote) {
+			if !strings.Contains(normPage, pdfreview.NormalizeWS(c.Quote)) {
 				c.Quote = ""
 				c.Confidence = "low"
 			}
@@ -156,7 +167,7 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 		// QuoteFocus must also be a verbatim substring of the page text;
 		// blank it (without touching the broader Quote anchor) if not.
 		if c.QuoteFocus != "" {
-			if c.Page <= 0 || c.Page > len(pages) || !strings.Contains(pages[c.Page-1], c.QuoteFocus) {
+			if c.Page <= 0 || c.Page > len(pages) || !strings.Contains(normPage, pdfreview.NormalizeWS(c.QuoteFocus)) {
 				c.QuoteFocus = ""
 			}
 		}

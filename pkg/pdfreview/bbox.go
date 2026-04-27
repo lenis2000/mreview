@@ -86,7 +86,7 @@ func (c *BBoxCache) FindQuote(page int, quote string) ([]PageRect, bool) {
 	if err != nil || pb == nil || len(pb.Words) == 0 {
 		return nil, false
 	}
-	target := normalizeWS(quote)
+	target := NormalizeWS(quote)
 	if target == "" {
 		return nil, false
 	}
@@ -98,7 +98,7 @@ func (c *BBoxCache) FindQuote(page int, quote string) ([]PageRect, bool) {
 			sb.WriteByte(' ')
 		}
 		starts[i] = sb.Len()
-		sb.WriteString(normalizeWS(w.Text))
+		sb.WriteString(NormalizeWS(w.Text))
 		ends[i] = sb.Len()
 	}
 	concat := sb.String()
@@ -160,7 +160,12 @@ func wordsBBox(words []WordBox, idxs []int) PageRect {
 	return r
 }
 
-func normalizeWS(s string) string {
+// NormalizeWS collapses runs of ASCII whitespace (space, tab, newline,
+// carriage return, form feed) into a single space and trims leading and
+// trailing whitespace. The pdf-comments validator and the runtime
+// FindQuote highlighter share this helper so an anchor that passes
+// post-extraction validation is guaranteed to be locatable at view time.
+func NormalizeWS(s string) string {
 	var b strings.Builder
 	prevSpace := true
 	for _, r := range s {
