@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -117,32 +119,61 @@ end tell`, pdfPath, page)
 // rebuild (lmkf) when Skim still shows a stale render and the user
 // doesn't want the cursor to jump in the process.
 //
-// Iterates documents one-by-one rather than passing the list to revert,
-// which Skim has historically been finicky about. If no document is
-// currently open we fall back to opening the file so a `R` press always
-// produces a fresh view.
+// Two-step flow with a strict separation of responsibilities:
+//
+//  1. AppleScript revert pass — only operates when Skim already has the
+//     document open. Iterates the matching documents one-by-one (Skim
+//     has historically been finicky about reverting a list).
+//  2. If no doc was reverted, fall back to `open -a Skim <abs-path>`,
+//     which asks Launch Services to route the open through Skim
+//     specifically. The earlier version did `open theFile` from inside
+//     `tell application "Skim"`; if Skim hadn't finished launching, the
+//     open verb would be re-routed via Launch Services to the default
+//     PDF handler — which on some macOS setups is Safari, producing
+//     phantom failed downloads in Safari's Downloads window.
+//
+// The path is also resolved to an absolute form before either step so
+// AppleScript's `POSIX file` doesn't try to interpret a relative path
+// against an unpredictable working directory.
 func (m Model) reloadSkim() (tea.Model, tea.Cmd) {
 	if m.PDF == nil || m.PDF.Path() == "" {
 		m.Status = "R: no PDF loaded"
 		return m, nil
 	}
-	pdfPath := m.PDF.Path()
-	script := fmt.Sprintf(
-		`set theFile to POSIX file %q
-tell application "Skim"
+	pdfPath, err := filepath.Abs(m.PDF.Path())
+	if err != nil {
+		m.Status = "R: resolve path: " + err.Error()
+		return m, nil
+	}
+	if _, statErr := os.Stat(pdfPath); statErr != nil {
+		m.Status = "R: " + statErr.Error()
+		return m, nil
+	}
+
+	// Step 1: revert any already-open document with this path. Returning
+	// "true" / "false" lets us decide whether step 2 is needed without a
+	// second osascript round-trip.
+	script := fmt.Sprintf(`tell application "Skim"
   set didRevert to false
   try
-    set theDocs to documents whose path is (get POSIX path of theFile)
+    set theDocs to documents whose path is %q
     repeat with d in theDocs
       revert d
       set didRevert to true
     end repeat
   end try
-  if not didRevert then
-    open theFile
-  end if
-end tell`, pdfPath)
-	cmd := exec.Command("osascript", "-e", script)
+end tell
+return didRevert`, pdfPath)
+	out, _ := exec.Command("osascript", "-e", script).Output()
+	if strings.TrimSpace(string(out)) == "true" {
+		m.Status = "Skim reloaded"
+		return m, nil
+	}
+
+	// Step 2: not currently open. Use the shell `open -a Skim` so
+	// Launch Services hands the file to Skim explicitly, never to the
+	// default PDF handler.
+	cmd := exec.Command("open", "-a", "Skim", pdfPath)
 	if err := cmd.Start(); err != nil {
 		m.Status = "R: " + err.Error()
 		return m, nil
