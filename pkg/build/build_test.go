@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -129,21 +130,52 @@ func TestResolveBuildOutputsOnDisk_FindsOutdir(t *testing.T) {
 	assert.Equal(t, filepath.Join(outdir, "paper.aux"), res.AuxPath)
 }
 
-// TestResolveBuildOutputsOnDisk_PrefersConventional asserts that when
-// the PDF is next to the source the conventional location wins, even
-// if a stale build/ subdir contains an older PDF.
-func TestResolveBuildOutputsOnDisk_PrefersConventional(t *testing.T) {
-	dir := t.TempDir()
-	tex := filepath.Join(dir, "paper.tex")
-	require.NoError(t, os.WriteFile(tex, []byte("x"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "paper.pdf"), []byte("%PDF"), 0o644))
+// TestResolveBuildOutputsOnDisk_PrefersFreshest asserts that when the
+// PDF exists both next to the source and in a build/ subdir, the freshly
+// modified one wins. With both present, neither location is automatically
+// "more correct"; the freshest is the one the user's last build produced
+// regardless of layout.
+func TestResolveBuildOutputsOnDisk_PrefersFreshest(t *testing.T) {
+	t.Run("source dir is fresher", func(t *testing.T) {
+		dir := t.TempDir()
+		tex := filepath.Join(dir, "paper.tex")
+		require.NoError(t, os.WriteFile(tex, []byte("x"), 0o644))
 
-	outdir := filepath.Join(dir, "build")
-	require.NoError(t, os.MkdirAll(outdir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(outdir, "paper.pdf"), []byte("%PDF-stale"), 0o644))
+		outdir := filepath.Join(dir, "build")
+		require.NoError(t, os.MkdirAll(outdir, 0o755))
+		// Write outdir first → its mtime is older.
+		require.NoError(t, os.WriteFile(filepath.Join(outdir, "paper.pdf"), []byte("%PDF-stale"), 0o644))
+		writeFresher(t, filepath.Join(dir, "paper.pdf"), "%PDF-fresh")
 
-	res := ResolveBuildOutputsOnDisk(tex)
-	assert.Equal(t, filepath.Join(dir, "paper.pdf"), res.PDFPath)
+		res := ResolveBuildOutputsOnDisk(tex)
+		assert.Equal(t, filepath.Join(dir, "paper.pdf"), res.PDFPath)
+	})
+
+	t.Run("outdir is fresher", func(t *testing.T) {
+		dir := t.TempDir()
+		tex := filepath.Join(dir, "paper.tex")
+		require.NoError(t, os.WriteFile(tex, []byte("x"), 0o644))
+
+		// Write source-dir copy first → its mtime is older.
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "paper.pdf"), []byte("%PDF-stale"), 0o644))
+		outdir := filepath.Join(dir, "build")
+		require.NoError(t, os.MkdirAll(outdir, 0o755))
+		writeFresher(t, filepath.Join(outdir, "paper.pdf"), "%PDF-fresh")
+
+		res := ResolveBuildOutputsOnDisk(tex)
+		assert.Equal(t, filepath.Join(outdir, "paper.pdf"), res.PDFPath)
+	})
+}
+
+// writeFresher writes content to path and then forces an mtime strictly
+// in the future of any pre-existing file in the same temp dir, so the
+// "freshest wins" tiebreak is unambiguous on filesystems whose stat
+// resolution is one second.
+func writeFresher(t *testing.T, path, content string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	future := time.Now().Add(2 * time.Second)
+	require.NoError(t, os.Chtimes(path, future, future))
 }
 
 // TestRunWith_CustomCmd_DiscoversOutdir wires the rediscovery path: a
@@ -164,6 +196,71 @@ func TestRunWith_CustomCmd_DiscoversOutdir(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "build", "paper.pdf"), res.PDFPath)
 	assert.Equal(t, filepath.Join(dir, "build", "paper.synctex.gz"), res.SyncTeXPath)
 	assert.Equal(t, filepath.Join(dir, "build", "paper.log"), res.LogPath)
+}
+
+// TestRunWith_CustomCmd_LogScanFollowsOutdir asserts that when the
+// build writes paper.log AND paper.pdf into build/ only, RunWith reads
+// the log from build/ — so an undefined-reference warning in
+// build/paper.log produces the expected wrapped BuildError, and
+// IgnoreUndefinedRefs against the build/ PDF does the right thing.
+// Earlier code read res.LogPath and stat'd res.PDFPath off the
+// conventional next-to-source paths before rediscovery had a chance to
+// run, masking real failures.
+func TestRunWith_CustomCmd_LogScanFollowsOutdir(t *testing.T) {
+	prepareOutdir := func(t *testing.T) (texPath, buildCmd string) {
+		t.Helper()
+		dir := t.TempDir()
+		texPath = filepath.Join(dir, "paper.tex")
+		require.NoError(t, os.WriteFile(texPath, []byte("x"), 0o644))
+
+		// Pre-stage build/ with the log + pdf the test scenario assumes.
+		// The BuildCmd then just needs to exit non-zero (the way latexmk
+		// does on undefined refs) so we exercise the failure path.
+		buildDir := filepath.Join(dir, "build")
+		require.NoError(t, os.MkdirAll(buildDir, 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(buildDir, "paper.log"),
+			[]byte("LaTeX Warning: Reference `thm:nope' on page 1 undefined on input line 12.\n"),
+			0o644,
+		))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(buildDir, "paper.pdf"),
+			[]byte("%PDF\n"),
+			0o644,
+		))
+		// `touch` the just-written files so their mtime beats anything
+		// else in `dir` regardless of filesystem stat resolution. The
+		// custom BuildCmd is intentionally trivial — the artefacts are
+		// already on disk.
+		fresh := time.Now().Add(2 * time.Second)
+		require.NoError(t, os.Chtimes(filepath.Join(buildDir, "paper.pdf"), fresh, fresh))
+		require.NoError(t, os.Chtimes(filepath.Join(buildDir, "paper.log"), fresh, fresh))
+
+		return texPath, "exit 7"
+	}
+
+	t.Run("undefined-ref in outdir log triggers a BuildError", func(t *testing.T) {
+		tex, cmd := prepareOutdir(t)
+		_, err := RunWith(Options{TexPath: tex, BuildCmd: cmd})
+		require.Error(t, err)
+
+		var be *BuildError
+		require.True(t, errors.As(err, &be))
+		assert.Contains(t, be.LogIssue, "Reference",
+			"log issue must come from build/paper.log, not the missing root log")
+	})
+
+	t.Run("IgnoreUndefinedRefs uses the outdir PDF for presence check", func(t *testing.T) {
+		tex, cmd := prepareOutdir(t)
+		res, err := RunWith(Options{
+			TexPath:             tex,
+			BuildCmd:            cmd,
+			IgnoreUndefinedRefs: true,
+		})
+		require.NoError(t, err,
+			"with IgnoreUndefinedRefs the existence of build/paper.pdf must be enough to swallow the non-zero exit")
+		assert.Equal(t, filepath.Join(filepath.Dir(tex), "build", "paper.pdf"), res.PDFPath)
+	})
 }
 
 func TestRun_MockNonZeroExit(t *testing.T) {

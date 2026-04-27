@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Result holds the file paths produced (or expected) by a build.
@@ -63,12 +64,16 @@ func Run(texPath, buildCmd string) (*Result, error) {
 
 // RunWith is the explicit-options form of Run.
 //
-// On success with a non-default BuildCmd, the returned *Result is
-// rediscovered from disk: a custom command that writes outputs into
-// build/, out/, _build/, or latex.out/ has its PDF / synctex / aux /
-// bbl / log paths re-pointed at the actual location. This lets the
-// rest of the application — sidecar metadata, PDF-pane open, SyncTeX
-// open, stale-artefact detection — track the user's chosen layout.
+// After the build command exits, the freshest <base>.pdf on disk wins:
+// rediscovery scans the source dir and the conventional outdir
+// candidates (build/, out/, _build/, latex.out/) and re-points every
+// artefact path at whichever directory holds the most recently written
+// PDF. This happens BEFORE the .log scan and the IgnoreUndefinedRefs
+// PDF-presence check, so a custom BuildCmd that writes only to build/
+// gets its log read from build/ — not from a stale or missing root
+// log — and the rest of the application (sidecar metadata, PDF-pane
+// open, SyncTeX open, stale-artefact detection) tracks the user's
+// chosen layout.
 func RunWith(opts Options) (*Result, error) {
 	if opts.TexPath == "" {
 		return nil, errors.New("build: empty tex path")
@@ -109,6 +114,13 @@ func RunWith(opts Options) (*Result, error) {
 
 	runErr := cmd.Run()
 
+	// Rediscover BEFORE reading any artefact: a custom BuildCmd or a
+	// project latexmkrc with `out_dir` may have written everything to
+	// build/ and we need the log scan to follow.
+	if found := discoverOutputs(filepath.Dir(opts.TexPath), basenameNoExt(opts.TexPath)); found != nil {
+		res = found
+	}
+
 	logTail, _ := tailLines(res.LogPath, 40)
 	logIssue := scanLogForErrors(res.LogPath)
 	if opts.IgnoreUndefinedRefs && logIssue != "" && isUndefinedRefWarning(logIssue) {
@@ -123,7 +135,7 @@ func RunWith(opts Options) (*Result, error) {
 		// the PDF is valid; the verifier cares only about the produced PDF.
 		if opts.IgnoreUndefinedRefs && logIssue == "" {
 			if st, statErr := os.Stat(res.PDFPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
-				return rediscoverIfCustom(res, opts), nil
+				return res, nil
 			}
 		}
 		return res, wrapBuildErr(opts.TexPath, fmt.Sprintf("command failed: %v", runErr), logIssue, logTail)
@@ -131,20 +143,7 @@ func RunWith(opts Options) (*Result, error) {
 	if logIssue != "" {
 		return res, wrapBuildErr(opts.TexPath, "log reported issues", logIssue, logTail)
 	}
-	return rediscoverIfCustom(res, opts), nil
-}
-
-// rediscoverIfCustom looks for the build outputs in common outdir
-// candidates when a custom BuildCmd was used. The conventional next-to-
-// source paths in res are kept when the default latexmk command ran.
-func rediscoverIfCustom(res *Result, opts Options) *Result {
-	if opts.BuildCmd == "" {
-		return res
-	}
-	if found := discoverOutputs(filepath.Dir(opts.TexPath), basenameNoExt(opts.TexPath)); found != nil {
-		return found
-	}
-	return res
+	return res, nil
 }
 
 // ResolveBuildOutputs returns the conventional output paths next to texPath,
@@ -175,21 +174,41 @@ func ResolveBuildOutputsOnDisk(texPath string) *Result {
 }
 
 // discoverOutputs returns a *Result whose PDFPath actually exists, by
-// searching dir and the outdirCandidates beneath it. Returns nil if no
-// candidate has the expected <base>.pdf — callers should fall back to
+// searching dir and the outdirCandidates beneath it. Among directories
+// that have a <base>.pdf, the one with the most recently modified PDF
+// wins — that's the file the most recent build produced, regardless of
+// whether stale artefacts from a previous out_dir layout still sit in
+// the source dir or in another candidate. Returns nil if no candidate
+// has the expected <base>.pdf at all; callers should then fall back to
 // the conventional next-to-source paths.
 func discoverOutputs(dir, base string) *Result {
+	type cand struct {
+		searchDir string
+		mtime     time.Time
+	}
+	var found []cand
 	for _, sub := range append([]string{""}, outdirCandidates...) {
 		searchDir := dir
 		if sub != "" {
 			searchDir = filepath.Join(dir, sub)
 		}
 		pdf := filepath.Join(searchDir, base+".pdf")
-		if st, err := os.Stat(pdf); err == nil && !st.IsDir() && st.Size() > 0 {
-			return resolveAt(searchDir, base)
+		st, err := os.Stat(pdf)
+		if err != nil || st.IsDir() || st.Size() == 0 {
+			continue
+		}
+		found = append(found, cand{searchDir, st.ModTime()})
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	best := found[0]
+	for _, c := range found[1:] {
+		if c.mtime.After(best.mtime) {
+			best = c
 		}
 	}
-	return nil
+	return resolveAt(best.searchDir, base)
 }
 
 func resolveAt(dir, base string) *Result {
