@@ -92,6 +92,13 @@ type Keymap struct {
 	// Open the current PDF externally in Skim.app, jumping to the line
 	// under the cursor via Skim's `displayline` SyncTeX helper.
 	OpenInSkim []string // S
+
+	// Pane resize. `<` shrinks the focused pane, `>` grows it. The
+	// source pane absorbs the change in 3-col layout; in stacked
+	// layout, source/PDF focus moves the horizontal split between
+	// them instead. New fractions persist to ~/.config/mreview/layout.toml.
+	ResizeShrink []string // <
+	ResizeGrow   []string // >
 }
 
 // DefaultKeymap returns the built-in bindings.
@@ -145,6 +152,9 @@ func DefaultKeymap() Keymap {
 		FocusSource:  []string{"l", "right"},
 
 		OpenInSkim: []string{"S"},
+
+		ResizeShrink: []string{"<"},
+		ResizeGrow:   []string{">"},
 	}
 }
 

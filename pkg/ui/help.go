@@ -46,6 +46,7 @@ func HelpRows() []HelpRow {
 		{"@", "annotation list"},
 		{"f", "cycle filter (all / unreviewed / annotated / issues)"},
 		{"h / l / ← / →", "focus pane left / right (outline ↔ source ↔ PDF)"},
+		{"< / >", "shrink / grow focused pane (saved globally)"},
 		{"S", "open current PDF in Skim at cursor line"},
 		{"?", "toggle this help overlay"},
 		{"q", "quit and emit annotations"},

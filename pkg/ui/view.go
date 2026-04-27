@@ -14,10 +14,16 @@ import (
 // lion's share because long prose lines in the .tex (full paragraphs on
 // one physical line) wrap badly at narrower widths; the PDF pane only
 // needs enough room to show the cursor-block crop legibly.
-const (
-	outlineFrac = 0.22
-	sourceFrac  = 0.50
-	pdfFrac     = 0.28
+//
+// These are vars (not consts) so the user can resize panes interactively
+// with `<` / `>`. Bounds are enforced in clampLayoutFracs; the source
+// fraction is always derived as 1 - outline - pdf so it absorbs the
+// remainder. stackedTopFrac is the source pane's height share in
+// LayoutStacked (the rest goes to the PDF pane below it).
+var (
+	outlineFrac    = 0.22
+	pdfFrac        = 0.28
+	stackedTopFrac = 0.50
 )
 
 // statusBarHeight is the number of rows reserved for the bottom status row.
@@ -85,9 +91,15 @@ func stackedHeights(height int) (top, bot int) {
 	if height <= 0 {
 		return 0, 0
 	}
-	top = height / 2
+	top = int(float64(height) * stackedTopFrac)
 	if top < 1 {
 		top = 1
+	}
+	if top >= height {
+		top = height - 1
+		if top < 1 {
+			top = 1
+		}
 	}
 	bot = height - top
 	if bot < 1 {

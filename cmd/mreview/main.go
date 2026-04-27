@@ -198,10 +198,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg = ui.ApplyThemeEnv(cfg)
 
 	// Resolve build artefact paths and optionally run latexmk. --no-build
-	// just resolves the conventional paths next to <paper>.tex.
+	// just resolves the conventional paths next to <paper>.tex. When lmkf
+	// is already watching this file we also skip — lmkf is rebuilding on
+	// every save and a second latexmk would race on the build directory.
 	buildRes := build.ResolveBuildOutputs(o.File)
 	var buildWarning string
-	if !o.NoBuild {
+	lmkfActive := ui.LmkfWatching(o.File)
+	if !o.NoBuild && !lmkfActive {
 		buildCmd := o.BuildCmd
 		if buildCmd == "" {
 			buildCmd = cfg.BuildCmd
@@ -261,6 +264,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// Apply persisted pane fractions (~/.config/mreview/layout.toml)
+	// before constructing the model so the first WindowSizeMsg renders
+	// at the user's saved widths instead of the built-in defaults.
+	ui.LoadLayoutFracs()
+
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
@@ -274,6 +282,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	model.Styles = ui.StylesForTheme(cfg.Theme)
 	model.KittyAvailable = ui.KittyGraphicsAvailable()
+	if lmkfActive {
+		model.Status = "lmkf is building this paper — skipped own latexmk"
+	}
 	if buildWarning != "" {
 		model.Status = "build: " + buildWarning
 		// Only suppress rendering when the on-disk artefacts predate

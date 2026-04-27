@@ -299,6 +299,25 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
+	if matches(key, m.Keymap.ResizeShrink) || matches(key, m.Keymap.ResizeGrow) {
+		delta := -1
+		if matches(key, m.Keymap.ResizeGrow) {
+			delta = 1
+		}
+		m.CountBuf = ""
+		if !resizeFocusedPane(m.Focus, m.Layout, delta) {
+			return m, nil
+		}
+		// Pane geometry changed — same invalidation contract as
+		// ToggleLayout: drop the cached crop and re-render at the new
+		// width/height (unless BuildStale is hiding the live pipeline).
+		if !m.BuildStale {
+			m.PDFImage = ""
+			m.pdfCache = newPDFCropCache(pdfCropCacheMax)
+		}
+		go saveLayoutFracs()
+		return m, m.schedulePDFRender()
+	}
 	if matches(key, m.Keymap.SourceLineUp) {
 		n := parseCount(m.CountBuf)
 		m.CountBuf = ""

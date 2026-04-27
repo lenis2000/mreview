@@ -396,6 +396,17 @@ func lmkfLogPath(texPath string) (string, bool) {
 	return got, true
 }
 
+// LmkfWatching reports whether LP's lmkf shell function is already
+// running latexmk -pvc on this .tex. When true, callers should skip
+// invoking their own build — lmkf is already producing artefacts and
+// a parallel latexmk would race on the build directory. Wraps
+// lmkfLogPath so the cmd/ entry point can consult the same wire
+// protocol the in-mreview reload pipeline uses.
+func LmkfWatching(texPath string) bool {
+	_, ok := lmkfLogPath(texPath)
+	return ok
+}
+
 // latexmkCompleteMarker is the line latexmk prints at the end of every
 // successful pdflatex pass. The menubar plugin at
 // /Users/leo/menubar-plugins/lmkf-status.100ms.sh uses the same marker
