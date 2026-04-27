@@ -192,7 +192,7 @@ func TestRun_MockLogError(t *testing.T) {
 	require.Error(t, err)
 	var be *BuildError
 	require.True(t, errors.As(err, &be))
-	assert.Equal(t, "! Undefined control sequence.", be.FirstLine)
+	assert.Equal(t, "! Undefined control sequence.", be.LogIssue)
 }
 
 func TestRun_MockUndefinedRefWarning(t *testing.T) {
@@ -205,8 +205,8 @@ func TestRun_MockUndefinedRefWarning(t *testing.T) {
 	require.Error(t, err)
 	var be *BuildError
 	require.True(t, errors.As(err, &be))
-	assert.Contains(t, be.FirstLine, "Reference")
-	assert.Contains(t, be.FirstLine, "undefined")
+	assert.Contains(t, be.LogIssue, "Reference")
+	assert.Contains(t, be.LogIssue, "undefined")
 }
 
 func TestRun_EmptyTex(t *testing.T) {
@@ -218,7 +218,7 @@ func TestRun_BuildErrorString(t *testing.T) {
 	e := &BuildError{
 		TexPath:   "foo.tex",
 		Reason:    "command failed",
-		FirstLine: "! oops",
+		LogIssue: "! oops",
 		LogTail:   []string{"line1", "line2"},
 	}
 	s := e.Error()

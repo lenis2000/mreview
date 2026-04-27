@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -278,6 +277,3 @@ func resolveEditor() (string, []string, bool) {
 func tokenize(s string) []string {
 	return strings.Fields(s)
 }
-
-// baseTmpPattern is exposed so tests can predict the tmp filenames.
-func baseTmpPattern(p string) string { return filepath.Base(p) }

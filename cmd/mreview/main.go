@@ -488,8 +488,8 @@ func loneTexInCwd() (string, bool) {
 // doesn't carry a structured first-line field.
 func shortBuildWarning(err error) string {
 	var be *build.BuildError
-	if errors.As(err, &be) && be.FirstLine != "" {
-		return be.FirstLine
+	if errors.As(err, &be) && be.LogIssue != "" {
+		return be.LogIssue
 	}
 	s := err.Error()
 	if i := strings.IndexByte(s, '\n'); i > 0 {

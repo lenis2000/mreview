@@ -289,20 +289,20 @@ func tailLines(path string, n int) ([]string, error) {
 }
 
 // BuildError is returned when latexmk fails or the .log contains errors. It
-// carries the captured tail and the first detected error line so callers can
-// surface them directly to the user.
+// carries the captured log tail and the first detected issue (a `!`-prefixed
+// TeX error line, or an undefined-reference / undefined-citation warning).
 type BuildError struct {
-	TexPath   string
-	Reason    string
-	FirstLine string
-	LogTail   []string
+	TexPath  string
+	Reason   string
+	LogIssue string
+	LogTail  []string
 }
 
 func (e *BuildError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "build failed for %s: %s", e.TexPath, e.Reason)
-	if e.FirstLine != "" {
-		fmt.Fprintf(&b, "\n  first error: %s", e.FirstLine)
+	if e.LogIssue != "" {
+		fmt.Fprintf(&b, "\n  first issue: %s", e.LogIssue)
 	}
 	if len(e.LogTail) > 0 {
 		b.WriteString("\n  log tail:\n")
@@ -315,12 +315,12 @@ func (e *BuildError) Error() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func wrapBuildErr(texPath, reason, first string, tail []string) error {
+func wrapBuildErr(texPath, reason, issue string, tail []string) error {
 	return &BuildError{
-		TexPath:   texPath,
-		Reason:    reason,
-		FirstLine: first,
-		LogTail:   tail,
+		TexPath:  texPath,
+		Reason:   reason,
+		LogIssue: issue,
+		LogTail:  tail,
 	}
 }
 

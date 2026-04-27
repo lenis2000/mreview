@@ -14,16 +14,16 @@ import (
 // Outline icons — one per Kind. Kinds with no visual marker fall back to a
 // space so rows stay vertically aligned.
 const (
-	IconSection    = "§"
-	IconTheorem    = "⊞"
-	IconProof      = "⊢"
-	IconProofStep  = "·"
-	IconFigure     = "▤"
-	IconDisplay    = "≡"
-	IconParagraph  = " "
-	IconBibliograph = "⎙"
-	IconOther      = " "
-	IconAbstract   = "✶"
+	IconSection      = "§"
+	IconTheorem      = "⊞"
+	IconProof        = "⊢"
+	IconProofStep    = "·"
+	IconFigure       = "▤"
+	IconDisplay      = "≡"
+	IconParagraph    = " "
+	IconBibliography = "⎙"
+	IconOther        = " "
+	IconAbstract     = "✶"
 )
 
 // Outline markers — suffixed to the row to surface per-block state.
@@ -124,7 +124,7 @@ func iconFor(k parser.Kind) string {
 	case parser.KindParagraph:
 		return IconParagraph
 	case parser.KindBibliography:
-		return IconBibliograph
+		return IconBibliography
 	}
 	return IconOther
 }
@@ -443,4 +443,3 @@ func LocatorFor(doc *parser.Document, id string) string {
 	}
 	return fmt.Sprintf("%s:L%d-L%d", file, b.StartLine, b.EndLine)
 }
-
