@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func runWrap(src, mode string, col int) string {
@@ -58,6 +59,33 @@ func TestWrap_DoesNotBreakInsideRefCommands(t *testing.T) {
 	got := runWrap(src, "sentence", 200)
 	want := "See \\eqref{eq:1}.\nNext sentence.\n"
 	assert.Equal(t, want, got)
+}
+
+// TestExcludedRanges_EscapedBracket asserts that a literal \] inside a
+// ref-like optional argument does not terminate the optional-argument
+// scan early. Without the escape arm the scanner would close the [..]
+// group at the first bare ], leaving the rest of the construct (including
+// the {…} body) eligible for wrapping.
+func TestExcludedRanges_EscapedBracket(t *testing.T) {
+	// \cite[\] note]{key} — without the fix, the scanner would stop at
+	// the literal backslash-bracket pair and miss the {key} body.
+	s := `prefix \cite[note with \] mark]{key} suffix`
+	ranges := excludedRanges(s)
+	require.NotEmpty(t, ranges)
+
+	// The cite-and-args span must cover everything from the leading
+	// backslash through the closing brace of {key}.
+	citeStart := strings.Index(s, `\cite`)
+	citeEnd := strings.Index(s, "}") + 1 // first } closes {key}
+	covered := false
+	for _, r := range ranges {
+		if r[0] == citeStart && r[1] == citeEnd {
+			covered = true
+			break
+		}
+	}
+	assert.True(t, covered,
+		"expected a range covering [%d, %d); got %v", citeStart, citeEnd, ranges)
 }
 
 func TestWrap_ColumnGreedy(t *testing.T) {

@@ -491,10 +491,14 @@ func excludedRanges(s string) [][2]int {
 			depth := 1
 			k++
 			for k < len(s) && depth > 0 {
-				switch s[k] {
-				case '[':
+				switch {
+				case s[k] == '\\' && k+1 < len(s):
+					// Skip the escaped byte so a literal \] inside an
+					// optional argument doesn't terminate the scan.
+					k++
+				case s[k] == '[':
 					depth++
-				case ']':
+				case s[k] == ']':
 					depth--
 				}
 				k++
@@ -512,10 +516,12 @@ func excludedRanges(s string) [][2]int {
 			depth := 1
 			k++
 			for k < len(s) && depth > 0 {
-				switch s[k] {
-				case '{':
+				switch {
+				case s[k] == '\\' && k+1 < len(s):
+					k++
+				case s[k] == '{':
 					depth++
-				case '}':
+				case s[k] == '}':
 					depth--
 				}
 				k++
