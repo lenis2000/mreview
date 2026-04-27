@@ -53,9 +53,9 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 // The TUI draws to /dev/tty rather than the inherited stdout so that
 // `mreview paper.tex > review.md` works: TUI escape sequences land on
 // the terminal while stdout stays a clean channel for the final
-// markdown/JSON emit. stdout is used only when /dev/tty cannot be opened
-// (e.g. a pipe without a controlling terminal), in which case the old
-// mixed-output behaviour is at least no worse than before.
+// markdown/JSON emit. When /dev/tty cannot be opened we refuse rather
+// than scribbling escape sequences into a redirected stdout, which
+// would silently corrupt the documented markdown/JSON sink.
 //
 // On exit we emit a kitty-delete APC to the TTY (when we have one and the
 // terminal supports kitty) so any lingering PDF image is retired before
@@ -64,23 +64,22 @@ func populatePDFRegions(doc *parser.Document, idx *synctex.Index) {
 // prog.Run() return — without this, kitty keeps painting the last crop
 // under the shell prompt until the next TIOCGWINSZ clear.
 var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return model, fmt.Errorf("no controlling terminal (cannot open /dev/tty); pipe interactively or use --stdout=none for headless use: %w", err)
+	}
+	defer tty.Close()
+	defer func() {
+		if ui.KittyGraphicsAvailable() {
+			fmt.Fprint(tty, pdf.KittyDeleteAll)
+		}
+	}()
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
+		tea.WithInput(tty),
+		tea.WithOutput(tty),
 	}
-	var ttyFile *os.File
-	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-		defer tty.Close()
-		ttyFile = tty
-		opts = append(opts, tea.WithInput(tty), tea.WithOutput(tty))
-	} else {
-		opts = append(opts, tea.WithOutput(stdout))
-	}
-	defer func() {
-		if ttyFile != nil && ui.KittyGraphicsAvailable() {
-			fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
-		}
-	}()
 	prog := tea.NewProgram(model, opts...)
 	return prog.Run()
 }
@@ -168,10 +167,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if o.File == "" {
 		// No positional arg: if the current directory contains exactly one
-		// .tex file, review it.
-		if lone, ok := loneTexInCwd(); ok {
+		// .tex file, review it. With multiple .tex files we name them so
+		// the user knows what to pick from rather than seeing the generic
+		// "missing paper argument" diagnostic.
+		lone, multi, ok := loneTexInCwd()
+		switch {
+		case ok:
 			o.File = lone
-		} else {
+		case len(multi) > 1:
+			fmt.Fprintf(stderr, "mreview: multiple .tex files in cwd: %s; specify one\n",
+				strings.Join(multi, ", "))
+			return 2
+		default:
 			fmt.Fprintln(stderr, "mreview: missing paper argument")
 			fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
 			return 2
@@ -451,16 +458,18 @@ func levenshtein(a, b string) int {
 	return prev[lb]
 }
 
-// loneTexInCwd returns the single .tex file in the current directory and
-// true when exactly one is present. Hidden files and subdirectories are
-// ignored. With zero or multiple matches, returns ("", false) and the
-// caller falls back to the missing-arg error.
-func loneTexInCwd() (string, bool) {
+// loneTexInCwd returns the single .tex file in the current directory
+// (with ok=true) when exactly one is present. With multiple matches it
+// returns the full list (in directory-listing order) so the caller can
+// surface a helpful "specify one" diagnostic. Zero matches yield
+// ("", nil, false) and the caller falls back to the missing-arg error.
+// Hidden files and subdirectories are ignored.
+func loneTexInCwd() (string, []string, bool) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
-		return "", false
+		return "", nil, false
 	}
-	var found string
+	var matches []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -472,15 +481,12 @@ func loneTexInCwd() (string, bool) {
 		if filepath.Ext(name) != ".tex" {
 			continue
 		}
-		if found != "" {
-			return "", false
-		}
-		found = name
+		matches = append(matches, name)
 	}
-	if found == "" {
-		return "", false
+	if len(matches) == 1 {
+		return matches[0], matches, true
 	}
-	return found, true
+	return "", matches, false
 }
 
 // shortBuildWarning extracts a one-line summary from a build error for

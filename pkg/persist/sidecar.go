@@ -277,7 +277,11 @@ func parse(data []byte) (*Sidecar, error) {
 			idx++
 			continue
 		}
-		if line == DetachedMarker {
+		// Tolerate trailing whitespace on the marker so a hand-edited
+		// sidecar with a stray space doesn't silently demote the marker
+		// to a regular annotation heading (which then fails the heading
+		// regex and gets skipped).
+		if strings.TrimRight(line, " \t") == DetachedMarker {
 			detached = true
 			idx++
 			continue

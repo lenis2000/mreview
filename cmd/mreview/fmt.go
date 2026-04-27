@@ -150,6 +150,14 @@ func runFmt(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "mreview fmt: --skip-rule: %v\n", err)
 		return 2
 	}
+	// Catch the contradictory case `--rule X --skip-rule X`: the skip
+	// list silently wins, leaving an empty rule set that does no work.
+	if contradicting := intersect(o.Rule, o.SkipRule); len(contradicting) > 0 {
+		_, _ = fmt.Fprintf(stderr,
+			"mreview fmt: --rule and --skip-rule both name %q — nothing will run\n",
+			strings.Join(contradicting, ", "))
+		return 2
+	}
 	// Note: config skip_rules is validated lazily after LoadConfig below.
 
 	// Parse --lines early so we fail fast on bad input.
@@ -734,6 +742,32 @@ func mergeSkipRulesWith(fromCfg, fromCLI []string, tildeRefs, explicitRules []st
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+// intersect returns the values appearing in both a and b, preserving the
+// order from a and dropping duplicates. Used to spot --rule/--skip-rule
+// contradictions before they swallow the whole pipeline silently.
+func intersect(a, b []string) []string {
+	if len(a) == 0 || len(b) == 0 {
+		return nil
+	}
+	bSet := make(map[string]struct{}, len(b))
+	for _, v := range b {
+		bSet[v] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, v := range a {
+		if _, ok := bSet[v]; !ok {
+			continue
+		}
+		if _, dup := seen[v]; dup {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
 	}
 	return out
 }

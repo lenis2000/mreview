@@ -105,8 +105,12 @@ func TestRun_NoArgMultipleTexErrors(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d (stderr=%q)", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "missing paper") {
-		t.Fatalf("expected missing-paper message, got %q", stderr.String())
+	msg := stderr.String()
+	if !strings.Contains(msg, "multiple .tex") {
+		t.Fatalf("expected multi-tex disambiguation message, got %q", msg)
+	}
+	if !strings.Contains(msg, "a.tex") || !strings.Contains(msg, "b.tex") {
+		t.Fatalf("expected both .tex names in message, got %q", msg)
 	}
 }
 
