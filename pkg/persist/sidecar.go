@@ -15,7 +15,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -117,41 +116,7 @@ func Save(path string, s *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	// Use os.CreateTemp for a per-process unique temp name so concurrent
-	// mreview instances writing to the same sidecar don't clobber each
-	// other's tmp file before the final Rename.
-	dir := filepath.Dir(path)
-	base := filepath.Base(path)
-	f, err := os.CreateTemp(dir, base+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if _, err := f.Write(out); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	// Preserve the existing sidecar's permission bits when overwriting so a
-	// user who chmod'd private notes to 0600 does not get them widened to
-	// 0644 on the next save. Fresh files fall back to 0644.
-	mode := os.FileMode(0o644)
-	if info, statErr := os.Stat(path); statErr == nil {
-		mode = info.Mode().Perm()
-	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
+	return WriteFileAtomic(path, out)
 }
 
 // Marshal serialises a *Sidecar into its markdown representation.

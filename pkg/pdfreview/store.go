@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"mreview/pkg/persist"
 )
 
 // ReportPath returns the conventional location of the anchored-comments
@@ -42,20 +44,17 @@ func LoadReport(path string) (*Report, error) {
 }
 
 // SaveReport writes a Report to disk atomically (tmp file + rename) so a
-// crash mid-write can't leave a truncated JSON.
+// crash mid-write can't leave a truncated JSON. Existing perm bits are
+// preserved — a user who chmod'd the comments JSON to 0600 keeps that on
+// the next save.
 func SaveReport(path string, r *Report) error {
 	enc, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
 	enc = append(enc, '\n')
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, enc, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	if err := persist.WriteFileAtomic(path, enc); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 package format
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"mreview/pkg/persist"
 )
 
 // Report holds the structured content of a paper.tex.fmt-report.md file.
@@ -38,18 +40,10 @@ type ReportDiag struct {
 }
 
 // WriteReport writes a paper.tex.fmt-report.md file at reportPath.
-func WriteReport(reportPath string, rpt Report) (retErr error) {
-	f, err := os.Create(reportPath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil && retErr == nil {
-			retErr = cerr
-		}
-	}()
-
-	w := bufio.NewWriter(f)
+// The file is written atomically: a partial report cannot be observed by
+// the TUI's external-issues loader after a crash mid-write.
+func WriteReport(reportPath string, rpt Report) error {
+	w := &bytes.Buffer{}
 
 	_, _ = fmt.Fprintf(w, "# mreview fmt report — %s\n", rpt.File)
 	_, _ = fmt.Fprintf(w, "date: %s\n", rpt.Date.UTC().Format(time.RFC3339))
@@ -107,7 +101,7 @@ func WriteReport(reportPath string, rpt Report) (retErr error) {
 		}
 	}
 
-	return w.Flush()
+	return persist.WriteFileAtomic(reportPath, w.Bytes())
 }
 
 // BuildReport constructs a Report from pipeline results and optional verifier output.

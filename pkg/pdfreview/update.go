@@ -2,7 +2,6 @@ package pdfreview
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"mreview/pkg/pdf"
+	"mreview/pkg/persist"
 )
 
 // pdfRenderedMsg is delivered by the async render command with the kitty
@@ -381,11 +381,7 @@ func (m *Model) saveJSON() error {
 
 func (m *Model) writeLetter() error {
 	out := RenderLetter(m.Comments)
-	tmp := m.LetterPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, m.LetterPath)
+	return persist.WriteFileAtomic(m.LetterPath, []byte(out))
 }
 
 // pdfRenderKey returns the memo key for the current PDF render state.
