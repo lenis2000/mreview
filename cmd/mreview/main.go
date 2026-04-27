@@ -110,6 +110,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runFmt(args[1:], stdout, stderr)
 		case "config":
 			return runConfig(args[1:], stdout, stderr)
+		case "pdf-comments":
+			return runPdfComments(args[1:], stdout, stderr)
+		case "pdf-review":
+			return runPdfReview(args[1:], stdout, stderr)
 		}
 		// Catch typo'd subcommands: a non-flag first arg that doesn't end in
 		// .tex and isn't a path on disk is unlikely to be a valid paper.
@@ -360,7 +364,7 @@ func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
 
 // knownSubcommands lists the dispatch targets recognised by run(). Used by
 // closestSubcommand to suggest fixes for typos.
-var knownSubcommands = []string{"fmt", "config"}
+var knownSubcommands = []string{"fmt", "config", "pdf-comments", "pdf-review"}
 
 // closestSubcommand returns the known subcommand whose Levenshtein distance
 // from name is smallest, provided that distance is ≤ 2. Returns "" when no

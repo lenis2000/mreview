@@ -26,14 +26,16 @@ _mreview() {
   case $state in
     cmd_or_paper)
       _alternative \
-        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place config\:edit\ the\ global\ config\ in\ \$EDITOR))' \
+        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place config\:edit\ the\ global\ config\ in\ \$EDITOR pdf-comments\:anchor\ AI\ review\ comments\ to\ a\ PDF pdf-review\:open\ the\ side-by-side\ review\ TUI))' \
         'files:tex file:_files -g "*.tex"'
       ;;
     args)
       case $line[1] in
-        fmt)    _mreview_fmt ;;
-        config) ;;
-        *)      _files -g '*.tex' ;;
+        fmt)          _mreview_fmt ;;
+        config)       ;;
+        pdf-comments) _mreview_pdf_comments ;;
+        pdf-review)   _mreview_pdf_review ;;
+        *)            _files -g '*.tex' ;;
       esac
       ;;
   esac
@@ -54,6 +56,20 @@ _mreview_fmt() {
     '--config=[path to config file]:config file:_files -g "*.toml"' \
     '--noconfig[ignore config files; use built-in defaults]' \
     '*:tex file:_files -g "*.tex"'
+}
+
+_mreview_pdf_comments() {
+  _arguments \
+    '--model=[claude --model value (default: opus)]:model:' \
+    '--out=[output JSON path (default: <PDF>.pdf-comments.json)]:out:_files -g "*.json"' \
+    '1:review markdown or preprint pdf:_files -g "*.(md|pdf)"' \
+    '2:review markdown or preprint pdf:_files -g "*.(md|pdf)"'
+}
+
+_mreview_pdf_review() {
+  _arguments \
+    '--out=[output letter path (default: <PDF>.review.md)]:out:_files -g "*.md"' \
+    '1:preprint pdf:_files -g "*.pdf"'
 }
 
 _mreview "$@"
