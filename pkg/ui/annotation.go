@@ -258,10 +258,19 @@ func positionOf(doc *parser.Document, id string) int {
 	return -1
 }
 
-// BeginDelete puts the UI into delete-confirmation state. Targets the line-
-// pinned annotation matching the SourceLineCursor when one exists; otherwise
-// any block-level annotation on the cursor block. Silent no-op if neither
-// is present.
+// BeginDelete puts the UI into delete-confirmation state. Resolves a
+// target annotation in priority order:
+//
+//  1. line-pinned at the current SourceLineCursor (a line note the user
+//     is sitting on),
+//  2. block-level (LineOffset 0) on the cursor block,
+//  3. any annotation on the cursor block (fallback so the user can
+//     delete a line note without having to land the source-line cursor
+//     on the exact pinned line — `d` was previously a silent no-op
+//     whenever the cursor was on a different line of a block that had
+//     a single line note).
+//
+// Silent no-op only when the cursor block carries no annotation at all.
 func (m Model) BeginDelete() Model {
 	target := m.CursorBlockID
 	if target == "" {
@@ -278,7 +287,28 @@ func (m Model) BeginDelete() Model {
 		m.Status = ""
 		return m
 	}
+	if a, ok := firstAnnotationOnBlock(m.Sidecar, target); ok {
+		m.Pending = &PendingDelete{TargetID: target, LineOffset: a.LineOffset}
+		m.Status = ""
+		return m
+	}
 	return m
+}
+
+// firstAnnotationOnBlock returns the first annotation matching blockID
+// in declaration order, regardless of LineOffset. Used by BeginDelete as
+// the last-resort match so `d` can target a line note without the user
+// first stepping the source-line cursor onto that exact line.
+func firstAnnotationOnBlock(side *persist.Sidecar, blockID string) (persist.Annotation, bool) {
+	if side == nil {
+		return persist.Annotation{}, false
+	}
+	for _, a := range side.Annotations {
+		if a.BlockID == blockID {
+			return a, true
+		}
+	}
+	return persist.Annotation{}, false
 }
 
 // ConfirmDelete resolves the pending delete. `yes` removes the annotation;

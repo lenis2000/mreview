@@ -235,7 +235,15 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 	// where the saved cursor happens to land on a reviewed block must
 	// stay on FilterUnreviewed, since outstanding work remains in the
 	// outline even though the cursor itself is filtered out.
-	if filter != FilterAll && doc != nil && FirstVisible(doc, side, filter) == "" {
+	// Downgrade to FilterAll when there is no outstanding non-section
+	// content — sections always appear in the outline as structural
+	// anchors (see blockMatchesFilter), so FirstVisible would still
+	// return a row even on a fully-reviewed paper. Use the stricter
+	// "any non-section block left to review" predicate so the filter
+	// only relaxes when there's genuinely nothing to do.
+	if filter == FilterUnreviewed && doc != nil && firstUnreviewedContentID(doc, side) == "" {
+		filter = FilterAll
+	} else if filter != FilterAll && filter != FilterUnreviewed && doc != nil && FirstVisible(doc, side, filter) == "" {
 		filter = FilterAll
 	}
 	m := Model{
@@ -280,11 +288,37 @@ func firstContentBlockID(doc *parser.Document) string {
 // when everything is already reviewed (or the doc has no reviewable
 // content). Used when the sidecar didn't pin a cursor — matches the
 // remap.go docstring that says the UI defaults to "first unreviewed".
+//
+// We can't rely on FirstVisible(FilterUnreviewed) here: sections bypass
+// the filter as structural anchors, so a reviewed leading \section
+// would be returned and the cursor would land on something the user
+// already finished. This walks doc.Blocks directly with the strict
+// "not in side.Reviewed" predicate.
 func firstUnreviewedOrAny(doc *parser.Document, side *persist.Sidecar) string {
-	if id := FirstVisible(doc, side, FilterUnreviewed); id != "" {
+	if id := firstUnreviewedContentID(doc, side); id != "" {
 		return id
 	}
 	return firstContentBlockID(doc)
+}
+
+// firstUnreviewedContentID returns the ID of the first non-root block
+// not present in side.Reviewed, or "" when every block is reviewed.
+// Document order matches doc.Blocks (parse order). Used as the strict
+// "is there any outstanding work" probe; unlike FirstVisible(FilterUnreviewed),
+// this does not have the section-always-visible escape hatch.
+func firstUnreviewedContentID(doc *parser.Document, side *persist.Sidecar) string {
+	if doc == nil {
+		return ""
+	}
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if !isReviewed(side, b.ID) {
+			return b.ID
+		}
+	}
+	return ""
 }
 
 // Init returns the initial command. The first cursor-following PDF render is

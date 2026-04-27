@@ -452,9 +452,24 @@ func TestBuildOutline_AnnotatedFilter_ShowsOnlyAnnotated(t *testing.T) {
 		Annotations: []persist.Annotation{{BlockID: proof.ID, Note: "hi"}},
 	}
 	rows := BuildOutline(doc, side, FilterAnnotated)
-	require.Len(t, rows, 1)
-	assert.Equal(t, proof.ID, rows[0].BlockID)
-	assert.Contains(t, rows[0].Markers, MarkerAnnotated)
+	// Sections always render as structural anchors; the filter applies
+	// only to non-section content. The annotated proof must appear with
+	// its marker; non-annotated, non-section blocks must not.
+	var proofRow *OutlineRow
+	for i := range rows {
+		b := doc.ByID[rows[i].BlockID]
+		if b == nil {
+			continue
+		}
+		if b.Kind == parser.KindSection || b.Kind == parser.KindAbstract {
+			continue
+		}
+		assert.Equal(t, proof.ID, rows[i].BlockID,
+			"only annotated non-section blocks should appear under FilterAnnotated")
+		proofRow = &rows[i]
+	}
+	require.NotNil(t, proofRow, "annotated proof row must be in outline")
+	assert.Contains(t, proofRow.Markers, MarkerAnnotated)
 }
 
 func TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs(t *testing.T) {
@@ -464,7 +479,42 @@ func TestBuildOutline_IssuesFilter_SurfacesUnresolvedRefs(t *testing.T) {
 	require.NotEmpty(t, rows, "issues filter should find the unresolved-ref block")
 	for _, r := range rows {
 		b := doc.ByID[r.BlockID]
+		// Sections always pass the filter as structural anchors; only
+		// non-section rows must satisfy the issues predicate.
+		if b.Kind == parser.KindSection || b.Kind == parser.KindAbstract {
+			continue
+		}
 		assert.True(t, blockHasUnresolved(b) || hasUnresolvedDescendant(doc, b))
+	}
+}
+
+// TestBuildOutline_SectionsBypassFilter pins the navigation-anchor rule:
+// every \section (and \abstract) appears in the outline regardless of
+// per-block filter state, so the source-pane cursor on a reviewed
+// section heading still has a "you are here" row in the outline.
+func TestBuildOutline_SectionsBypassFilter(t *testing.T) {
+	doc := outlineDoc(t)
+	var sec *parser.Block
+	for _, b := range doc.Blocks {
+		if b.Kind == parser.KindSection {
+			sec = b
+			break
+		}
+	}
+	require.NotNil(t, sec, "fixture must contain a section")
+
+	// Marking the section reviewed must not hide it under FilterUnreviewed.
+	side := &persist.Sidecar{Reviewed: []string{sec.ID}}
+	for _, f := range []Filter{FilterAll, FilterUnreviewed, FilterAnnotated, FilterIssues} {
+		rows := BuildOutline(doc, side, f)
+		seen := false
+		for _, r := range rows {
+			if r.BlockID == sec.ID {
+				seen = true
+				break
+			}
+		}
+		assert.Truef(t, seen, "section must remain visible under filter %v", f)
 	}
 }
 

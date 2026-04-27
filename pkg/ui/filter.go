@@ -30,9 +30,19 @@ func DefaultFilter(side *persist.Sidecar) Filter {
 // The filter is purely per-block: ancestors do not force children to be
 // shown, and a filtered-out parent still contributes depth to any visible
 // descendants.
+//
+// Sections (and the abstract) bypass the filter entirely — they are
+// structural navigation anchors, not review targets. Without this
+// override, a reviewed \section heading vanishes from the outline under
+// filter:unreviewed; the source pane is on the heading line but the
+// outline gives no "you are here" anchor and snaps to whatever block
+// happens to come first in document order.
 func blockMatchesFilter(b *parser.Block, side *persist.Sidecar, f Filter, ext ...map[string][]format.ReportDiag) bool {
 	if b == nil {
 		return false
+	}
+	if b.Kind == parser.KindSection || b.Kind == parser.KindAbstract {
+		return true
 	}
 	switch f {
 	case FilterAll:

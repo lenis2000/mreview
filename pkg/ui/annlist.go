@@ -73,6 +73,13 @@ func BuildAnnotListItems(doc *parser.Document, side *persist.Sidecar) []AnnotLis
 		if doc != nil && doc.ByID[a.BlockID] != nil {
 			present = append(present, item)
 		} else {
+			// Block has vanished from the parsed doc: the annotation is
+			// orphaned but still lives in side.Annotations (it hasn't
+			// been migrated to side.Detached yet — that only happens at
+			// reload remap time). Mark it Detached so the popup's `d`
+			// path takes the immediate-delete branch instead of the
+			// "annotation's block no longer in document" no-op.
+			item.Detached = true
 			detached = append(detached, item)
 		}
 	}
@@ -247,7 +254,13 @@ func (m Model) deleteFromAnnotList(p *AnnotListPopup) (tea.Model, tea.Cmd) {
 		if m.Sidecar == nil {
 			return m, nil
 		}
+		// Orphaned items can live in either side.Detached (migrated by
+		// reload remap) or side.Annotations (block vanished but no
+		// remap has run yet — see BuildAnnotListItems). Strip from both
+		// so the popup's `d` action always succeeds regardless of when
+		// the orphaning happened.
 		m.Sidecar.Detached = removeDetachedAnnotation(m.Sidecar.Detached, it.BlockID, it.LineOffset)
+		m.Sidecar.Annotations = removeAnnotation(m.Sidecar.Annotations, it.BlockID, it.LineOffset)
 		if err := m.saveSidecar(); err != nil {
 			m.Status = "save failed: " + err.Error()
 		} else {
