@@ -37,6 +37,26 @@ func TestRunConfig_CreatesAndOpens(t *testing.T) {
 	}
 }
 
+// TestRunConfig_NoShellInjection guards the fix that replaced `sh -c <editor>
+// "<path>"` with a direct exec. An $EDITOR like `true; touch CANARY` must
+// be tokenised into argv, and the would-be side-effect command must not
+// execute — even though the run will exit non-zero (the literal "true;"
+// is not a binary on $PATH).
+func TestRunConfig_NoShellInjection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	canary := filepath.Join(home, "CANARY")
+	t.Setenv("EDITOR", "true; touch "+canary)
+	t.Setenv("VISUAL", "")
+
+	var stdout, stderr bytes.Buffer
+	_ = run([]string{"config"}, &stdout, &stderr)
+
+	if _, err := os.Stat(canary); err == nil {
+		t.Fatalf("canary file %q exists — shell injection regressed", canary)
+	}
+}
+
 func TestRunConfig_DoesNotOverwriteExisting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

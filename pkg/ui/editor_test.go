@@ -33,7 +33,7 @@ func TestParseShellArgs(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parseShellArgs(tc.in)
+			got := ParseShellArgs(tc.in)
 			assert.Equal(t, tc.want, got)
 		})
 	}

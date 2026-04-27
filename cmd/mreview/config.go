@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"mreview/pkg/ui"
 )
 
 // defaultGlobalConfig is the starter content written to
@@ -135,7 +137,17 @@ func runConfig(args []string, stdout, stderr io.Writer) int {
 		editor = "vim"
 	}
 
-	cmd := exec.Command("sh", "-c", editor+" \""+path+"\"")
+	// Tokenise $EDITOR / $VISUAL with the same parser the TUI uses, then
+	// exec the binary directly. Going through `sh -c` would let an
+	// $EDITOR like `vim; rm -rf ~` execute the trailing command — even
+	// when the user is just opening the config file.
+	tokens := ui.ParseShellArgs(editor)
+	if len(tokens) == 0 {
+		_, _ = fmt.Fprintf(stderr, "mreview config: empty $EDITOR / $VISUAL\n")
+		return 1
+	}
+	editorArgs := append(tokens[1:], path)
+	cmd := exec.Command(tokens[0], editorArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

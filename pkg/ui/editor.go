@@ -81,7 +81,7 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 // like --wait is how tea.ExecProcess knows to wait for the edit to
 // finish before reloading.
 //
-// $EDITOR is tokenised with parseShellArgs, which understands single
+// $EDITOR is tokenised with ParseShellArgs, which understands single
 // and double quotes and backslash escapes — enough for GUI-app paths
 // containing spaces (`EDITOR="/Applications/My App/bin/edit" --wait`)
 // without pulling in a full shell parser. Variable expansion and
@@ -89,7 +89,7 @@ func (m Model) editInExternalEditor() (tea.Model, tea.Cmd) {
 // needs those should point $EDITOR at a wrapper script.
 func resolveEditor() (string, []string, bool) {
 	if v := strings.TrimSpace(os.Getenv("EDITOR")); v != "" {
-		tokens := parseShellArgs(v)
+		tokens := ParseShellArgs(v)
 		if len(tokens) > 0 {
 			if _, err := exec.LookPath(tokens[0]); err == nil {
 				return tokens[0], tokens[1:], true
@@ -104,7 +104,7 @@ func resolveEditor() (string, []string, bool) {
 	return "", nil, false
 }
 
-// parseShellArgs tokenises an $EDITOR-style string the way a POSIX
+// ParseShellArgs tokenises an $EDITOR-style string the way a POSIX
 // shell would for simple commands: whitespace separates tokens;
 // single quotes take their contents literally; double quotes take
 // contents literally except that a backslash before `"` or `\`
@@ -112,7 +112,7 @@ func resolveEditor() (string, []string, bool) {
 // (so `\ ` produces a literal space). Unterminated quotes fall
 // through as a single token ending at EOL — good enough for
 // `EDITOR` strings, which are never interactively composed.
-func parseShellArgs(s string) []string {
+func ParseShellArgs(s string) []string {
 	const (
 		stateNormal = iota
 		stateSingle
