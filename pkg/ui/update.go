@@ -150,6 +150,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// lands. BuildStale doesn't need a special case anymore
 		// because nothing is being cleared.
 		if m.PDFManual {
+			// Land on the page the cursor block currently
+			// occupies, not whatever page V was last left on
+			// (or page 1 for a fresh session). Falls through
+			// to the existing ManualPDFPage if SyncTeX can't
+			// resolve the block.
+			if p, ok := cursorPDFPage(&m); ok {
+				m.ManualPDFPage = p
+			}
 			m.Status = manualPDFStatusHint(m)
 		} else {
 			m.Status = ""

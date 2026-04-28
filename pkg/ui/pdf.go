@@ -215,6 +215,35 @@ func renderPDFForBlock(in pdfRenderInputs, cache *pdfCropCache) (string, string)
 	return esc, ""
 }
 
+// cursorPDFPage returns the 0-based PDF page that the current cursor block
+// resolves to via SyncTeX, or (0, false) if it can't be resolved (no PDF,
+// no SyncTeX, missing block, or no region for its line range).
+func cursorPDFPage(m *Model) (int, bool) {
+	if m == nil || m.PDF == nil || m.Synctex == nil || m.Doc == nil {
+		return 0, false
+	}
+	block := resolveBlock(m.Doc, m.CursorBlockID)
+	if block == nil || block.StartLine == 0 {
+		return 0, false
+	}
+	file := block.File
+	if file == "" {
+		file = m.Doc.File
+	}
+	region := m.Synctex.RegionForLines(file, block.StartLine, block.EndLine)
+	if region == nil {
+		return 0, false
+	}
+	page := region.Page - 1
+	if page < 0 {
+		page = 0
+	}
+	if n := m.PDF.NumPage(); n > 0 && page >= n {
+		page = n - 1
+	}
+	return page, true
+}
+
 // resolveBlock is a thin wrapper returning the Block for an ID or nil.
 func resolveBlock(doc *parser.Document, id string) *parser.Block {
 	if doc == nil || id == "" {
