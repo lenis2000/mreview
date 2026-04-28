@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,39 @@ func TestColorizeLaTeXLine_DollarDelimiters(t *testing.T) {
 	s := DefaultStyles()
 	got := colorizeLaTeXLine(`text $$display$$ text`, s)
 	assert.Contains(t, stripANSI(got), "$$display$$")
+}
+
+// A trailing backslash with no following rune is a real input when soft-wrap
+// splits a line mid-command (e.g. between `\` and `bigr` in `\bigr`). Without
+// the early-out, the default branch breaks on `\` without advancing and the
+// outer loop spins forever.
+func TestColorizeLaTeXLine_TrailingBackslashTerminates(t *testing.T) {
+	s := DefaultStyles()
+	done := make(chan string, 1)
+	go func() { done <- colorizeLaTeXLine(`abc\`, s) }()
+	select {
+	case got := <-done:
+		assert.Equal(t, `abc\`, stripANSI(got))
+	case <-time.After(2 * time.Second):
+		t.Fatal("colorizeLaTeXLine hung on trailing backslash")
+	}
+}
+
+func TestWrapOrClip_LineWithTrailingBackslashSegment(t *testing.T) {
+	// Real-world line from a paper: a tab followed by inline math containing
+	// `\bigl(...)` with no spaces. takeCells lands the wrap point on the `\`
+	// of `\bigr)`, leaving the first segment ending on a bare backslash —
+	// the exact input that used to lock colorizeLaTeXLine's default branch.
+	s := DefaultStyles()
+	line := "\t$D_{\\lambda}^{(N)}(\\varphi)=\\det\\bigl(P_{N}T(\\varphi)C_{\\lambda}P_{N}\\bigr)$."
+	done := make(chan []string, 1)
+	go func() { done <- wrapOrClip(line, 70, true, true, s) }()
+	select {
+	case rows := <-done:
+		require.NotEmpty(t, rows)
+	case <-time.After(2 * time.Second):
+		t.Fatal("wrapOrClip hung on line with trailing-backslash wrap segment")
+	}
 }
 
 func TestStripANSI_RemovesCSISequences(t *testing.T) {

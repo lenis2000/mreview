@@ -509,7 +509,17 @@ func colorizeLaTeXLine(line string, styles Styles) string {
 		case r == '%':
 			b.WriteString(styles.SourceComment.Render(string(runes[i:])))
 			return b.String()
-		case r == '\\' && i+1 < len(runes):
+		case r == '\\':
+			if i+1 >= len(runes) {
+				// Trailing backslash with no following rune. Happens when
+				// soft-wrap splits a line mid-command (e.g. between `\` and
+				// `bigr` in `\bigr`) and we colorise the first chunk on its
+				// own. The default branch breaks on `\` without advancing,
+				// so without this early-out the outer loop spins forever.
+				b.WriteString(styles.SourceCommand.Render(string(r)))
+				i++
+				continue
+			}
 			next := runes[i+1]
 			if next == '(' || next == '[' {
 				b.WriteString(styles.SourceMath.Render(string(runes[i : i+2])))
