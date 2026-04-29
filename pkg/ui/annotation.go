@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -482,10 +483,23 @@ func fileOrDoc(doc *parser.Document, b *parser.Block) string {
 	return "-"
 }
 
-// saveSidecar routes through SaveFn (set by tests) when present, else uses
-// SidecarPath + persist.Save. An empty path is treated as "no persistence
-// configured" so model-only tests can run without disk I/O.
-func (m Model) saveSidecar() error {
+// saveSidecar routes through SaveFn (set by tests) when present, else
+// uses SidecarPath + persist.Save. An empty path is treated as "no
+// persistence configured" so model-only tests can run without disk I/O.
+//
+// When the on-disk sidecar has been modified since our last sync (mtime
+// is newer than m.SidecarMtime), an external editor — typically an
+// agent deleting addressed annotations — has touched the file. To avoid
+// silently clobbering those edits, the disk content is reloaded,
+// remapped against the current doc, and 3-way-merged with the live
+// in-memory sidecar (m.SidecarBase as the common ancestor). The merged
+// result replaces m.Sidecar before being written.
+//
+// Pointer receiver: the merge updates m.Sidecar, m.SidecarMtime, and
+// m.SidecarBase. Callers all sit inside value-receiver methods on Model
+// that return Model, so Go's auto-addressing makes those mutations
+// propagate back to the caller's local m.
+func (m *Model) saveSidecar() error {
 	if m.Sidecar != nil {
 		m.Sidecar.Cursor = m.CursorBlockID
 	}
@@ -495,7 +509,46 @@ func (m Model) saveSidecar() error {
 	if m.SidecarPath == "" {
 		return nil
 	}
-	return persist.Save(m.SidecarPath, m.Sidecar)
+
+	// Mtime guard. Skip when SidecarMtime is zero (no prior sync recorded
+	// — happens in unit tests that bypass Load) so first-time saves don't
+	// pay for an unnecessary stat+reload roundtrip.
+	if !m.SidecarMtime.IsZero() && m.Doc != nil {
+		if info, err := os.Stat(m.SidecarPath); err == nil && info.ModTime().After(m.SidecarMtime) {
+			if merged, n, ok := m.mergeWithDisk(); ok {
+				m.Sidecar = merged
+				if n > 0 {
+					m.Status = fmt.Sprintf("merged: agent removed %d annotation(s) — saving combined view", n)
+				}
+			}
+		}
+	}
+
+	if err := persist.Save(m.SidecarPath, m.Sidecar); err != nil {
+		return err
+	}
+	if info, err := os.Stat(m.SidecarPath); err == nil {
+		m.SidecarMtime = info.ModTime()
+	}
+	m.SidecarBase = SnapshotSidecar(m.Sidecar)
+	return nil
+}
+
+// mergeWithDisk reloads the on-disk sidecar, remaps it against the
+// current doc (so BlockIDs align with our in-memory annotations), and
+// returns the 3-way merge of (base, disk, mem). ok=false on read error
+// or missing doc so the caller falls back to a plain save — losing
+// merge fidelity but never losing the user's in-memory edits.
+func (m *Model) mergeWithDisk() (*persist.Sidecar, int, bool) {
+	diskRaw, err := persist.Load(m.SidecarPath)
+	if err != nil || diskRaw == nil {
+		return nil, 0, false
+	}
+	diskRemapped, detached := persist.Remap(diskRaw, m.Doc)
+	diskRemapped.Detached = append(diskRemapped.Detached, detached...)
+	RefreshRemappedAnnotations(m.Doc, diskRemapped)
+	merged, nDeleted := MergeSidecar(m.SidecarBase, diskRemapped, m.Sidecar, m.CursorBlockID)
+	return merged, nDeleted, true
 }
 
 // EnclosingEnv returns the ID of the nearest ancestor (including self) that

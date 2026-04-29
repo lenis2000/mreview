@@ -156,6 +156,12 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		newSidecar.Detached = append(newSidecar.Detached, detached...)
 		RefreshRemappedAnnotations(m.Doc, newSidecar)
 		m.Sidecar = newSidecar
+		// Refresh the merge baseline: the post-remap sidecar now
+		// represents what the next save should be diffed against.
+		// Without this, a save after a reload would treat every
+		// remap-induced BlockID change as a user delta and overwrite
+		// the agent's deletions on disk.
+		m.SidecarBase = SnapshotSidecar(m.Sidecar)
 	}
 	// Refresh external issues (fmt-report diagnostics) against the new
 	// doc so the issues filter stays current after edits.

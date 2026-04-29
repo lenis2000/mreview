@@ -294,6 +294,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
+	// Seed the sync baseline so saveSidecar's mtime guard can detect
+	// external edits (e.g. an agent deleting addressed annotations
+	// while the user keeps adding new ones) and 3-way-merge instead of
+	// clobbering. A missing sidecar leaves SidecarMtime zero, which
+	// disables the guard for first-time saves.
+	if info, statErr := os.Stat(sidecarPath); statErr == nil {
+		model.SidecarMtime = info.ModTime()
+	}
+	model.SidecarBase = ui.SnapshotSidecar(side)
 
 	// Load external fmt-report diagnostics if a report file exists.
 	reportPath := format.ReportPath(o.File)

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -75,6 +76,32 @@ type EditSnapshot struct {
 	Sequence int
 }
 
+// SidecarBase is the snapshot of (Annotations, Reviewed, Detached) the
+// last time we were known to be in sync with disk. Compared against
+// m.Sidecar to identify the user's delta during a 3-way merge: the
+// (Annotations, Reviewed) the user added/edited/removed since the
+// snapshot. Annotation is value-comparable (all scalar fields) and
+// holds no pointers, so the slice copies are deep enough.
+type SidecarBase struct {
+	Annotations []persist.Annotation
+	Reviewed    []string
+	Detached    []persist.Annotation
+}
+
+// SnapshotSidecar takes a deep-enough copy of the sync-relevant fields
+// of s. Returns a zero value when s is nil so callers don't have to
+// branch.
+func SnapshotSidecar(s *persist.Sidecar) SidecarBase {
+	if s == nil {
+		return SidecarBase{}
+	}
+	return SidecarBase{
+		Annotations: append([]persist.Annotation(nil), s.Annotations...),
+		Reviewed:    append([]string(nil), s.Reviewed...),
+		Detached:    append([]persist.Annotation(nil), s.Detached...),
+	}
+}
+
 // maxEditUndo bounds the in-memory undo stack. Generous because a
 // .tex snapshot is tiny (a few hundred KB at most) and a long review
 // session can rack up many small wording fixes the user might want to
@@ -104,6 +131,19 @@ type Model struct {
 	// SaveFn, when non-nil, replaces the default persist.Save path. Tests
 	// override it to record calls and inspect the in-memory sidecar.
 	SaveFn func(*persist.Sidecar) error
+
+	// SidecarMtime is the on-disk mtime of m.SidecarPath as last seen by
+	// saveSidecar (or load). Compared against a fresh stat before each
+	// save: a newer on-disk mtime means an external editor (typically an
+	// agent deleting addressed annotations) has touched the file, and we
+	// must reload + 3-way-merge instead of clobbering. Zero means "no
+	// sidecar yet on disk" — first save just writes.
+	SidecarMtime time.Time
+	// SidecarBase is a snapshot of the sidecar contents the last time we
+	// were in sync with disk (after load+remap, after a save, or after a
+	// reload-remap). Used as the third leg of the merge: the diff from
+	// base to m.Sidecar is the user's delta since last sync.
+	SidecarBase SidecarBase
 
 	// Pending holds the target of an in-flight `d` delete awaiting [y/N]
 	// confirmation in the status bar.
