@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"mreview/pkg/parser"
+	"mreview/pkg/persist"
 )
 
 // writeTeXFile writes the sampleTeX content to a temp .tex file and
@@ -126,6 +127,133 @@ func TestHandleSourceWatch_FirstTickSeedsBaselineSilently(t *testing.T) {
 		"first tick must seed the baseline from disk")
 	assert.NotContains(t, out.Status, "auto-reload",
 		"seeding must not trigger a reload, got %q", out.Status)
+}
+
+// modelForSidecarPoll builds a Model with a real on-disk sidecar that
+// already contains two annotations (idA, idB), and seeds SidecarPath /
+// SidecarMtime / SidecarBase the way main.go does on startup. Returns
+// the model, the sidecar path, the two annotation block IDs, and the
+// initial mtime so tests can stage external edits relative to it.
+func modelForSidecarPoll(t *testing.T) (m Model, path, idA, idB string, initialMtime time.Time) {
+	t.Helper()
+	doc := annotDoc(t)
+	dir := t.TempDir()
+	path = filepath.Join(dir, "side.mreview.md")
+
+	idA = firstBlockOfKind(doc, parser.KindTheoremLike)
+	idB = secondBlockOfKind(doc, parser.KindTheoremLike)
+	require.NotEmpty(t, idA)
+	require.NotEmpty(t, idB)
+
+	initial := &persist.Sidecar{
+		Annotations: []persist.Annotation{
+			fakeAnnotForBlock(doc, idA, "note A"),
+			fakeAnnotForBlock(doc, idB, "note B"),
+		},
+	}
+	require.NoError(t, persist.Save(path, initial))
+
+	loaded, err := persist.Load(path)
+	require.NoError(t, err)
+	side, _ := persist.Remap(loaded, doc)
+	RefreshRemappedAnnotations(doc, side)
+
+	m = New(doc, side)
+	m.SaveFn = nil
+	m.SidecarPath = path
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	m.SidecarMtime = info.ModTime()
+	m.SidecarBase = SnapshotSidecar(side)
+	return m, path, idA, idB, info.ModTime()
+}
+
+// TestPollSidecar_AgentDeletes_MergedIntoMemory proves the watch-tick
+// equivalent of the saveSidecar mtime guard: when an external editor
+// (an agent) drops an annotation while mreview is running, the next
+// pollSidecar tick reloads disk, runs the 3-way merge, and updates
+// m.Sidecar in place — no save event needed.
+func TestPollSidecar_AgentDeletes_MergedIntoMemory(t *testing.T) {
+	m, path, idA, idB, initialMtime := modelForSidecarPoll(t)
+
+	// Agent rewrites the sidecar with b dropped, bumping mtime past
+	// our snapshot.
+	external := &persist.Sidecar{
+		Annotations: []persist.Annotation{fakeAnnotForBlock(m.Doc, idA, "note A")},
+	}
+	require.NoError(t, persist.Save(path, external))
+	future := initialMtime.Add(2 * time.Second)
+	require.NoError(t, os.Chtimes(path, future, future))
+
+	out := m.pollSidecar()
+
+	gotIDs := blockIDSet(out.Sidecar.Annotations)
+	assert.Contains(t, gotIDs, idA, "a survives — agent didn't drop it")
+	assert.NotContains(t, gotIDs, idB, "b is gone — agent's deletion picked up by poll")
+	assert.True(t, out.SidecarMtime.After(m.SidecarMtime),
+		"baseline must advance after a successful merge")
+	assert.Contains(t, out.Status, "auto-reload",
+		"status should surface the auto-reload trigger, got %q", out.Status)
+}
+
+// TestPollSidecar_NoChange_NoOp covers the fast path: an unchanged
+// sidecar mtime must leave Status, baseline, and Sidecar untouched.
+func TestPollSidecar_NoChange_NoOp(t *testing.T) {
+	m, _, _, _, _ := modelForSidecarPoll(t)
+	statusBefore := m.Status
+	mtimeBefore := m.SidecarMtime
+	annosBefore := len(m.Sidecar.Annotations)
+
+	out := m.pollSidecar()
+
+	assert.Equal(t, statusBefore, out.Status, "no change → no status update")
+	assert.Equal(t, mtimeBefore, out.SidecarMtime, "no change → no baseline advance")
+	assert.Equal(t, annosBefore, len(out.Sidecar.Annotations))
+}
+
+// TestPollSidecar_PopupOpen_Suppresses mirrors the source-watch
+// suppression rule: a mid-keystroke popup should never have its
+// underlying state silently reloaded.
+func TestPollSidecar_PopupOpen_Suppresses(t *testing.T) {
+	m, path, idA, _, initialMtime := modelForSidecarPoll(t)
+	external := &persist.Sidecar{
+		Annotations: []persist.Annotation{fakeAnnotForBlock(m.Doc, idA, "note A")},
+	}
+	require.NoError(t, persist.Save(path, external))
+	future := initialMtime.Add(2 * time.Second)
+	require.NoError(t, os.Chtimes(path, future, future))
+	m.Popup = &AnnotationPopup{}
+
+	out := m.pollSidecar()
+
+	assert.NotContains(t, out.Status, "auto-reload",
+		"popup must suppress the trigger, got %q", out.Status)
+	assert.Equal(t, m.SidecarMtime, out.SidecarMtime,
+		"baseline must NOT advance while suppressed (so the next tick can fire)")
+	assert.Equal(t, 2, len(out.Sidecar.Annotations),
+		"suppressed merge must not mutate Sidecar")
+}
+
+// TestPollSidecar_FirstTick_ZeroMtime_NoOp verifies the same first-tick
+// invariant as the source watcher: an empty SidecarMtime baseline means
+// "we haven't synced yet", and the poll must not run a merge until
+// startup / saveSidecar has seeded the baseline.
+func TestPollSidecar_FirstTick_ZeroMtime_NoOp(t *testing.T) {
+	m, path, idA, _, initialMtime := modelForSidecarPoll(t)
+	external := &persist.Sidecar{
+		Annotations: []persist.Annotation{fakeAnnotForBlock(m.Doc, idA, "note A")},
+	}
+	require.NoError(t, persist.Save(path, external))
+	future := initialMtime.Add(2 * time.Second)
+	require.NoError(t, os.Chtimes(path, future, future))
+	m.SidecarMtime = time.Time{}
+
+	out := m.pollSidecar()
+
+	assert.True(t, out.SidecarMtime.IsZero(),
+		"baseline stays zero until something explicitly seeds it")
+	assert.Equal(t, 2, len(out.Sidecar.Annotations),
+		"first tick must not mutate Sidecar")
 }
 
 func TestSourceWatchPaths_DedupesAndIncludesAllBlockFiles(t *testing.T) {

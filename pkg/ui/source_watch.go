@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -110,6 +111,11 @@ func (m Model) handleSourceWatch() (Model, tea.Cmd) {
 	}
 	next := tickSourceWatch()
 
+	// Sidecar poll runs first because it's a 3-way merge (cheap), not a
+	// full source rebuild. This catches the agent-deletes-stale-annotations
+	// flow without waiting for the user to trigger a save.
+	m = m.pollSidecar()
+
 	paths := m.sourceWatchPaths()
 	newest := newestSourceMtime(paths)
 	if newest.IsZero() {
@@ -137,4 +143,47 @@ func (m Model) handleSourceWatch() (Model, tea.Cmd) {
 		nm.Status = "auto-reload: rebuilding…"
 	}
 	return nm, tea.Batch(cmd, next)
+}
+
+// pollSidecar checks whether the sidecar file on disk has been edited
+// externally (typically by an agent removing addressed annotations)
+// since our last sync. When it has, the disk view is reloaded, remapped,
+// and 3-way-merged against the in-memory state — same path as
+// saveSidecar's mtime guard, but driven by the watch tick instead of a
+// save event so the merge happens proactively without requiring the
+// user to take any action.
+//
+// Conservative early-outs match handleSourceWatch:
+//   - SidecarPath empty (no persistence configured) or SidecarMtime zero
+//     (first tick — saveSidecar / startup will seed it on the next event).
+//   - Open popup or pending action: yanking annotation state out from
+//     under the user mid-keystroke would be jarring; a later tick after
+//     the popup closes will catch it.
+//
+// On success the sidecar mtime baseline and SidecarBase snapshot are
+// advanced to match the merged state so subsequent saves (if any) take
+// the merged view as common ancestor.
+func (m Model) pollSidecar() Model {
+	if m.SidecarPath == "" || m.SidecarMtime.IsZero() || m.Doc == nil {
+		return m
+	}
+	if m.Popup != nil || m.Pending != nil {
+		return m
+	}
+	info, err := os.Stat(m.SidecarPath)
+	if err != nil || !info.ModTime().After(m.SidecarMtime) {
+		return m
+	}
+	mp := &m
+	merged, n, ok := mp.mergeWithDisk()
+	if !ok {
+		return *mp
+	}
+	mp.Sidecar = merged
+	mp.SidecarMtime = info.ModTime()
+	mp.SidecarBase = SnapshotSidecar(merged)
+	if n > 0 {
+		mp.Status = fmt.Sprintf("auto-reload: agent removed %d annotation(s)", n)
+	}
+	return *mp
 }
