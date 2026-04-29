@@ -17,6 +17,8 @@ Inspired by [umputun/revdiff](https://github.com/umputun/revdiff) — same
 TUI-driven, annotation-emitting review philosophy, but navigating semantic
 LaTeX blocks rather than diff hunks.
 
+![mreview screenshot](docs/screenshot.png)
+
 ## Status
 
 MVP. Single-user, opinionated, no compatibility guarantees yet.

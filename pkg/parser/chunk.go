@@ -143,10 +143,18 @@ func (p *parser) labelDeclarationLine(b *Block) int {
 //   - any non-paragraph sibling (theorem, proof, display, figure, section, list);
 //   - a blank-or-comment-only gap of more than 1 line between siblings;
 //   - any block carrying a label or outgoing reference (refable targets).
+//
+// Containers that are themselves KindParagraph are skipped: their
+// children came from segmentLongParagraphs (sentence-level splits of an
+// oversized prose paragraph), and re-fusing those defeats the explicit
+// finer-grained split the outline is meant to surface.
 func (p *parser) chunkMergeTiny() {
 	containers := []*Block{p.doc.Root}
 	for _, b := range p.doc.Blocks {
 		if b == nil || b == p.doc.Root {
+			continue
+		}
+		if b.Kind == KindParagraph {
 			continue
 		}
 		if len(b.ChildIDs) > 1 {

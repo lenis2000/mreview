@@ -991,9 +991,12 @@ func (p *parser) sentenceSpans(startLine, endLine int) [][2]int {
 }
 
 // lineEndsSentence reports whether the trimmed content of line ends with a
-// sentence-terminating punctuation. Strips trailing whitespace and a
-// trailing percent comment so `prose.  % footnote` still counts as the end
-// of a sentence.
+// sentence-terminating punctuation. Strips trailing whitespace, a trailing
+// percent comment, and any run of trailing close-brackets/braces/parens
+// so a sentence-ending period that's followed by `\footnote{…}` /
+// parenthetical / bracketed closure on the same line (`text.})`) still
+// registers. Without the bracket strip, a paragraph whose only sentence
+// boundary sits inside such a closure looks unsplittable to the outline.
 func (p *parser) lineEndsSentence(line int) bool {
 	if line < 1 || line > p.totalLines {
 		return false
@@ -1012,6 +1015,19 @@ func (p *parser) lineEndsSentence(line int) bool {
 		if i == 0 || raw[i-1] != '\\' {
 			raw = bytes.TrimRight(raw[:i], " \t")
 		}
+	}
+	// Strip trailing close-brackets and any whitespace they expose.
+	for {
+		raw = bytes.TrimRight(raw, " \t")
+		n := len(raw)
+		if n == 0 {
+			break
+		}
+		c := raw[n-1]
+		if c != ')' && c != '}' && c != ']' {
+			break
+		}
+		raw = raw[:n-1]
 	}
 	if len(raw) == 0 {
 		return false

@@ -57,6 +57,10 @@ const (
 	// Retained so a caller asking for a wildly large vpad doesn't blow
 	// the crop out to the whole page by accident.
 	fitMaxVpadDefault = 250.0
+	// fitVpadFloorPt is the minimum cap the region-relative vpad bound
+	// is allowed to reach. Below this, a one- or two-line paragraph would
+	// get a crop with no breathing room above/below.
+	fitVpadFloorPt = 60.0
 	// fitHpadDefault is the column-crop horizontal margin — wide enough
 	// to keep `\item` bullets and inline-math overhang inside the crop,
 	// plus glyph left-bearing slack so the leading character of each
@@ -187,6 +191,18 @@ func CropFitted(d *Doc, r synctex.Region, opts FitOptions) ([]byte, error) {
 			}
 			if vpad > opts.MaxVpadPt {
 				vpad = opts.MaxVpadPt
+			}
+			// Region-relative cap: a small region (one paragraph) in a
+			// tall pane shouldn't end up dwarfed by hundreds of points
+			// of surrounding context. Allow at most one region-height
+			// of vpad on each side, with a floor so very small regions
+			// still get a usable margin.
+			regionCap := r.H
+			if regionCap < fitVpadFloorPt {
+				regionCap = fitVpadFloorPt
+			}
+			if vpad > regionCap {
+				vpad = regionCap
 			}
 		}
 	}

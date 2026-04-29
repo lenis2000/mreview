@@ -145,9 +145,14 @@ func TestCropFitted_SingleColumnVpadAdaptsToPaneAspect(t *testing.T) {
 		X:    float64(bounds.Dx()) / 4,
 		Y:    float64(bounds.Dy()) / 2,
 		W:    float64(bounds.Dx()) / 4,
-		H:    15,
+		// r.H sized so the region-relative vpad cap (≈ r.H per side)
+		// doesn't fully saturate before pane-aspect-driven growth has a
+		// chance to shape the crop. With a too-small r.H the wide and
+		// tall pane crops would both saturate at the floor and become
+		// indistinguishable, masking the aspect-following behaviour.
+		H: 100,
 	}
-	// Single-column crops grow vpad so the crop aspect matches the pane
+	// Single-column crops grow vpad so the crop aspect approaches the pane
 	// aspect — short-aspect panes pull in more vertical context, tall-
 	// aspect panes stay tight. Without this the crop letterboxes to a
 	// thin strip at the top of the pane.
@@ -164,6 +169,45 @@ func TestCropFitted_SingleColumnVpadAdaptsToPaneAspect(t *testing.T) {
 	assert.Greater(t, wideImg.Bounds().Dy(), tallImg.Bounds().Dy()*2,
 		"single-column vpad should adapt to pane aspect (wide=%dpx, short=%dpx)",
 		wideImg.Bounds().Dy(), tallImg.Bounds().Dy())
+}
+
+// TestCropFitted_SmallRegionStaysFocused pins down the region-relative
+// vpad cap: a small region (one short paragraph) in a tall pane should
+// not balloon into a near-full-page crop just to fill pane aspect. The
+// cursor block needs to remain a meaningful fraction of what's drawn.
+func TestCropFitted_SmallRegionStaysFocused(t *testing.T) {
+	d := openFixture(t)
+	defer d.Close()
+
+	bounds, err := d.Bounds(0)
+	require.NoError(t, err)
+	r := synctex.Region{
+		Page: 1,
+		X:    float64(bounds.Dx()) / 4,
+		Y:    float64(bounds.Dy()) / 2,
+		W:    float64(bounds.Dx()) / 4,
+		H:    20,
+	}
+	// Tall narrow pane — exactly the layout that previously inflated a
+	// small region's crop to ~70 % of the page.
+	pngBytes, err := CropFitted(d, r, FitOptions{PaneWidthPx: 800, PaneHeightPx: 1600})
+	require.NoError(t, err)
+	img, err := png.Decode(bytes.NewReader(pngBytes))
+	require.NoError(t, err)
+	pageHPt := float64(bounds.Dy())
+	// Worst-case crop height = r.H + 2 * max(r.H, fitVpadFloorPt).
+	maxCropHPt := r.H + 2*max64(r.H, fitVpadFloorPt) + 4 // +4pt slack for rounding
+	maxHPx := int(maxCropHPt*fitMaxDPI/72.0) + 8
+	assert.Less(t, img.Bounds().Dy(), maxHPx,
+		"small-region crop should stay near r.H + 2·vpadCap, not stretch to fill the pane")
+	_ = pageHPt
+}
+
+func max64(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func TestCropFitted_ColumnModeNarrowsHorizontally(t *testing.T) {
