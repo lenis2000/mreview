@@ -36,11 +36,99 @@ mreview is **only known to work on**:
   have pre-built `.pdf` / `.synctex.gz` artefacts).
 - The author's external `lmkf` continuous-build wrapper is what feeds fresh
   PDFs to mreview during a session — without it, you'll need to lean on the
-  `B` (manual rebuild) key or the built-in latexmk fallback.
+  `B` (manual rebuild) key or the built-in latexmk fallback. The exact zsh
+  function the author uses is reproduced in [`lmkf` wrapper](#lmkf-wrapper)
+  below.
 
 Other terminals run the outline / source / status panes fine but show a
 placeholder where the PDF crop should be. No graceful degradation work has
 been done.
+
+### `lmkf` wrapper
+
+`lmkf` is a small zsh function that runs `latexmk -pvc` (continuous mode)
+in a side terminal and writes a status file at
+`/tmp/lmkf-status/<project-name>` containing the absolute path of the
+`.log` it's tailing. mreview's reload pipeline (`B` key, post-edit
+reparse, …) detects that file and waits for the latexmk completion
+marker in the log instead of forking its own build — so you don't get
+two latexmks racing on the same build directory.
+
+Drop this into `~/.zshrc`:
+
+```zsh
+lmkf() {
+    local file="$1"
+
+    # If no file is specified, find the first .tex file in the current directory.
+    if [[ -z "$file" ]]; then
+        file=$(find . -maxdepth 1 -name "*.tex" -type f | head -1)
+        if [[ -z "$file" ]]; then
+            echo "❌ No .tex files found in the current directory."
+            return 1
+        fi
+    # Ensure the provided file has a .tex extension.
+    elif [[ "$file" != *.tex ]]; then
+        echo "❌ File must have a .tex extension."
+        return 1
+    fi
+
+    # Register log file path so external tools (mreview, SwiftBar plugin, …)
+    # can find the active latexmk log for this project.
+    local status_dir="/tmp/lmkf-status"
+    mkdir -p "$status_dir"
+    local project_name="$(basename "$(pwd)")"
+    local status_file="$status_dir/$project_name"
+    local abs_logfile="$(pwd)/${file%.tex}.log"
+    echo "$abs_logfile" > "$status_file"
+
+    echo "👁️  Starting latexmk for '$file'..."
+
+    local logfile="${file%.tex}.log"
+
+    local is_building=false
+    latexmk -pvc -f -pdflatex="pdflatex -interaction=nonstopmode -synctex=1" -pdf -view=none "$file" 2>&1 | \
+    while IFS= read -r line; do
+        local ts=$(date +%H:%M:%S)
+        if [[ "$line" == *"Running"*"pdflatex"* ]]; then
+            local pass=$(echo "$line" | sed -n 's/.*pass \([0-9]*\).*/\1/p')
+            echo "⋮ $ts  pdflatex${pass:+ pass $pass}"
+            is_building=true
+        elif [[ "$line" == *"Running"*"bibtex"* ]] || [[ "$line" == *"Running"*"biber"* ]]; then
+            echo "⋮ $ts  bibliography"
+            is_building=true
+        elif [[ "$line" == *"Running"*"makeindex"* ]]; then
+            echo "⋮ $ts  makeindex"
+            is_building=true
+        elif $is_building && [[ "$line" == *"Latexmk:"* ]] && [[ -f "$logfile" ]]; then
+            local e w
+            e=$(command grep -c "^! " "$logfile" 2>/dev/null) || e=0
+            if (( e > 0 )); then
+                local last_error=$(command grep -m1 "^! " "$logfile" 2>/dev/null | sed 's/^! //')
+                w=$(command grep -c "^LaTeX Warning:" "$logfile" 2>/dev/null) || w=0
+                echo "X $ts  $e error(s), $w warning(s)  —  $last_error"
+            else
+                w=$(command grep -c "^LaTeX Warning:" "$logfile" 2>/dev/null) || w=0
+                local pages=$(sed -n 's/.*Output written on .* (\([0-9]*\) page.*/\1/p' "$logfile" 2>/dev/null | tail -1)
+                echo "v $ts  done, ${pages:-?} pages, $w warning(s)"
+            fi
+            is_building=false
+        fi
+    done
+
+    rm -f "$status_file"
+}
+```
+
+Wire protocol mreview relies on (so any reimplementation can be a
+drop-in replacement):
+
+- `/tmp/lmkf-status/<basename-of-cwd>` exists and contains the absolute
+  path of the `.log` file `latexmk` is appending to.
+- That `.log` ends with the line `Here is how much of TeX…` after every
+  successful pass. mreview polls for this marker (modified after the
+  edit time) to know the rebuild is done.
+- Remove the status file when latexmk exits.
 
 ## Install
 
