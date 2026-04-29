@@ -329,7 +329,9 @@ func firstAnnotationOnBlock(side *persist.Sidecar, blockID string) (persist.Anno
 }
 
 // ConfirmDelete resolves the pending delete. `yes` removes the annotation;
-// anything else cancels. The pending-delete flag is always cleared.
+// anything else cancels. The pending-delete flag is always cleared. The
+// removed annotation (and its prior index) is pushed onto AnnotUndo so a
+// later `u` re-inserts it at its original position.
 func (m Model) ConfirmDelete(yes bool) Model {
 	if m.Pending == nil {
 		return m
@@ -339,6 +341,30 @@ func (m Model) ConfirmDelete(yes bool) Model {
 	m.Pending = nil
 	if !yes {
 		return m
+	}
+	if m.Sidecar != nil {
+		var removed persist.Annotation
+		idx := -1
+		for i, a := range m.Sidecar.Annotations {
+			if a.BlockID == target && a.LineOffset == offset {
+				removed = a
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			m.OpSeq++
+			m.AnnotUndo = append(m.AnnotUndo, AnnotDeleteSnapshot{
+				Sequence:   m.OpSeq,
+				Annotation: removed,
+				Index:      idx,
+			})
+			if len(m.AnnotUndo) > maxEditUndo {
+				m.AnnotUndo = m.AnnotUndo[len(m.AnnotUndo)-maxEditUndo:]
+			}
+			m.AnnotRedo = nil
+			m.EditRedo = nil
+		}
 	}
 	m.Sidecar.Annotations = removeAnnotation(m.Sidecar.Annotations, target, offset)
 	if err := m.saveSidecar(); err != nil {

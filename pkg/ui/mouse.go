@@ -355,7 +355,7 @@ func sourceLineAt(doc *parser.Document, cursor string, termW, termH int, layout 
 		if softWrap {
 			// wrapOrClip's row count doesn't depend on styles or the
 			// inBlock flag — pass zero values.
-			n = len(wrapOrClip(src[ln-1], bodyWidth, true, true, Styles{}))
+			n = len(wrapOrClip(src[ln-1], bodyWidth, true, true, Styles{}, ""))
 			if n < 1 {
 				n = 1
 			}

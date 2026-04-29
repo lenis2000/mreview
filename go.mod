@@ -11,7 +11,6 @@ require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/pmezard/go-difflib v1.0.0
-	github.com/sahilm/fuzzy v0.1.1
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
 )

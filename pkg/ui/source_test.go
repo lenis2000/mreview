@@ -92,7 +92,7 @@ func TestWrapOrClip_LineWithTrailingBackslashSegment(t *testing.T) {
 	s := DefaultStyles()
 	line := "\t$D_{\\lambda}^{(N)}(\\varphi)=\\det\\bigl(P_{N}T(\\varphi)C_{\\lambda}P_{N}\\bigr)$."
 	done := make(chan []string, 1)
-	go func() { done <- wrapOrClip(line, 70, true, true, s) }()
+	go func() { done <- wrapOrClip(line, 70, true, true, s, "") }()
 	select {
 	case rows := <-done:
 		require.NotEmpty(t, rows)

@@ -10,9 +10,10 @@ import (
 )
 
 // RenderSource returns the rendered body of the source pane for the current
-// cursor block. See renderSourceWithEditor — this is the no-editor path.
+// cursor block. See renderSourceWithEditor — this is the no-editor path
+// with no search highlight.
 func RenderSource(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation) string {
-	return renderSourceWithEditor(doc, cursor, width, height, styles, softWrap, lineCursor, annotations, nil)
+	return renderSourceWithEditor(doc, cursor, width, height, styles, softWrap, lineCursor, annotations, nil, "")
 }
 
 // renderSourceWithEditor is RenderSource plus an optional inline annotation
@@ -22,7 +23,7 @@ func RenderSource(doc *parser.Document, cursor string, width, height int, styles
 // is replacing — keyed on (BlockID, LineOffset) — is suppressed so the user
 // sees one live editor rather than the editor *and* its old version side
 // by side.
-func renderSourceWithEditor(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation, editor *AnnotationPopup) string {
+func renderSourceWithEditor(doc *parser.Document, cursor string, width, height int, styles Styles, softWrap bool, lineCursor int, annotations []persist.Annotation, editor *AnnotationPopup, searchHighlight string) string {
 	if doc == nil || cursor == "" {
 		return styles.OutlineMuted.Render("(no block selected)")
 	}
@@ -164,7 +165,7 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 		raw := allLines[ln-1]
 		inBlock := ln >= b.StartLine && ln <= b.EndLine
 		isCursor := ln == cursorLine
-		segments := wrapOrClip(raw, bodyWidth, softWrap, inBlock, styles)
+		segments := wrapOrClip(raw, bodyWidth, softWrap, inBlock, styles, searchHighlight)
 		for i, seg := range segments {
 			var gutter string
 			if i == 0 {
@@ -347,16 +348,22 @@ func wrapWords(s string, width int) []string {
 // wrapOrClip turns one source line into one or more visible row strings.
 // When softWrap is false the line is truncated to a single row; otherwise it
 // is split into width-sized pieces along plain-text columns and each piece is
-// re-colorised independently. Context lines (inBlock=false) are dimmed.
-func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles) []string {
+// re-colorised independently. Context lines (inBlock=false) are dimmed. When
+// searchHighlight is non-empty, occurrences of that literal in each segment
+// are wrapped in reverse-video SGR so the user can spot all matches at a
+// glance — the equivalent of vim's `set hlsearch`.
+func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles, searchHighlight string) []string {
 	if width < 1 {
 		width = 1
 	}
 	colorize := func(s string) string {
+		var out string
 		if inBlock {
-			return colorizeLaTeXLine(s, styles)
+			out = colorizeLaTeXLine(s, styles)
+		} else {
+			out = styles.OutlineMuted.Render(s)
 		}
-		return styles.OutlineMuted.Render(s)
+		return overlaySearchHighlight(out, s, searchHighlight)
 	}
 	if !softWrap {
 		return []string{clipToWidth(colorize(line), width)}
@@ -388,6 +395,85 @@ func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles) [
 		rows = append(rows, "")
 	}
 	return rows
+}
+
+// overlaySearchHighlight wraps every occurrence of `query` (smart-case
+// against `plain`) inside `colored` with reverse-video SGR (\x1b[7m … \x1b[27m).
+// `colored` is the styled output of colorize, `plain` is the unstyled
+// source segment those styles came from. The walker tracks the plain-byte
+// position by skipping ANSI CSI escape sequences, so the reverse-video
+// brackets land at exactly the bytes that correspond to the match in the
+// original string. Reverse-video stacks cleanly over the existing colours
+// because SGR 7 is an independent attribute. Empty query is a no-op.
+func overlaySearchHighlight(colored, plain, query string) string {
+	if query == "" || plain == "" || colored == "" {
+		return colored
+	}
+	hay := plain
+	needle := query
+	if isAllLower(query) {
+		hay = strings.ToLower(plain)
+		needle = strings.ToLower(query)
+	}
+	if !strings.Contains(hay, needle) {
+		return colored
+	}
+	var ranges [][2]int
+	start := 0
+	for {
+		idx := strings.Index(hay[start:], needle)
+		if idx < 0 {
+			break
+		}
+		s := start + idx
+		e := s + len(needle)
+		ranges = append(ranges, [2]int{s, e})
+		start = e
+	}
+	if len(ranges) == 0 {
+		return colored
+	}
+	const startSGR = "\x1b[7m"
+	const endSGR = "\x1b[27m"
+	var b strings.Builder
+	b.Grow(len(colored) + len(ranges)*(len(startSGR)+len(endSGR)))
+	plainPos := 0
+	rangeIdx := 0
+	inMatch := false
+	i := 0
+	for i < len(colored) {
+		if colored[i] == 0x1b && i+1 < len(colored) && colored[i+1] == '[' {
+			j := i + 2
+			for j < len(colored) {
+				c := colored[j]
+				j++
+				if c >= '@' && c <= '~' {
+					break
+				}
+			}
+			b.WriteString(colored[i:j])
+			i = j
+			continue
+		}
+		if rangeIdx < len(ranges) {
+			if !inMatch && plainPos == ranges[rangeIdx][0] {
+				b.WriteString(startSGR)
+				inMatch = true
+			} else if inMatch && plainPos == ranges[rangeIdx][1] {
+				b.WriteString(endSGR)
+				inMatch = false
+				rangeIdx++
+				continue
+			}
+		}
+		b.WriteByte(colored[i])
+		i++
+		plainPos++
+	}
+	if inMatch {
+		b.WriteString(endSGR)
+	}
+	return b.String()
 }
 
 // takeCells returns the longest prefix of s that fits in width display cells

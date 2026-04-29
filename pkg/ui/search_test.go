@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,44 +11,48 @@ import (
 	"mreview/pkg/persist"
 )
 
-// --- SearchIndex / Match -----------------------------------------------------
+// --- findSourceMatch --------------------------------------------------------
 
-func TestSearchIndex_IncludesAllNonRootBlocks(t *testing.T) {
+func TestFindSourceMatch_ForwardFromBeginning(t *testing.T) {
 	doc := annotDoc(t)
-	idx := BuildSearchIndex(doc)
-	require.NotEmpty(t, idx.Entries)
-	for _, e := range idx.Entries {
-		assert.NotEqual(t, "root", e.BlockID)
-		assert.NotEmpty(t, e.BlockID)
-	}
+	abs, wrapped, ok := findSourceMatch(doc, 1, "Statement A", true)
+	require.True(t, ok)
+	assert.False(t, wrapped)
+	assert.Equal(t, "Statement A.", lineAt(doc, abs))
 }
 
-func TestSearchIndex_EmptyQueryReturnsAllInOrder(t *testing.T) {
+func TestFindSourceMatch_ForwardWraps(t *testing.T) {
 	doc := annotDoc(t)
-	idx := BuildSearchIndex(doc)
-	res := idx.Match("")
-	require.Len(t, res, len(idx.Entries))
-	for i, e := range res {
-		assert.Equal(t, idx.Entries[i].BlockID, e.BlockID)
-	}
+	first, _, ok := findSourceMatch(doc, 1, "Statement A", true)
+	require.True(t, ok)
+	abs, wrapped, ok := findSourceMatch(doc, first+1, "Statement A", true)
+	require.True(t, ok, "search should wrap to the start")
+	assert.True(t, wrapped, "should report wrap when match required scanning past EOF")
+	assert.Equal(t, first, abs)
 }
 
-func TestSearchIndex_MatchRanksLabelHits(t *testing.T) {
+func TestFindSourceMatch_Backward(t *testing.T) {
 	doc := annotDoc(t)
-	idx := BuildSearchIndex(doc)
-	res := idx.Match("thm:b")
-	require.NotEmpty(t, res, "should match block with label thm:b")
-	assert.Equal(t, "thm:b", res[0].BlockID)
+	end := docLineCount(doc)
+	abs, _, ok := findSourceMatch(doc, end, "Statement", false)
+	require.True(t, ok)
+	assert.Contains(t, lineAt(doc, abs), "Statement B")
 }
 
-func TestSearchIndex_MatchMissingReturnsEmpty(t *testing.T) {
+func TestFindSourceMatch_SmartCase(t *testing.T) {
 	doc := annotDoc(t)
-	idx := BuildSearchIndex(doc)
-	res := idx.Match("xyzzy_not_here_qqq")
-	assert.Empty(t, res)
+	abs, _, ok := findSourceMatch(doc, 1, "statement", true)
+	require.True(t, ok)
+	assert.Contains(t, lineAt(doc, abs), "Statement")
 }
 
-// --- SearchPopup lifecycle ---------------------------------------------------
+func TestFindSourceMatch_NoMatch(t *testing.T) {
+	doc := annotDoc(t)
+	_, _, ok := findSourceMatch(doc, 1, "xyzzy_no_such_word", true)
+	assert.False(t, ok)
+}
+
+// --- SearchPopup lifecycle --------------------------------------------------
 
 func TestSearch_SlashOpensPopup(t *testing.T) {
 	m, _ := newTestModel(t)
@@ -71,45 +74,41 @@ func TestSearch_EscCloses(t *testing.T) {
 	assert.Nil(t, m.Popup)
 }
 
-func TestSearch_TypingFiltersResults(t *testing.T) {
+func TestSearch_EnterJumpsAndClosesPopup(t *testing.T) {
 	m, _ := newTestModel(t)
+	// Pin the cursor on a section so the jump target differs.
+	m.CursorBlockID = firstBlockOfKind(annotDoc(t), parser.KindSection)
+	origin := m.CursorBlockID
 	res, _ := m.Update(rkey('/'))
 	m = res.(Model)
-	p := m.Popup.(*SearchPopup)
-	total := len(p.Results)
 
-	// Type "thm:b" — should narrow to one match (the labeled theorem).
-	for _, r := range "thm:b" {
+	for _, r := range "Statement B" {
 		res, _ = m.Update(rkey(r))
 		m = res.(Model)
 	}
-	p = m.Popup.(*SearchPopup)
-	assert.NotZero(t, total)
-	require.NotEmpty(t, p.Results, "query should produce at least one match")
-	assert.Equal(t, "thm:b", p.Results[0].BlockID, "thm:b should be top result")
-	assert.LessOrEqual(t, len(p.Results), total, "typing should narrow, not expand")
+	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = res.(Model)
+
+	assert.Nil(t, m.Popup)
+	assert.Equal(t, "Statement B", m.LastSearch)
+	assert.NotEqual(t, origin, m.CursorBlockID, "cursor should jump to a different block")
+	assert.Contains(t, m.JumpStack.Back, origin, "jump stack should record origin")
 }
 
-func TestSearch_EnterJumpsAndClosesPopup(t *testing.T) {
+func TestSearch_EnterEmptyClosesNoMove(t *testing.T) {
 	m, _ := newTestModel(t)
 	origin := m.CursorBlockID
 	res, _ := m.Update(rkey('/'))
 	m = res.(Model)
 
-	for _, r := range "thm:b" {
-		res, _ = m.Update(rkey(r))
-		m = res.(Model)
-	}
-
 	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = res.(Model)
-
 	assert.Nil(t, m.Popup)
-	assert.Equal(t, "thm:b", m.CursorBlockID)
-	assert.Contains(t, m.JumpStack.Back, origin, "jump stack should record origin")
+	assert.Equal(t, origin, m.CursorBlockID)
+	assert.Empty(t, m.LastSearch)
 }
 
-func TestSearch_EnterNoResultClosesWithoutJump(t *testing.T) {
+func TestSearch_NoMatchReportsStatus(t *testing.T) {
 	m, _ := newTestModel(t)
 	origin := m.CursorBlockID
 	res, _ := m.Update(rkey('/'))
@@ -119,34 +118,84 @@ func TestSearch_EnterNoResultClosesWithoutJump(t *testing.T) {
 		res, _ = m.Update(rkey(r))
 		m = res.(Model)
 	}
-	p := m.Popup.(*SearchPopup)
-	require.Empty(t, p.Results)
-
 	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = res.(Model)
 	assert.Nil(t, m.Popup)
 	assert.Equal(t, origin, m.CursorBlockID)
-	assert.Empty(t, m.JumpStack.Back)
+	assert.Contains(t, m.Status, "not found")
 }
 
-func TestSearch_ArrowsMoveSelection(t *testing.T) {
-	p := &SearchPopup{Results: []SearchEntry{{BlockID: "a"}, {BlockID: "b"}, {BlockID: "c"}}}
-	p.Move(1)
-	assert.Equal(t, 1, p.Cursor)
-	p.Move(1)
-	assert.Equal(t, 2, p.Cursor)
-	p.Move(1) // clamp at end, no wrap
-	assert.Equal(t, 2, p.Cursor)
-	p.Move(-10)
-	assert.Equal(t, 0, p.Cursor)
+// --- n / N repeat -----------------------------------------------------------
+
+func TestSearch_NRepeatsForward(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.LastSearch = "Statement"
+	// Sit at the top of the document.
+	m.CursorBlockID = firstBlockOfKind(annotDoc(t), parser.KindSection)
+	m.SourceLineCursor = 1
+	res, _ := m.Update(rkey('n'))
+	m = res.(Model)
+	abs, _ := absoluteCursorLine(m)
+	assert.Contains(t, lineAt(m.Doc, abs), "Statement A")
+
+	res, _ = m.Update(rkey('n'))
+	m = res.(Model)
+	abs, _ = absoluteCursorLine(m)
+	assert.Contains(t, lineAt(m.Doc, abs), "Statement B")
 }
 
-func TestSearch_SelectedEmpty(t *testing.T) {
-	p := &SearchPopup{}
-	assert.Equal(t, "", p.Selected())
+func TestSearch_NoPriorSearchIsNoop(t *testing.T) {
+	m, _ := newTestModel(t)
+	origin := m.CursorBlockID
+	res, _ := m.Update(rkey('n'))
+	m = res.(Model)
+	assert.Equal(t, origin, m.CursorBlockID)
+	assert.Contains(t, m.Status, "no previous pattern")
 }
 
-// --- Annotation list popup ---------------------------------------------------
+// --- helpers ----------------------------------------------------------------
+
+func lineAt(doc *parser.Document, n int) string {
+	if doc == nil || n < 1 {
+		return ""
+	}
+	src := string(doc.Source)
+	start := 0
+	cur := 1
+	for i := 0; i < len(src); i++ {
+		if cur == n && (src[i] == '\n' || i == len(src)-1) {
+			end := i
+			if src[i] == '\n' {
+				return src[start:end]
+			}
+			return src[start : end+1]
+		}
+		if src[i] == '\n' {
+			cur++
+			start = i + 1
+		}
+	}
+	if cur == n {
+		return src[start:]
+	}
+	return ""
+}
+
+func docLineCount(doc *parser.Document) int {
+	src := string(doc.Source)
+	if src == "" {
+		return 0
+	}
+	n := 1
+	for i := 0; i < len(src); i++ {
+		if src[i] == '\n' && i < len(src)-1 {
+			n++
+		}
+	}
+	return n
+}
+
+// --- Annotation list popup --------------------------------------------------
 
 func TestAnnotList_EmptyShowsStatus(t *testing.T) {
 	m, _ := newTestModel(t)
@@ -168,7 +217,6 @@ func TestAnnotList_OpensWithItems(t *testing.T) {
 	p, ok := m.Popup.(*AnnotListPopup)
 	require.True(t, ok)
 	require.Len(t, p.Items, 2)
-	// First line only, trimmed.
 	assert.Equal(t, "first note", p.Items[0].FirstLine)
 }
 
@@ -181,14 +229,12 @@ func TestAnnotList_OrderedByDocumentPosition(t *testing.T) {
 	doc := annotDoc(t)
 	side := &persist.Sidecar{
 		Annotations: []persist.Annotation{
-			// provided out of order
 			{BlockID: "thm:b", Breadcrumb: "Theorem 2", Note: "late"},
 			{BlockID: "thm:a", Breadcrumb: "Theorem 1", Note: "early"},
 		},
 	}
 	items := BuildAnnotListItems(doc, side)
 	require.Len(t, items, 2)
-	// thm:a appears first in source, so should come first.
 	assert.Equal(t, "thm:a", items[0].BlockID)
 	assert.Equal(t, "thm:b", items[1].BlockID)
 }
@@ -215,7 +261,6 @@ func TestAnnotList_EnterJumps(t *testing.T) {
 		{BlockID: "thm:b", Breadcrumb: "Theorem 2", Note: "note b"},
 	}
 	if origin == "thm:a" {
-		// ensure origin differs from first target so jump-stack assertions hold
 		m.CursorBlockID = firstBlockOfKind(annotDoc(t), parser.KindSection)
 		origin = m.CursorBlockID
 	}
@@ -276,7 +321,7 @@ func TestAnnotList_EOpensEditPopup(t *testing.T) {
 	assert.Equal(t, "thm:a", p.TargetID)
 	assert.True(t, p.Editing)
 	assert.Equal(t, "existing", p.TA.Value())
-	assert.Equal(t, "thm:a", m.CursorBlockID, "cursor should follow to edited block")
+	assert.Equal(t, "thm:a", m.CursorBlockID)
 }
 
 func TestAnnotList_DBeginsDeleteConfirm(t *testing.T) {
@@ -292,29 +337,54 @@ func TestAnnotList_DBeginsDeleteConfirm(t *testing.T) {
 	assert.Nil(t, m.Popup, "@ popup should close on d")
 	require.NotNil(t, m.Pending, "d should arm a pending delete")
 	assert.Equal(t, "thm:a", m.Pending.TargetID)
-	assert.Len(t, m.Sidecar.Annotations, 1, "annotation must not be removed yet")
+	assert.Len(t, m.Sidecar.Annotations, 1)
 
-	// Confirm with 'y'.
 	res, _ = m.Update(rkey('y'))
 	m = res.(Model)
 	assert.Empty(t, m.Sidecar.Annotations)
 }
 
-// --- Display / formatting helpers --------------------------------------------
+// --- Annotation delete + undo (round-trip) ----------------------------------
 
-func TestSearch_DisplayContainsBreadcrumb(t *testing.T) {
-	doc := annotDoc(t)
-	idx := BuildSearchIndex(doc)
-	var thmB *SearchEntry
-	for i := range idx.Entries {
-		if idx.Entries[i].BlockID == "thm:b" {
-			thmB = &idx.Entries[i]
-			break
-		}
+func TestAnnotDelete_UndoRestoresAtSameIndex(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.Sidecar.Annotations = []persist.Annotation{
+		{BlockID: "thm:a", Breadcrumb: "A", Note: "first"},
+		{BlockID: "thm:b", Breadcrumb: "B", Note: "second"},
 	}
-	require.NotNil(t, thmB)
-	assert.True(t,
-		strings.Contains(thmB.Display, "Theorem") ||
-			strings.Contains(strings.ToLower(thmB.Display), "statement"),
-		"display should include breadcrumb-ish text; got %q", thmB.Display)
+	m.CursorBlockID = "thm:a"
+	res, _ := m.Update(rkey('d'))
+	m = res.(Model)
+	require.NotNil(t, m.Pending)
+	res, _ = m.Update(rkey('y'))
+	m = res.(Model)
+	require.Len(t, m.Sidecar.Annotations, 1)
+	assert.Equal(t, "thm:b", m.Sidecar.Annotations[0].BlockID)
+
+	res, _ = m.Update(rkey('u'))
+	m = res.(Model)
+	require.Len(t, m.Sidecar.Annotations, 2)
+	assert.Equal(t, "thm:a", m.Sidecar.Annotations[0].BlockID, "undo must restore original order")
+	assert.Equal(t, "thm:b", m.Sidecar.Annotations[1].BlockID)
+}
+
+func TestAnnotDelete_UndoRedoRoundTrip(t *testing.T) {
+	m, _ := newTestModel(t)
+	m.Sidecar.Annotations = []persist.Annotation{
+		{BlockID: "thm:a", Note: "first"},
+	}
+	m.CursorBlockID = "thm:a"
+	res, _ := m.Update(rkey('d'))
+	m = res.(Model)
+	res, _ = m.Update(rkey('y'))
+	m = res.(Model)
+	assert.Empty(t, m.Sidecar.Annotations)
+
+	res, _ = m.Update(rkey('u'))
+	m = res.(Model)
+	require.Len(t, m.Sidecar.Annotations, 1)
+
+	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	m = res.(Model)
+	assert.Empty(t, m.Sidecar.Annotations)
 }

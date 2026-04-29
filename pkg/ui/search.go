@@ -5,207 +5,50 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/sahilm/fuzzy"
 
 	"mreview/pkg/parser"
 )
 
-// searchHaystackLimit caps how many source characters feed the fuzzy matcher
-// per block, so a long proof does not dominate ranking.
-const searchHaystackLimit = 200
-
-// searchResultLimit caps the visible result list. Blocks beyond this do not
-// appear; the user can refine the query to surface them.
-const searchResultLimit = 50
-
 // searchInputCharLimit bounds the query string.
-const searchInputCharLimit = 120
+const searchInputCharLimit = 200
 
 // searchInputWidth is the fallback width for the text input when the model
 // has not yet received a WindowSizeMsg.
 const searchInputWidth = 40
 
-// SearchEntry is one row in the fuzzy-search index: a block ID plus the
-// haystack string the matcher scores against (title | label | number |
-// first N chars of source).
-type SearchEntry struct {
-	BlockID  string
-	Display  string // "<breadcrumb> — <snippet>"
-	Haystack string
-}
-
-// SearchIndex is a preprocessed slice of search entries for a document.
-// Entries are in document order; unfiltered display is the same order.
-type SearchIndex struct {
-	Entries []SearchEntry
-}
-
-// BuildSearchIndex walks the document in order and emits one SearchEntry per
-// non-root block. The root is skipped. Blocks without meaningful text still
-// appear but score poorly unless the query matches the haystack.
-func BuildSearchIndex(doc *parser.Document) SearchIndex {
-	if doc == nil {
-		return SearchIndex{}
-	}
-	out := make([]SearchEntry, 0, len(doc.Blocks))
-	for _, b := range doc.Blocks {
-		if b == nil || b.ID == "" || b.ID == "root" {
-			continue
-		}
-		out = append(out, SearchEntry{
-			BlockID:  b.ID,
-			Display:  searchDisplay(doc, b),
-			Haystack: searchHaystack(b),
-		})
-	}
-	return SearchIndex{Entries: out}
-}
-
-// searchHaystack builds the scoring string for a block: title, label, number,
-// env-name and the first searchHaystackLimit characters of source, all joined
-// with a separator that fuzzy.Find treats as a word boundary.
-func searchHaystack(b *parser.Block) string {
-	var parts []string
-	if b.Title != "" {
-		parts = append(parts, b.Title)
-	}
-	if b.Label != "" {
-		parts = append(parts, b.Label)
-	}
-	if b.Number != "" {
-		parts = append(parts, b.Number)
-	}
-	if b.EnvName != "" {
-		parts = append(parts, b.EnvName)
-	}
-	src := b.Source
-	if len(src) > searchHaystackLimit {
-		src = src[:searchHaystackLimit]
-	}
-	src = strings.ReplaceAll(src, "\n", " ")
-	if src != "" {
-		parts = append(parts, src)
-	}
-	return strings.Join(parts, " / ")
-}
-
-// searchDisplay is the user-facing row for an entry: the breadcrumb followed
-// by a short snippet of the block contents so near-duplicates are
-// distinguishable.
-func searchDisplay(doc *parser.Document, b *parser.Block) string {
-	bc := AnnotationBreadcrumb(doc, b.ID)
-	if bc == "" {
-		bc = b.Kind.String()
-	}
-	snippet := firstSnippet(b.Source, 60)
-	if snippet != "" && snippet != bc {
-		return bc + " — " + snippet
-	}
-	return bc
-}
-
-// Match ranks the index against a query, returning entries in descending
-// score order (best first). An empty or whitespace-only query returns all
-// entries in document order.
-func (idx SearchIndex) Match(query string) []SearchEntry {
-	q := strings.TrimSpace(query)
-	if q == "" {
-		out := make([]SearchEntry, len(idx.Entries))
-		copy(out, idx.Entries)
-		return out
-	}
-	pool := make([]string, len(idx.Entries))
-	for i, e := range idx.Entries {
-		pool[i] = e.Haystack
-	}
-	matches := fuzzy.Find(q, pool)
-	out := make([]SearchEntry, 0, len(matches))
-	for _, m := range matches {
-		if m.Index < 0 || m.Index >= len(idx.Entries) {
-			continue
-		}
-		out = append(out, idx.Entries[m.Index])
-	}
-	return out
-}
-
-// SearchPopup hosts the `/` fuzzy-search modal: a text input for the query
-// and a scrollable list of ranked matches. Navigation: j/k / up/down / Ctrl-N
-// / Ctrl-P move the cursor; Enter jumps; Esc / Ctrl-C closes.
+// SearchPopup hosts the `/` vim-style search prompt: a single text input.
+// Submitting jumps to the next literal match in doc.Source from the cursor;
+// the popup itself carries no result list — n/N repeat after closing.
 type SearchPopup struct {
-	Input   textinput.Model
-	Index   SearchIndex
-	Results []SearchEntry
-	Cursor  int
+	Input textinput.Model
 }
 
 // popup marks SearchPopup as a Popup.
 func (*SearchPopup) popup() {}
 
-// NewSearchPopup builds a focused search popup over the document. The
-// textinput starts empty; the initial Results list is the full index so an
-// immediate Enter selects the first block.
-func NewSearchPopup(doc *parser.Document) (*SearchPopup, tea.Cmd) {
+// NewSearchPopup builds a focused search prompt. The initial text is the
+// previous query (vim's `//` repeats) so the user can either retype or
+// just press Enter to re-search.
+func NewSearchPopup(initial string) (*SearchPopup, tea.Cmd) {
 	ti := textinput.New()
-	ti.Placeholder = "fuzzy search…"
+	ti.Placeholder = "search…"
 	ti.CharLimit = searchInputCharLimit
 	ti.Width = searchInputWidth
+	if initial != "" {
+		ti.SetValue(initial)
+		ti.SetCursor(len([]rune(initial)))
+	}
 	cmd := ti.Focus()
-	idx := BuildSearchIndex(doc)
-	p := &SearchPopup{Input: ti, Index: idx}
-	p.refresh()
-	return p, cmd
+	return &SearchPopup{Input: ti}, cmd
 }
 
-// refresh re-ranks Results against the current input. Called after every
-// query mutation.
-func (p *SearchPopup) refresh() {
-	p.Results = p.Index.Match(p.Input.Value())
-	if len(p.Results) > searchResultLimit {
-		p.Results = p.Results[:searchResultLimit]
-	}
-	if p.Cursor >= len(p.Results) {
-		p.Cursor = 0
-	}
-	if p.Cursor < 0 {
-		p.Cursor = 0
-	}
-}
-
-// Move shifts the cursor within Results, clamping at the ends (no wrap).
-// Returning to the first / last row on over-shoot keeps arrow-repeat sane.
-func (p *SearchPopup) Move(delta int) {
-	if len(p.Results) == 0 {
-		p.Cursor = 0
-		return
-	}
-	p.Cursor += delta
-	if p.Cursor < 0 {
-		p.Cursor = 0
-	}
-	if p.Cursor >= len(p.Results) {
-		p.Cursor = len(p.Results) - 1
-	}
-}
-
-// Selected returns the BlockID of the highlighted row, or "" when Results is
-// empty.
-func (p *SearchPopup) Selected() string {
-	if len(p.Results) == 0 {
-		return ""
-	}
-	if p.Cursor < 0 || p.Cursor >= len(p.Results) {
-		return ""
-	}
-	return p.Results[p.Cursor].BlockID
-}
-
-// OpenSearch opens the search popup and returns the initial focus command.
+// OpenSearch opens the search prompt and pre-populates it with the last
+// query so a bare Enter repeats the previous search.
 func (m Model) OpenSearch() (tea.Model, tea.Cmd) {
 	if m.Doc == nil {
 		return m, nil
 	}
-	p, cmd := NewSearchPopup(m.Doc)
+	p, cmd := NewSearchPopup(m.LastSearch)
 	m.Popup = p
 	m.CountBuf = ""
 	m.PendingG = false
@@ -213,20 +56,148 @@ func (m Model) OpenSearch() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// submitSearch jumps to the currently-selected result, pushing the jump
-// stack, and closes the popup. A no-result or same-block submit just closes.
+// submitSearch reads the prompt, stores the query as LastSearch, and jumps
+// to the next forward match (wrapping at end of file). An empty query
+// closes without moving.
 func (m Model) submitSearch() (tea.Model, tea.Cmd) {
 	p, ok := m.Popup.(*SearchPopup)
 	if !ok {
 		return m, nil
 	}
-	target := p.Selected()
+	q := strings.TrimRight(p.Input.Value(), "\n")
 	m.Popup = nil
-	if target == "" || target == m.CursorBlockID {
+	if q == "" {
 		return m, nil
 	}
-	m.JumpStack.Push(m.CursorBlockID)
-	m.CursorBlockID = target
-	m.SourceLineCursor = 1
-	return m, nil
+	m.LastSearch = q
+	return m.jumpToSearch(q, true, true), nil
+}
+
+// jumpToSearch moves the cursor to the next/previous occurrence of query
+// in the source. forward selects the direction; advance=true skips the
+// current cursor line so a repeated search makes progress (pressing n
+// after the first match doesn't park on the same line).
+func (m Model) jumpToSearch(query string, forward, advance bool) Model {
+	if m.Doc == nil || query == "" {
+		return m
+	}
+	startAbs, ok := absoluteCursorLine(m)
+	if !ok {
+		startAbs = 1
+	}
+	if advance {
+		if forward {
+			startAbs++
+		} else {
+			startAbs--
+		}
+	}
+	abs, wrapped, found := findSourceMatch(m.Doc, startAbs, query, forward)
+	if !found {
+		m.Status = "search: pattern not found: " + query
+		return m
+	}
+	prev := m.CursorBlockID
+	if leaf := leafContainingLine(m.Doc, abs); leaf != nil {
+		anchor := SnapToVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues, leaf.ID)
+		m.CursorBlockID = anchor
+		if ab := m.Doc.ByID[anchor]; ab != nil {
+			m.SourceLineCursor = abs - ab.StartLine + 1
+		} else {
+			m.SourceLineCursor = abs - leaf.StartLine + 1
+		}
+	} else if other := blockContainingLine(m.Doc, abs); other != nil {
+		anchor := SnapToVisible(m.Doc, m.Sidecar, m.Filter, m.ExternalIssues, other.ID)
+		m.CursorBlockID = anchor
+		if ab := m.Doc.ByID[anchor]; ab != nil {
+			m.SourceLineCursor = abs - ab.StartLine + 1
+		} else {
+			m.SourceLineCursor = abs - other.StartLine + 1
+		}
+	}
+	if prev != "" && prev != m.CursorBlockID {
+		m.JumpStack.Push(prev)
+	}
+	switch {
+	case wrapped && forward:
+		m.Status = "search hit BOTTOM, continuing at TOP — /" + query
+	case wrapped && !forward:
+		m.Status = "search hit TOP, continuing at BOTTOM — ?" + query
+	case forward:
+		m.Status = "/" + query
+	default:
+		m.Status = "?" + query
+	}
+	return m
+}
+
+// findSourceMatch scans doc.Source for the next/previous line whose text
+// contains query (smart-case: lowercase query is case-insensitive, mixed
+// case is exact — vim's `set ignorecase + smartcase`). Wraps once around
+// the document (vim's `wrapscan`). Returns the 1-based absolute line
+// number plus whether the match required a wrap, so the caller can
+// surface a "search hit BOTTOM…" status the way vim does.
+func findSourceMatch(doc *parser.Document, fromAbs int, query string, forward bool) (line int, wrapped bool, ok bool) {
+	if doc == nil || query == "" {
+		return 0, false, false
+	}
+	lines := strings.Split(string(doc.Source), "\n")
+	total := len(lines)
+	if total == 0 {
+		return 0, false, false
+	}
+	if fromAbs < 1 {
+		fromAbs = 1
+	}
+	if fromAbs > total {
+		fromAbs = total
+	}
+	needle := query
+	hayCase := func(s string) string { return s }
+	if isAllLower(query) {
+		needle = strings.ToLower(query)
+		hayCase = strings.ToLower
+	}
+	step := 1
+	if !forward {
+		step = -1
+	}
+	// Two passes: from fromAbs to either end, then wrap to the other end and
+	// continue back to fromAbs. The second pass is the "wrapped" hit.
+	for pass := 0; pass < 2; pass++ {
+		i := fromAbs
+		for i >= 1 && i <= total {
+			if strings.Contains(hayCase(lines[i-1]), needle) {
+				return i, pass == 1, true
+			}
+			i += step
+		}
+		if forward {
+			fromAbs = 1
+		} else {
+			fromAbs = total
+		}
+	}
+	return 0, false, false
+}
+
+// isAllLower reports whether s contains no uppercase letters. Used by the
+// smart-case test in findSourceMatch.
+func isAllLower(s string) bool {
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// SearchAgain re-runs the most recent search starting from the cursor and
+// stepping in the requested direction. Bound to n / N at the top level.
+func (m Model) SearchAgain(forward bool) Model {
+	if m.LastSearch == "" {
+		m.Status = "search: no previous pattern"
+		return m
+	}
+	return m.jumpToSearch(m.LastSearch, forward, true)
 }

@@ -414,6 +414,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.OpenHelp(), nil
 	case matches(key, m.Keymap.OpenSearch):
 		return m.OpenSearch()
+	case matches(key, m.Keymap.SearchNext):
+		return m.SearchAgain(true), nil
+	case matches(key, m.Keymap.SearchPrev):
+		return m.SearchAgain(false), nil
 	case matches(key, m.Keymap.OpenAnnotList):
 		return m.OpenAnnotList()
 	case matches(key, m.Keymap.Annotate):
@@ -877,9 +881,9 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 	return m, nil
 }
 
-// updateSearchPopup routes keys to the fuzzy-search modal. Navigation uses
-// arrow keys and Ctrl-N / Ctrl-P so the textinput can keep normal editing
-// keys (no j/k — those type into the query).
+// updateSearchPopup routes keys to the vim-style search prompt. The popup
+// has no result list — Enter commits the query and jumps; Esc cancels.
+// Everything else feeds the textinput.
 func (m Model) updateSearchPopup(p *SearchPopup, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc, tea.KeyCtrlC:
@@ -887,16 +891,9 @@ func (m Model) updateSearchPopup(p *SearchPopup, msg tea.KeyMsg) (tea.Model, tea
 		return m, nil
 	case tea.KeyEnter:
 		return m.submitSearch()
-	case tea.KeyDown, tea.KeyCtrlN:
-		p.Move(1)
-		return m, nil
-	case tea.KeyUp, tea.KeyCtrlP:
-		p.Move(-1)
-		return m, nil
 	}
 	var cmd tea.Cmd
 	p.Input, cmd = p.Input.Update(msg)
-	p.refresh()
 	return m, cmd
 }
 

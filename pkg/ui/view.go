@@ -209,7 +209,7 @@ func (m Model) renderSourcePane(width, height int) string {
 		if m.Sidecar != nil {
 			anns = m.Sidecar.Annotations
 		}
-		body = renderSourceWithEditor(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns, p)
+		body = renderSourceWithEditor(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns, p, m.LastSearch)
 	case *SearchPopup:
 		title = m.Styles.PaneTitle.Render("Search")
 		body = renderSearchBody(p, innerW, bodyH, m.Styles)
@@ -234,7 +234,7 @@ func (m Model) renderSourcePane(width, height int) string {
 		if m.Sidecar != nil {
 			anns = m.Sidecar.Annotations
 		}
-		body = RenderSource(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns)
+		body = renderSourceWithEditor(m.Doc, m.CursorBlockID, innerW, bodyH, m.Styles, m.SoftWrap, m.SourceLineCursor, anns, nil, m.LastSearch)
 	}
 	content := title + "\n" + body
 	return style.Width(innerW).Height(innerH).Render(content)
@@ -318,42 +318,26 @@ func renderAnnotationBody(p *AnnotationPopup, innerW, innerH int) string {
 	return p.TA.View() + "\n" + hint
 }
 
-// renderSearchBody lays out the fuzzy-search popup inside the source pane:
-// a text input on the first line, a blank separator, and up to (bodyH-3)
-// result rows with the cursor highlighted.
+// renderSearchBody lays out the vim-style search prompt inside the source
+// pane: a slash sigil, the text input, and a one-line hint. There is no
+// result list — submitting jumps directly; n / N repeat afterwards.
 func renderSearchBody(p *SearchPopup, innerW, bodyH int, styles Styles) string {
 	if bodyH < 1 {
 		bodyH = 1
 	}
-	hint := "[Enter jump · Esc cancel · ↑/↓ select]"
+	hint := "[Enter jump · Esc cancel · n / N repeat after]"
 	w := innerW
-	if w > 2 {
-		w -= 2
+	if w > 4 {
+		w -= 4
 	}
 	if p.Input.Width != w {
 		p.Input.Width = w
 	}
-	resultH := bodyH - 3 // input + separator + hint
-	if resultH < 1 {
-		resultH = 1
-	}
 	var b strings.Builder
-	b.WriteString(p.Input.View())
-	b.WriteByte('\n')
-	b.WriteString(renderPopupList(popupRows(p.Results, p.Cursor, innerW), innerW, resultH, styles))
+	b.WriteString("/" + p.Input.View())
 	b.WriteByte('\n')
 	b.WriteString(styles.OutlineMuted.Render(truncateToWidth(hint, innerW)))
 	return b.String()
-}
-
-// popupRows extracts {label, selected?} pairs from the search results.
-func popupRows(results []SearchEntry, cursor, width int) []popupRow {
-	rows := make([]popupRow, len(results))
-	for i, r := range results {
-		rows[i] = popupRow{Text: r.Display, Selected: i == cursor}
-	}
-	_ = width
-	return rows
 }
 
 // popupRow is a lightweight descriptor for renderPopupList.

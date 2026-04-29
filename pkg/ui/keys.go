@@ -40,8 +40,13 @@ type Keymap struct {
 	ToggleReviewed        []string // space — toggle reviewed state
 
 	// Popups (Task 13).
-	OpenSearch    []string // / — fuzzy search
+	OpenSearch    []string // / — vim-like literal search prompt
 	OpenAnnotList []string // @ — annotation list
+
+	// SearchNext / SearchPrev repeat the most recent `/` query forward
+	// (n) or backward (N) without reopening the prompt.
+	SearchNext []string
+	SearchPrev []string
 
 	// Help overlay (Task 16).
 	OpenHelp []string // ? — keybinding table overlay
@@ -139,6 +144,9 @@ func DefaultKeymap() Keymap {
 
 		OpenSearch:    []string{"/"},
 		OpenAnnotList: []string{"@"},
+
+		SearchNext: []string{"n"},
+		SearchPrev: []string{"N"},
 
 		OpenHelp: []string{"?"},
 

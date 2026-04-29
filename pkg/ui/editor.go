@@ -9,6 +9,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"mreview/pkg/persist"
 )
 
 // editorCandidates is the fallback order when $EDITOR isn't set. Kept in
@@ -400,32 +402,80 @@ func (m *Model) pushEditSnapshot(label string) error {
 	if err != nil {
 		return err
 	}
+	m.OpSeq++
 	m.EditUndo = append(m.EditUndo, EditSnapshot{
-		Path:  m.Doc.File,
-		Bytes: data,
-		Label: label,
+		Path:     m.Doc.File,
+		Bytes:    data,
+		Label:    label,
+		Sequence: m.OpSeq,
 	})
 	if len(m.EditUndo) > maxEditUndo {
 		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
 	}
 	m.EditRedo = nil
+	m.AnnotRedo = nil
 	return nil
 }
 
-// UndoEdit pops the most recent edit snapshot, writes it back to disk,
-// and kicks the reload pipeline so parser/sidecar/PDF catch up. Empty
-// stack is a no-op with a status hint. Annotations live in the sidecar
-// (untouched) and get remapped onto the restored source by the normal
-// reload — this only reverts the .tex.
+// UndoEdit is the `u` dispatcher. It picks the most-recent action across
+// the in-place-edit stack and the annotation-delete stack (using the shared
+// OpSeq counter on each snapshot) and reverses it. Empty stacks are a
+// no-op with a status hint. Reverting a file edit kicks the reload
+// pipeline; reverting an annotation delete just re-inserts the saved
+// annotation and re-saves the sidecar.
+func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
+	editTop, hasEdit := topEditSeq(m.EditUndo)
+	annotTop, hasAnnot := topAnnotSeq(m.AnnotUndo)
+	switch {
+	case !hasEdit && !hasAnnot:
+		m.Status = "u: nothing to undo"
+		return m, nil
+	case hasAnnot && (!hasEdit || annotTop > editTop):
+		return m.undoAnnotDelete()
+	default:
+		return m.undoFileEdit()
+	}
+}
+
+// RedoEdit is the Ctrl-R dispatcher, symmetric to UndoEdit. It picks
+// whichever redo branch holds the most-recent walked-back action.
+func (m Model) RedoEdit() (tea.Model, tea.Cmd) {
+	editTop, hasEdit := topEditSeq(m.EditRedo)
+	annotTop, hasAnnot := topAnnotSeq(m.AnnotRedo)
+	switch {
+	case !hasEdit && !hasAnnot:
+		m.Status = "ctrl-r: nothing to redo"
+		return m, nil
+	case hasAnnot && (!hasEdit || annotTop > editTop):
+		return m.redoAnnotDelete()
+	default:
+		return m.redoFileEdit()
+	}
+}
+
+func topEditSeq(s []EditSnapshot) (int, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+	return s[len(s)-1].Sequence, true
+}
+
+func topAnnotSeq(s []AnnotDeleteSnapshot) (int, bool) {
+	if len(s) == 0 {
+		return 0, false
+	}
+	return s[len(s)-1].Sequence, true
+}
+
+// undoFileEdit pops the most recent edit snapshot, writes it back to
+// disk, and kicks the reload pipeline so parser/sidecar/PDF catch up.
+// Annotations live in the sidecar (untouched) and get remapped onto
+// the restored source by the normal reload — this only reverts the .tex.
 //
 // Before restoring, the *current* file contents are captured onto
 // EditRedo so Ctrl-R can replay the edit. A failed undo leaves both
 // stacks unchanged.
-func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
-	if len(m.EditUndo) == 0 {
-		m.Status = "u: nothing to undo"
-		return m, nil
-	}
+func (m Model) undoFileEdit() (tea.Model, tea.Cmd) {
 	snap := m.EditUndo[len(m.EditUndo)-1]
 	current, err := os.ReadFile(snap.Path)
 	if err != nil {
@@ -438,9 +488,10 @@ func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
 	}
 	m.EditUndo = m.EditUndo[:len(m.EditUndo)-1]
 	m.EditRedo = append(m.EditRedo, EditSnapshot{
-		Path:  snap.Path,
-		Bytes: current,
-		Label: snap.Label,
+		Path:     snap.Path,
+		Bytes:    current,
+		Label:    snap.Label,
+		Sequence: snap.Sequence,
 	})
 	if len(m.EditRedo) > maxEditUndo {
 		m.EditRedo = m.EditRedo[len(m.EditRedo)-maxEditUndo:]
@@ -449,15 +500,11 @@ func (m Model) UndoEdit() (tea.Model, tea.Cmd) {
 	return m.startReload()
 }
 
-// RedoEdit reverses the most recent UndoEdit by restoring the
+// redoFileEdit reverses the most recent undoFileEdit by restoring the
 // post-edit bytes captured at undo time. The corresponding undo
 // snapshot is pushed back onto EditUndo so a follow-up `u` can walk
-// back again. Empty redo stack is a no-op with a status hint.
-func (m Model) RedoEdit() (tea.Model, tea.Cmd) {
-	if len(m.EditRedo) == 0 {
-		m.Status = "ctrl-r: nothing to redo"
-		return m, nil
-	}
+// back again.
+func (m Model) redoFileEdit() (tea.Model, tea.Cmd) {
 	snap := m.EditRedo[len(m.EditRedo)-1]
 	current, err := os.ReadFile(snap.Path)
 	if err != nil {
@@ -470,15 +517,60 @@ func (m Model) RedoEdit() (tea.Model, tea.Cmd) {
 	}
 	m.EditRedo = m.EditRedo[:len(m.EditRedo)-1]
 	m.EditUndo = append(m.EditUndo, EditSnapshot{
-		Path:  snap.Path,
-		Bytes: current,
-		Label: snap.Label,
+		Path:     snap.Path,
+		Bytes:    current,
+		Label:    snap.Label,
+		Sequence: snap.Sequence,
 	})
 	if len(m.EditUndo) > maxEditUndo {
 		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
 	}
 	m.Status = fmt.Sprintf("redid %s · rebuilding…", snap.Label)
 	return m.startReload()
+}
+
+// undoAnnotDelete pops the most recent deleted annotation off AnnotUndo
+// and re-inserts it at its original index in the sidecar. The same
+// snapshot is moved onto AnnotRedo so Ctrl-R can re-delete.
+func (m Model) undoAnnotDelete() (tea.Model, tea.Cmd) {
+	snap := m.AnnotUndo[len(m.AnnotUndo)-1]
+	m.AnnotUndo = m.AnnotUndo[:len(m.AnnotUndo)-1]
+	if m.Sidecar == nil {
+		m.Sidecar = &persist.Sidecar{}
+	}
+	xs := m.Sidecar.Annotations
+	idx := snap.Index
+	if idx < 0 || idx > len(xs) {
+		idx = len(xs)
+	}
+	out := make([]persist.Annotation, 0, len(xs)+1)
+	out = append(out, xs[:idx]...)
+	out = append(out, snap.Annotation)
+	out = append(out, xs[idx:]...)
+	m.Sidecar.Annotations = out
+	m.AnnotRedo = append(m.AnnotRedo, snap)
+	if err := m.saveSidecar(); err != nil {
+		m.Status = "u: save failed: " + err.Error()
+		return m, nil
+	}
+	m.Status = "undid annotation delete"
+	return m, nil
+}
+
+// redoAnnotDelete pops the most recent re-insert and removes the
+// annotation again, mirroring the original ConfirmDelete path.
+func (m Model) redoAnnotDelete() (tea.Model, tea.Cmd) {
+	snap := m.AnnotRedo[len(m.AnnotRedo)-1]
+	m.AnnotRedo = m.AnnotRedo[:len(m.AnnotRedo)-1]
+	a := snap.Annotation
+	m.Sidecar.Annotations = removeAnnotation(m.Sidecar.Annotations, a.BlockID, a.LineOffset)
+	m.AnnotUndo = append(m.AnnotUndo, snap)
+	if err := m.saveSidecar(); err != nil {
+		m.Status = "ctrl-r: save failed: " + err.Error()
+		return m, nil
+	}
+	m.Status = "redid annotation delete"
+	return m, nil
 }
 
 // writeSourceLine rewrites line N (1-based) of path with newContent,

@@ -69,9 +69,10 @@ type Popup interface {
 // rather than per-line because $EDITOR can rewrite arbitrary regions;
 // papers are small enough that the bytes-cost is negligible.
 type EditSnapshot struct {
-	Path  string
-	Bytes []byte
-	Label string
+	Path     string
+	Bytes    []byte
+	Label    string
+	Sequence int
 }
 
 // maxEditUndo bounds the in-memory undo stack. Generous because a
@@ -212,6 +213,33 @@ type Model struct {
 	// this stack — vim-style: editing after an undo abandons the
 	// redo branch.
 	EditRedo []EditSnapshot
+
+	// AnnotUndo records annotation deletions confirmed via [y/N], so
+	// `u` can re-insert the deleted note. AnnotRedo holds the inverse
+	// branch (re-deleting after a `u`). Snapshots interleave with
+	// EditUndo via the shared OpSeq counter so `u` always pops the
+	// most-recent action regardless of kind.
+	AnnotUndo []AnnotDeleteSnapshot
+	AnnotRedo []AnnotDeleteSnapshot
+
+	// OpSeq is a monotonic counter stamped on every undo snapshot
+	// (edit or annotation) so the dispatcher can pick the most
+	// recently pushed entry across the two stacks.
+	OpSeq int
+
+	// LastSearch is the most recent `/` query, used by n / N to repeat
+	// the search and as the initial value when `/` is reopened.
+	LastSearch string
+}
+
+// AnnotDeleteSnapshot captures a single annotation removed via the [y/N]
+// confirm flow so `u` can put it back. Index is the position the
+// annotation occupied in m.Sidecar.Annotations at delete time, so the
+// re-insert preserves the original ordering rather than appending.
+type AnnotDeleteSnapshot struct {
+	Sequence   int
+	Annotation persist.Annotation
+	Index      int
 }
 
 // New constructs a Model from a parsed document and (possibly empty) sidecar.
