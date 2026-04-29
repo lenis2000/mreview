@@ -60,7 +60,7 @@ const (
 	vimSpecial   = "209" // Special — orange (used for math delims)
 	vimString    = "216" // String — peach (used for env names / math content)
 	vimSearch    = "226" // Search / hit highlight — bright yellow
-	vimAnnBlock  = "184" // Paragraph-annotation bg — darker / olive yellow
+	vimAnnBlock  = "150" // Paragraph-annotation bg — soft yellow-green
 )
 
 // DefaultStyles returns the vim-default-dark palette. Colors are 256-index
@@ -121,7 +121,7 @@ const (
 	vimSpecialL  = "160" // brighter red
 	vimStringL   = "94"  // brown/olive
 	vimSearchBgL = "226"
-	vimAnnBlockL = "184" // Paragraph-annotation bg — darker / olive yellow
+	vimAnnBlockL = "150" // Paragraph-annotation bg — soft yellow-green
 )
 
 // lightStyles returns a palette tuned for light-background terminals. The

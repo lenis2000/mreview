@@ -60,6 +60,7 @@ func HelpRows() []HelpRow {
 		{"< / >", "shrink / grow focused pane (saved globally)"},
 		{"S", "open current PDF in Skim at cursor line"},
 		{"R", "reload PDF in Skim (revert without jumping)"},
+		{"B", "build (reparse + latexmk; lmkf-aware)"},
 		{"?", "toggle this help overlay"},
 		{"q", "quit and emit annotations"},
 		{"", ""},

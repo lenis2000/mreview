@@ -1,15 +1,46 @@
 # mreview
 
-A LaTeX-aware terminal review tool for math papers. Parses `.tex` into semantic blocks
-(theorems, proofs, display math, figures, …), auto-follows a rendered PDF pane as the
-cursor walks blocks, and lets you attach free-text annotations that emit back as
-structured markdown for downstream LLM consumption.
+> **PRs welcome.** This is a single-developer tool built and tested on the
+> author's exact setup (see [Supported environment](#supported-environment)
+> below). Anyone wanting to make it work on iTerm2, WezTerm, Linux, Windows,
+> non-kitty graphics protocols, alternative PDF backends, etc. — please open
+> an issue or send a pull request. The architecture has hooks for
+> alternative renderers (see `pkg/pdf/`); they just haven't been written yet
+> because the author only uses one terminal.
 
-Think `revdiff` for prose, but navigating semantic blocks rather than diff lines.
+A LaTeX-aware terminal review tool for math papers. Parses `.tex` into semantic
+blocks (theorems, proofs, display math, figures, …), auto-follows a rendered PDF
+pane as the cursor walks blocks, and lets you attach free-text annotations that
+emit back as structured markdown for downstream LLM consumption.
+
+Inspired by [umputun/revdiff](https://github.com/umputun/revdiff) — same
+TUI-driven, annotation-emitting review philosophy, but navigating semantic
+LaTeX blocks rather than diff hunks.
 
 ## Status
 
-MVP (v0.1.0). Single-user, kitty-terminal only (no iTerm2/Sixel fallbacks).
+MVP. Single-user, opinionated, no compatibility guarantees yet.
+
+## Supported environment
+
+mreview is **only known to work on**:
+
+- **macOS** (Apple Silicon, recent versions).
+- **kitty terminal** — required for the PDF pane, which uses the
+  [kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
+  via [`blacktop/go-termimg`](https://github.com/blacktop/go-termimg). No
+  iTerm2 inline-image, no Sixel, no fallback ASCII renderer.
+- **Skim.app** — the `S` (forward-search) and `R` (reload PDF) keys shell out
+  to Skim's `displayline` SyncTeX helper. macOS-only.
+- **TeX Live with `latexmk`** — for builds (`--no-build` skips this if you
+  have pre-built `.pdf` / `.synctex.gz` artefacts).
+- The author's external `lmkf` continuous-build wrapper is what feeds fresh
+  PDFs to mreview during a session — without it, you'll need to lean on the
+  `B` (manual rebuild) key or the built-in latexmk fallback.
+
+Other terminals run the outline / source / status panes fine but show a
+placeholder where the PDF crop should be. No graceful degradation work has
+been done.
 
 ## Install
 

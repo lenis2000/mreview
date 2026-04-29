@@ -512,10 +512,19 @@ func RenderOutline(rows []OutlineRow, doc *parser.Document, cursor string, width
 	if end > len(rows) {
 		end = len(rows)
 	}
+	// Relative-number gutter reference: prefer the actual cursor row when
+	// it's visible (so "0" really means cursor); otherwise fall back to
+	// the scroll anchor so the user still sees a coherent count from the
+	// row mreview is keeping in view.
+	ref := cur
+	if ref < 0 {
+		ref = anchor
+	}
 	var b strings.Builder
 	for i := offset; i < end; i++ {
 		r := rows[i]
-		line := formatOutlineLine(r, width, styles)
+		gutter := relativeGutter(i, ref)
+		line := formatOutlineLine(r, gutter, width, styles)
 		if i == cur {
 			style := styles.OutlineCursor
 			if !focused {
@@ -535,18 +544,41 @@ func RenderOutline(rows []OutlineRow, doc *parser.Document, cursor string, width
 	return b.String()
 }
 
-// formatOutlineLine composes a single row: indent + icon + space + title,
-// padded on the left with the marker cluster right-aligned into `width`.
-// Width is the inner pane width.
-func formatOutlineLine(r OutlineRow, width int, styles Styles) string {
+// relativeGutter formats the row-distance prefix for an outline row.
+// Cursor row reads " 0", others show absolute distance from the cursor.
+// Fixed at 3 cells (2-digit number + trailing space) so titles align
+// regardless of the count. Distances ≥ 100 are clamped to "**" rather
+// than widening the gutter, since with 100+ rows in either direction
+// the user will paginate via {/} or G rather than count single steps.
+func relativeGutter(rowIdx, ref int) string {
+	if ref < 0 {
+		return "   "
+	}
+	d := rowIdx - ref
+	if d < 0 {
+		d = -d
+	}
+	if d > 99 {
+		return "** "
+	}
+	return fmt.Sprintf("%2d ", d)
+}
+
+// formatOutlineLine composes a single row: gutter + indent + icon +
+// space + title, padded on the left with the marker cluster right-
+// aligned into `width`. Width is the inner pane width; gutter is the
+// fixed-width relative-distance prefix.
+func formatOutlineLine(r OutlineRow, gutter string, width int, styles Styles) string {
+	gutterW := runewidth.StringWidth(gutter)
+	gutterStyled := styles.OutlineMuted.Render(gutter)
 	indent := strings.Repeat("  ", r.Depth)
 	iconStyled := styles.OutlineIcon.Render(r.Icon)
-	// Compute the budget for the title: width - indent - icon(1) - space(1)
-	// - markers(width-of-markers) - trailing space.
+	// Compute the budget for the title: width - gutter - indent - icon(1)
+	// - space(1) - markers(width-of-markers) - trailing space.
 	markers := r.Markers
 	markerW := runewidth.StringWidth(markers)
 	iconW := runewidth.StringWidth(r.Icon)
-	leadW := runewidth.StringWidth(indent) + iconW + 1 // +1 for the space after icon
+	leadW := gutterW + runewidth.StringWidth(indent) + iconW + 1 // +1 for the space after icon
 	trailW := markerW
 	if markerW > 0 {
 		trailW++ // the separating space
@@ -559,9 +591,9 @@ func formatOutlineLine(r OutlineRow, width int, styles Styles) string {
 	if runewidth.StringWidth(title) > titleBudget {
 		title = truncateToWidth(title, titleBudget)
 	}
-	line := indent + iconStyled + " " + title
+	line := gutterStyled + indent + iconStyled + " " + title
 	if markers != "" {
-		pad := width - runewidth.StringWidth(indent) - iconW - 1 - runewidth.StringWidth(title) - markerW
+		pad := width - gutterW - runewidth.StringWidth(indent) - iconW - 1 - runewidth.StringWidth(title) - markerW
 		if pad < 1 {
 			pad = 1
 		}

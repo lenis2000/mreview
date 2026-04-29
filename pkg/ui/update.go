@@ -362,6 +362,11 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m.startOCRReport()
 	}
+	if matches(key, m.Keymap.Build) {
+		m.CountBuf = ""
+		nm, cmd := m.startReload()
+		return nm, cmd
+	}
 	if matches(key, m.Keymap.OpenInSkim) {
 		m.CountBuf = ""
 		return m.openInSkim()

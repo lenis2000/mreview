@@ -96,6 +96,11 @@ type Keymap struct {
 	// to .mreview-ocr-reports/ for later investigation.
 	OCRReport []string
 
+	// Manual build trigger. Reparses the source and rebuilds via the
+	// usual reload pipeline (lmkf-aware: polls the log marker if lmkf
+	// is watching, otherwise runs latexmk directly).
+	Build []string // B
+
 	// Pane focus — step left / right through the visual pane order
 	// (outline → source → PDF). Keyboard alternative to clicking a pane.
 	FocusOutline []string // h — focus one pane left
@@ -169,7 +174,8 @@ func DefaultKeymap() Keymap {
 		InlineEdit:   []string{"e"},
 		Undo:         []string{"u"},
 		Redo:         []string{"ctrl+r"},
-		OCRReport:    []string{"B"},
+		OCRReport:    nil,
+		Build:        []string{"B"},
 
 		FocusOutline: []string{"h", "left"},
 		FocusSource:  []string{"l", "right"},
