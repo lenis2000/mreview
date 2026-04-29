@@ -295,6 +295,23 @@ func (m Model) BeginDelete() Model {
 	return m
 }
 
+// BeginDeleteBlock arms a [y/N] delete for the paragraph (block-level)
+// annotation on the cursor block — LineOffset 0 only. Bound to `D`. Silent
+// no-op when the block carries no block-level note (line-pinned siblings
+// are intentionally untouched: `d` already covers those).
+func (m Model) BeginDeleteBlock() Model {
+	target := m.CursorBlockID
+	if target == "" {
+		return m
+	}
+	if _, ok := findAnnotationFor(m.Sidecar, target, 0); !ok {
+		return m
+	}
+	m.Pending = &PendingDelete{TargetID: target, LineOffset: 0}
+	m.Status = ""
+	return m
+}
+
 // firstAnnotationOnBlock returns the first annotation matching blockID
 // in declaration order, regardless of LineOffset. Used by BeginDelete as
 // the last-resort match so `d` can target a line note without the user

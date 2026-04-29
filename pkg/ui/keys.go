@@ -32,11 +32,12 @@ type Keymap struct {
 	// cursor; `A` is a block annotation on the current cursor block. The old
 	// "annotate enclosing env" feature folded into `A` since the cursor block
 	// is already what the reviewer means most of the time.
-	Annotate         []string // a — line annotation at SourceLineCursor
-	AnnotateEnv      []string // A — block annotation
-	EditAnnotation   []string // ctrl+a — edit existing annotation at cursor
-	DeleteAnnotation []string // d — delete with [y/N] confirm
-	ToggleReviewed   []string // space — toggle reviewed state
+	Annotate              []string // a — line annotation at SourceLineCursor
+	AnnotateEnv           []string // A — block annotation
+	EditAnnotation        []string // ctrl+a — edit existing annotation at cursor
+	DeleteAnnotation      []string // d — delete annotation (line-pinned preferred), [y/N] confirm
+	DeleteBlockAnnotation []string // D — delete the paragraph (block-level) annotation, [y/N] confirm
+	ToggleReviewed        []string // space — toggle reviewed state
 
 	// Popups (Task 13).
 	OpenSearch    []string // / — fuzzy search
@@ -55,11 +56,11 @@ type Keymap struct {
 	// m.PDFManual is true, so they're free to overload keys that do
 	// something else in normal mode. That keeps the manual UX close to
 	// LP's docviewer CLI without adding clashes outside manual mode.
-	PDFManual    []string
-	PDFNextPage  []string // n / j / space
-	PDFPrevPage  []string // p / k
-	PDFZoomIn    []string // + / =
-	PDFZoomOut   []string // -
+	PDFManual     []string
+	PDFNextPage   []string // n / j / space
+	PDFPrevPage   []string // p / k
+	PDFZoomIn     []string // + / =
+	PDFZoomOut    []string // -
 	PDFDualPage   []string // 2 — off / vertical / horizontal
 	PDFDarkMode   []string // i — smart invert (preserves hue)
 	PDFDarkSimple []string // D — simple invert (gray-bg RGB invert)
@@ -129,24 +130,25 @@ func DefaultKeymap() Keymap {
 		JumpBack:     []string{"ctrl+o"},
 		JumpForward:  []string{"ctrl+i", "tab"},
 
-		Annotate:         []string{"a"},
-		AnnotateEnv:      []string{"A"},
-		EditAnnotation:   []string{"ctrl+a"},
-		DeleteAnnotation: []string{"d"},
-		ToggleReviewed:   []string{" ", "space"},
+		Annotate:              []string{"a"},
+		AnnotateEnv:           []string{"A"},
+		EditAnnotation:        []string{"ctrl+a"},
+		DeleteAnnotation:      []string{"d"},
+		DeleteBlockAnnotation: []string{"D"},
+		ToggleReviewed:        []string{" ", "space"},
 
 		OpenSearch:    []string{"/"},
 		OpenAnnotList: []string{"@"},
 
 		OpenHelp: []string{"?"},
 
-		ToggleLayout: []string{"\\"},
-		ToggleWrap:   []string{"w"},
-		PDFManual:    []string{"V"},
-		PDFNextPage:  []string{"n", "j", " ", "space", "down", "right", "."},
-		PDFPrevPage:  []string{"p", "k", "up", "left", ","},
-		PDFZoomIn:    []string{"+", "="},
-		PDFZoomOut:   []string{"-", "_"},
+		ToggleLayout:  []string{"\\"},
+		ToggleWrap:    []string{"w"},
+		PDFManual:     []string{"V"},
+		PDFNextPage:   []string{"n", "j", " ", "space", "down", "right", "."},
+		PDFPrevPage:   []string{"p", "k", "up", "left", ","},
+		PDFZoomIn:     []string{"+", "="},
+		PDFZoomOut:    []string{"-", "_"},
 		PDFDualPage:   []string{"2"},
 		PDFDarkMode:   []string{"i"},
 		PDFDarkSimple: []string{"D"},

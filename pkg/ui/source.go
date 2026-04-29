@@ -242,7 +242,10 @@ func renderSourceWithEditor(doc *parser.Document, cursor string, width, height i
 // indented under the gutter and prefixed with a sigil so it visually echoes
 // the saved-annotation row format. The textarea's own multi-line View() is
 // used as-is; per-line styling is applied uniformly so the editor stays
-// recognisable as commentary while typing.
+// recognisable as commentary while typing. The style mirrors the saved
+// annotation: paragraph (block-level) edits get SourceAnnotationBlock,
+// line-pinned edits get SourceAnnotation — so the live colour previews the
+// kind of note the user is writing.
 func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) []string {
 	if editor == nil {
 		return nil
@@ -260,6 +263,10 @@ func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) 
 	hint := "[Ctrl-S submit · Ctrl-C cancel]"
 	rows := strings.Split(view, "\n")
 	out := make([]string, 0, len(rows)+1)
+	style := styles.SourceAnnotation
+	if editor.LineOffset == 0 {
+		style = styles.SourceAnnotationBlock
+	}
 	for i, row := range rows {
 		var prefix string
 		if i == 0 {
@@ -267,7 +274,7 @@ func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) 
 		} else {
 			prefix = strings.Repeat(" ", runewidth.StringWidth(sigil))
 		}
-		out = append(out, indent+styles.SourceAnnotation.Render(prefix+row))
+		out = append(out, indent+style.Render(prefix+row))
 	}
 	out = append(out, indent+styles.OutlineMuted.Render(hint))
 	return out
@@ -276,7 +283,9 @@ func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) 
 // annotationRows formats one annotation as one or more inline display rows.
 // The first row carries a `▸` sigil; continuation rows align under the note
 // text. Long notes wrap on word boundaries within bodyWidth so the inline
-// preview never overflows the pane.
+// preview never overflows the pane. Paragraph (block-level, LineOffset 0)
+// notes use SourceAnnotationBlock; line-pinned notes use SourceAnnotation —
+// the two hues let the reader tell the kinds apart at a glance.
 func annotationRows(a persist.Annotation, gutterW, bodyWidth int, styles Styles) []string {
 	const sigil = "▸ "
 	indent := strings.Repeat(" ", gutterW) + " "
@@ -292,6 +301,10 @@ func annotationRows(a persist.Annotation, gutterW, bodyWidth int, styles Styles)
 	// the inline view; the full multi-line body still lives in the sidecar.
 	noteText = strings.Join(strings.Fields(noteText), " ")
 	wrapped := wrapWords(noteText, noteWidth)
+	style := styles.SourceAnnotation
+	if a.LineOffset == 0 {
+		style = styles.SourceAnnotationBlock
+	}
 	rows := make([]string, 0, len(wrapped))
 	for i, line := range wrapped {
 		var prefix string
@@ -300,7 +313,7 @@ func annotationRows(a persist.Annotation, gutterW, bodyWidth int, styles Styles)
 		} else {
 			prefix = strings.Repeat(" ", runewidth.StringWidth(sigil))
 		}
-		rows = append(rows, indent+styles.SourceAnnotation.Render(prefix+line))
+		rows = append(rows, indent+style.Render(prefix+line))
 	}
 	return rows
 }
@@ -385,8 +398,8 @@ func wrapOrClip(line string, width int, softWrap, inBlock bool, styles Styles) [
 // string is returned — no spurious wrap at an interior whitespace.
 func takeCells(s string, width int) string {
 	w := 0
-	hardEnd := 0    // longest prefix ending at a rune boundary that fits
-	softEnd := 0    // longest prefix ending at the last interior whitespace
+	hardEnd := 0 // longest prefix ending at a rune boundary that fits
+	softEnd := 0 // longest prefix ending at the last interior whitespace
 	sawNonSpace := false
 	overflowed := false
 	for i, r := range s {
@@ -673,7 +686,7 @@ func stripANSI(s string) string {
 			j := i + 2
 			for j < len(runes) {
 				c := runes[j]
-				if (c >= '@' && c <= '~') {
+				if c >= '@' && c <= '~' {
 					j++
 					break
 				}

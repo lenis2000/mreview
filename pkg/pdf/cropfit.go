@@ -58,8 +58,11 @@ const (
 	// the crop out to the whole page by accident.
 	fitMaxVpadDefault = 250.0
 	// fitHpadDefault is the column-crop horizontal margin — wide enough
-	// to keep `\item` bullets and inline-math overhang inside the crop.
-	fitHpadDefault = 10.0
+	// to keep `\item` bullets and inline-math overhang inside the crop,
+	// plus glyph left-bearing slack so the leading character of each
+	// line survives OCR (tesseract drops first-letter when ink touches
+	// the crop edge).
+	fitHpadDefault = 20.0
 	// fitMinDPI floors the chosen DPI; below ~100 fitz's font hinting
 	// produces visibly blurry text even when the pane is tiny.
 	fitMinDPI = 100.0

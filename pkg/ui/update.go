@@ -424,6 +424,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.EditAnnotation()
 	case matches(key, m.Keymap.DeleteAnnotation):
 		return m.BeginDelete(), nil
+	case matches(key, m.Keymap.DeleteBlockAnnotation):
+		return m.BeginDeleteBlock(), nil
 	case matches(key, m.Keymap.ToggleReviewed):
 		return m.ToggleReviewed()
 	case matches(key, m.Keymap.NavNextOuter):

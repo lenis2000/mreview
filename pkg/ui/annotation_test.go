@@ -203,6 +203,46 @@ func TestDelete_WithoutAnnotationIsNoop(t *testing.T) {
 	assert.Nil(t, m.Pending)
 }
 
+// D targets only the block-level (paragraph) annotation. Mixed-anchor
+// blocks must not have their line-pinned siblings disturbed by D.
+func TestDeleteBlock_TargetsParagraphOnly(t *testing.T) {
+	m, saves := newTestModel(t)
+	m.Sidecar.Annotations = []persist.Annotation{
+		{BlockID: m.CursorBlockID, LineOffset: 0, Note: "para"},
+		{BlockID: m.CursorBlockID, LineOffset: 1, Note: "line 1"},
+	}
+
+	res, _ := m.Update(rkey('D'))
+	m = res.(Model)
+	require.NotNil(t, m.Pending, "D should arm a pending delete when a paragraph annotation exists")
+	assert.Equal(t, 0, m.Pending.LineOffset, "D arms LineOffset 0 (block-level)")
+
+	res, _ = m.Update(rkey('y'))
+	m = res.(Model)
+
+	assert.Nil(t, m.Pending)
+	assert.Equal(t, 1, *saves)
+	require.Len(t, m.Sidecar.Annotations, 1, "line-pinned sibling must survive")
+	assert.Equal(t, 1, m.Sidecar.Annotations[0].LineOffset)
+	assert.Equal(t, "line 1", m.Sidecar.Annotations[0].Note)
+}
+
+// D is a no-op when the block carries only line-pinned annotations — the
+// user has to step over to `d` (which has the priority resolution) for those.
+func TestDeleteBlock_NoBlockLevelIsNoop(t *testing.T) {
+	m, saves := newTestModel(t)
+	m.Sidecar.Annotations = []persist.Annotation{
+		{BlockID: m.CursorBlockID, LineOffset: 1, Note: "line 1"},
+	}
+
+	res, _ := m.Update(rkey('D'))
+	m = res.(Model)
+
+	assert.Nil(t, m.Pending, "D must not arm when only line-pinned notes exist")
+	assert.Len(t, m.Sidecar.Annotations, 1)
+	assert.Equal(t, 0, *saves)
+}
+
 // --- Reviewed toggle ---------------------------------------------------------
 
 func TestReviewed_ToggleAdds(t *testing.T) {
