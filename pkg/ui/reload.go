@@ -175,6 +175,15 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	// navigated during the rebuild, m.CursorBlockID is what they
 	// expect to stay on, not the snapshot.
 	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, m.Doc, m.Sidecar)
+	// Refresh the source-watch baseline against the current state of
+	// disk: another external edit between our startReload and now must
+	// trigger again on the next tick rather than getting absorbed into
+	// the just-applied result.
+	if paths := m.sourceWatchPaths(); len(paths) > 0 {
+		if newest := newestSourceMtime(paths); !newest.IsZero() {
+			m.SourceMtime = newest
+		}
+	}
 	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
 	m.BuildStale = r.buildStale
 	if r.status != "" {

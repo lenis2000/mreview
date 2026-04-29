@@ -145,6 +145,13 @@ type Model struct {
 	// base to m.Sidecar is the user's delta since last sync.
 	SidecarBase SidecarBase
 
+	// SourceMtime is the newest mtime across the watched source files
+	// (m.Doc.File plus per-block File entries) as last seen by the
+	// auto-reload tick. A fresh stat that exceeds this fires the reload
+	// pipeline. Zero means "no baseline yet" — first tick seeds it
+	// without firing.
+	SourceMtime time.Time
+
 	// Pending holds the target of an in-flight `d` delete awaiting [y/N]
 	// confirmation in the status bar.
 	Pending *PendingDelete
@@ -393,6 +400,15 @@ func firstUnreviewedContentID(doc *parser.Document, side *persist.Sidecar) strin
 // deferred to the initial WindowSizeMsg in Update so the render runs with
 // real terminal dimensions — scheduling it here would render at 0×0 cells
 // and (because Init has a value receiver) mutate pdfGen on a discarded copy.
+//
+// The auto-reload watcher kicks off here: a single tickSourceWatch cmd
+// posts the first tickSourceWatchMsg one interval out; the handler
+// reschedules itself on every cycle. Disabled paths (Config opt-out)
+// return nil from tickSourceWatch's first handler call instead, so no
+// further messages are scheduled.
 func (m Model) Init() tea.Cmd {
-	return nil
+	if !autoReloadSourceEnabled(m.Config) {
+		return nil
+	}
+	return tickSourceWatch()
 }

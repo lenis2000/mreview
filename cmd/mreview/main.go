@@ -303,6 +303,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		model.SidecarMtime = info.ModTime()
 	}
 	model.SidecarBase = ui.SnapshotSidecar(side)
+	// Seed the source-watch baseline so the auto-reload tick fires the
+	// first time an external editor advances the .tex mtime past the
+	// value we observed at startup. Without this, the first tick would
+	// silently seed and only the second tick could trigger.
+	if info, statErr := os.Stat(o.File); statErr == nil {
+		model.SourceMtime = info.ModTime()
+	}
 
 	// Load external fmt-report diagnostics if a report file exists.
 	reportPath := format.ReportPath(o.File)

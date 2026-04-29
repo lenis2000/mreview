@@ -31,6 +31,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if rr, ok := msg.(reloadResultMsg); ok {
 		return m.applyReloadResult(rr)
 	}
+	if _, ok := msg.(tickSourceWatchMsg); ok {
+		return m.handleSourceWatch()
+	}
 	if or, ok := msg.(ocrReportMsg); ok {
 		m.Status = or.status
 		return m, nil

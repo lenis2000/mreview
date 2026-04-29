@@ -24,6 +24,12 @@ type Config struct {
 	// Build override — empty string uses the built-in latexmk invocation.
 	BuildCmd string `toml:"build_cmd"`
 
+	// AutoReloadSource controls whether mreview polls the source file(s)
+	// on a timer and triggers the reload pipeline when an external
+	// editor (typically an agent) modifies them. nil = enabled (default).
+	// Set to false to require a manual `B` for every reparse.
+	AutoReloadSource *bool `toml:"auto_reload_source"`
+
 	// UI overrides.
 	Theme    string            `toml:"theme"`
 	Colors   map[string]string `toml:"colors"`

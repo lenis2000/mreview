@@ -65,9 +65,19 @@ func TestNew_FallsBackOnUnknownCursor(t *testing.T) {
 	assert.Equal(t, doc.Root.ChildIDs[0], m.CursorBlockID)
 }
 
-func TestInit_ReturnsNil(t *testing.T) {
+func TestInit_StartsSourceWatchByDefault(t *testing.T) {
 	m := New(parsedSample(t), nil)
-	assert.Nil(t, m.Init())
+	// Default Config has AutoReloadSource=nil → enabled, so Init must
+	// emit the recurring tickSourceWatch cmd. nil here would mean the
+	// auto-reload watcher never starts.
+	assert.NotNil(t, m.Init(), "auto-reload tick must start by default")
+}
+
+func TestInit_NilWhenSourceWatchDisabled(t *testing.T) {
+	m := New(parsedSample(t), nil)
+	off := false
+	m.Config.AutoReloadSource = &off
+	assert.Nil(t, m.Init(), "explicit AutoReloadSource=false suppresses the tick")
 }
 
 func TestUpdate_QuitKey(t *testing.T) {
