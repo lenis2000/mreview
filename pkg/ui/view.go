@@ -269,7 +269,10 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 		if p.Count != "" {
 			tail = " · " + p.Count
 		}
-		hint = "[NORMAL · w/b/e/0/$/h/l · u undo · Ctrl-R redo · i/a insert · Enter submit · Esc cancel" + tail + "]"
+		if p.Pending != "" {
+			tail += " · " + p.Pending
+		}
+		hint = "[NORMAL · w/b/e/0/$/h/l · dw/dW · u undo · Ctrl-R redo · i/a insert · Enter submit · Esc cancel" + tail + "]"
 	} else {
 		hint = "[INSERT · Ctrl-R redo · Enter submit · Esc → normal · Ctrl-C cancel]"
 	}

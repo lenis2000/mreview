@@ -236,6 +236,15 @@ type LineEditPopup struct {
 	Original     string
 	NormalMode   bool
 	Count        string
+	// Pending holds a partially-issued operator (currently only "d")
+	// while we wait for the motion that completes the chord. Cleared
+	// as soon as the chord resolves, the user types Esc, or any
+	// non-motion key arrives.
+	Pending string
+	// PendingCount is the count typed before the operator. The motion
+	// brings its own count and the two multiply, matching vim's
+	// `count1*count2` rule (so `2dw`, `d2w`, `2d2w` give 2, 2, 4).
+	PendingCount int
 	// Indent holds the leading whitespace (tabs and/or spaces) of the
 	// original line. bubbles textinput sanitises tabs to spaces on
 	// SetValue, so indenting characters can't live inside the

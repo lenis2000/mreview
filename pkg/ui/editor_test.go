@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -86,4 +88,89 @@ func TestLineEditWordMotions(t *testing.T) {
 	assert.Equal(t, 0, motionWordForward([]rune(""), 0))
 	assert.Equal(t, 0, motionWordBackward([]rune(""), 0))
 	assert.Equal(t, 0, motionWordEnd([]rune(""), 0))
+}
+
+// newLineEditPopupForTest gives the chord tests a fully-initialised
+// popup in normal mode with the cursor at the requested position.
+func newLineEditPopupForTest(value string, cursor int) *LineEditPopup {
+	ti := textinput.New()
+	ti.SetValue(value)
+	ti.SetCursor(cursor)
+	return &LineEditPopup{TI: ti, NormalMode: true}
+}
+
+// rkeyStr is a multi-rune sibling of rkey from annotation_test.go;
+// most chord steps need only a single rune but using a helper keeps
+// the test bodies tight.
+func rkeyStr(s string) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+// TestLineEditDeleteWordChord locks in `dw` / `dW` operator-motion
+// behaviour. Counts compose vim-style (`2dw`, `d2w`, and `2d2w`),
+// `dW` treats whitespace-separated runs as a single WORD, an unknown
+// motion after `d` cancels the operator silently, and the deletion
+// pushes a snapshot onto the popup's undo stack so `u` can revert it.
+func TestLineEditDeleteWordChord(t *testing.T) {
+	dispatch := func(p *LineEditPopup, keys ...tea.KeyMsg) {
+		t.Helper()
+		var m Model
+		for _, k := range keys {
+			res, _ := m.updateLineEditNormal(p, k)
+			m = res.(Model)
+		}
+	}
+
+	t.Run("dw deletes one word and trailing space", func(t *testing.T) {
+		p := newLineEditPopupForTest("foo bar baz", 0)
+		dispatch(p, rkeyStr("d"), rkeyStr("w"))
+		assert.Equal(t, "bar baz", p.TI.Value())
+		assert.Equal(t, 0, p.TI.Position())
+		assert.Empty(t, p.Pending)
+	})
+
+	t.Run("d2w deletes two words", func(t *testing.T) {
+		p := newLineEditPopupForTest("foo bar baz qux", 0)
+		dispatch(p, rkeyStr("d"), rkeyStr("2"), rkeyStr("w"))
+		assert.Equal(t, "baz qux", p.TI.Value())
+	})
+
+	t.Run("2dw deletes two words", func(t *testing.T) {
+		p := newLineEditPopupForTest("foo bar baz qux", 0)
+		dispatch(p, rkeyStr("2"), rkeyStr("d"), rkeyStr("w"))
+		assert.Equal(t, "baz qux", p.TI.Value())
+	})
+
+	t.Run("2d2w multiplies counts (4 words)", func(t *testing.T) {
+		p := newLineEditPopupForTest("a b c d e f g", 0)
+		dispatch(p, rkeyStr("2"), rkeyStr("d"), rkeyStr("2"), rkeyStr("w"))
+		assert.Equal(t, "e f g", p.TI.Value())
+	})
+
+	t.Run("dw treats foo.bar as separate words", func(t *testing.T) {
+		p := newLineEditPopupForTest("foo.bar baz", 0)
+		dispatch(p, rkeyStr("d"), rkeyStr("w"))
+		assert.Equal(t, ".bar baz", p.TI.Value())
+	})
+
+	t.Run("dW deletes a whole WORD across punctuation", func(t *testing.T) {
+		p := newLineEditPopupForTest(`\cite{foo} bar`, 0)
+		dispatch(p, rkeyStr("d"), rkeyStr("W"))
+		assert.Equal(t, "bar", p.TI.Value())
+	})
+
+	t.Run("dx clears pending operator and falls through", func(t *testing.T) {
+		p := newLineEditPopupForTest("abcd", 1)
+		dispatch(p, rkeyStr("d"), rkeyStr("x"))
+		assert.Equal(t, "acd", p.TI.Value(), "x should run after d is cancelled")
+		assert.Empty(t, p.Pending)
+	})
+
+	t.Run("dw is undoable via u", func(t *testing.T) {
+		p := newLineEditPopupForTest("foo bar", 0)
+		dispatch(p, rkeyStr("d"), rkeyStr("w"))
+		assert.Equal(t, "bar", p.TI.Value())
+		dispatch(p, rkeyStr("u"))
+		assert.Equal(t, "foo bar", p.TI.Value())
+	})
 }

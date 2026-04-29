@@ -794,6 +794,43 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 	p.Count = ""
 	runes := []rune(p.TI.Value())
 	pos := p.TI.Position()
+	// Resolve a pending operator chord (currently just `d` + motion).
+	// w/W complete the chord and delete [pos, motionEnd); any other
+	// key cancels the pending operator silently and falls through to
+	// the regular switch below so a typo'd `d` doesn't strand the user.
+	if p.Pending == "d" {
+		switch s {
+		case "w", "W":
+			total := p.PendingCount * n
+			if total < 1 {
+				total = 1
+			}
+			end := pos
+			for i := 0; i < total; i++ {
+				if s == "w" {
+					end = motionWordForward(runes, end)
+				} else {
+					end = motionWORDForward(runes, end)
+				}
+			}
+			p.Pending = ""
+			p.PendingCount = 0
+			if end > pos {
+				prev := p.TI.Value()
+				newRunes := append([]rune{}, runes[:pos]...)
+				newRunes = append(newRunes, runes[end:]...)
+				p.TI.SetValue(string(newRunes))
+				if pos > len(newRunes) {
+					pos = len(newRunes)
+				}
+				p.TI.SetCursor(pos)
+				p.pushHistory(prev)
+			}
+			return m, nil
+		}
+		p.Pending = ""
+		p.PendingCount = 0
+	}
 	switch s {
 	case "w":
 		for i := 0; i < n; i++ {
@@ -873,6 +910,12 @@ func (m Model) updateLineEditNormal(p *LineEditPopup, msg tea.KeyMsg) (tea.Model
 		}
 		p.TI.SetCursor(pos)
 		p.pushHistory(prev)
+	case "d":
+		// Start the `d` operator chord; the motion (`w`/`W`) on the
+		// next key will perform the delete. Stash the count typed
+		// before `d` so `2dw` works.
+		p.Pending = "d"
+		p.PendingCount = n
 	case "u":
 		// In-popup undo: revert one mutation. Empty stack is a no-op.
 		// Cursor is clamped to the restored value's length so we never
