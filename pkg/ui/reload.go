@@ -25,6 +25,19 @@ type reloadMsg struct {
 	err error
 }
 
+// reloadDocMsg carries the parse-only fast leg of a reload: just the
+// freshly parsed document, lands in milliseconds, lets the source pane
+// and outline refresh while the parallel build cmd is still waiting on
+// lmkf / latexmk. PDF + SyncTeX stay on the previous handles until
+// reloadResultMsg arrives; BuildStale gates the render path during the
+// gap so we never paint new doc line numbers through an old SyncTeX
+// index.
+type reloadDocMsg struct {
+	gen    int
+	newDoc *parser.Document // nil on read/parse error — caller treats status as the error string
+	status string           // empty on success; phase 2 owns the final status
+}
+
 // reloadResultMsg carries the outcome of an asynchronous reload: the
 // reparsed document plus freshly opened PDF / SyncTeX handles. Sidecar
 // remap and cursor resolution happen in applyReloadResult against the
@@ -35,6 +48,11 @@ type reloadMsg struct {
 // Running the heavy work off the Update goroutine keeps the UI
 // responsive — the user sees a "rebuilding…" status instead of a frozen
 // pane while latexmk churns.
+//
+// In the live pipeline newDoc is usually nil — reloadDocMsg already
+// installed the doc through applyReloadDocResult. Tests still construct
+// reloadResultMsg with newDoc set, and applyReloadResult is nil-
+// preserving so the same code path works for both.
 type reloadResultMsg struct {
 	// gen carries the reloadGen captured by startReload. Out-of-order
 	// or superseded reloads (gen != m.reloadGen at apply time) are
@@ -83,19 +101,119 @@ func (m Model) startReload() (Model, tea.Cmd) {
 		return m, nil
 	}
 	path := m.Doc.File
+	m.reloadGen++
+	gen := m.reloadGen
+	m.Status = "rebuilding…"
+
+	// Two-phase reload, sequenced through Update:
+	//   phase 1 (parseCmd) reads + parses the .tex (~ms) and posts
+	//     reloadDocMsg so the source pane / outline / annotation
+	//     remap refresh immediately, without waiting for lmkf.
+	//   phase 2 is launched by applyReloadDocResult once phase 1 has
+	//     installed the new doc; it waits for lmkf (or runs latexmk),
+	//     reopens PDF + SyncTeX, posts reloadResultMsg.
+	// Sequencing through Update (rather than tea.Batch) guarantees
+	// phase 2 sees the new doc when it applies — Batch's message
+	// order is unspecified, and out-of-order delivery would leave
+	// BuildStale set when phase 1 lands after phase 2's success.
+	return m, func() tea.Msg { return performParse(path, gen) }
+}
+
+// performParse is the goroutine body for the fast leg of startReload.
+// It reads + parses the .tex and best-effort enriches the doc with
+// whatever aux/bbl is on disk now (possibly slightly stale — phase 2
+// will re-apply after the build finishes if it succeeds). Bailout on
+// I/O or parse error sets `status` and leaves newDoc nil; applyReloadDocResult
+// surfaces the status without touching the model.
+func performParse(path string, gen int) reloadDocMsg {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return reloadDocMsg{gen: gen, status: "reload: " + err.Error()}
+	}
+	newDoc, err := parser.Parse(src)
+	if err != nil {
+		return reloadDocMsg{gen: gen, status: "reload: parse: " + err.Error()}
+	}
+	newDoc.File = path
+	// Best-effort aux/bbl from disk-as-of-now. If the user just edited
+	// the .tex but lmkf hasn't finished its rebuild, these are pre-edit
+	// numbers — better than rendering "??" until phase 2 lands. Phase 2
+	// re-applies the post-build aux/bbl on success so the displayed
+	// numbers self-correct once lmkf finishes.
+	buildRes := build.ResolveBuildOutputsOnDisk(path)
+	if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
+		parser.ApplyAux(newDoc, auxEntries)
+	}
+	if bibEntries, err := parser.LoadBBL(buildRes.BBLPath); err == nil {
+		parser.ApplyBBL(newDoc, bibEntries)
+	}
+	return reloadDocMsg{gen: gen, newDoc: newDoc}
+}
+
+// applyReloadDocResult installs the freshly parsed doc immediately so
+// the source pane / outline / annotation remap reflect external edits
+// within milliseconds, without waiting for the build cmd's lmkf or
+// latexmk wait. PDF + SyncTeX stay on the previous handles; BuildStale
+// is asserted so any cursor-driven render is suppressed until the
+// parallel reloadResultMsg lands a coherent triple.
+//
+// Stale messages (gen != m.reloadGen) are dropped so an older reload
+// finishing after a newer one cannot roll the doc back.
+func (m Model) applyReloadDocResult(r reloadDocMsg) (Model, tea.Cmd) {
+	if r.gen != m.reloadGen {
+		return m, nil
+	}
+	if r.newDoc == nil {
+		if r.status != "" {
+			m.Status = r.status
+		}
+		return m, nil
+	}
+	m.Doc = r.newDoc
+	if m.Sidecar != nil {
+		newSidecar, detached := persist.Remap(m.Sidecar, m.Doc)
+		newSidecar.Detached = append(newSidecar.Detached, detached...)
+		RefreshRemappedAnnotations(m.Doc, newSidecar)
+		m.Sidecar = newSidecar
+		m.SidecarBase = SnapshotSidecar(m.Sidecar)
+	}
+	if m.Doc.File != "" {
+		reportPath := format.ReportPath(m.Doc.File)
+		if ext, extErr := LoadExternalIssues(reportPath, m.Doc); extErr == nil {
+			m.ExternalIssues = ext
+		}
+	}
+	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, m.Doc, m.Sidecar)
+	if paths := m.sourceWatchPaths(); len(paths) > 0 {
+		if newest := newestSourceMtime(paths); !newest.IsZero() {
+			m.SourceMtime = newest
+		}
+	}
+	m.SourceLineCursor = clampLineCursor(m.Doc, m.CursorBlockID, m.SourceLineCursor)
+	// Phase 1 has installed the new doc but PDF / SyncTeX are still the
+	// previous build's. A render at this point would feed new line
+	// numbers into an old SyncTeX index → wrong crops, so we suppress
+	// the render path until phase 2 either lands a coherent pair
+	// (BuildStale=false) or confirms a build failure (BuildStale=true
+	// kept). Phase 2 always overwrites this field on apply.
+	m.BuildStale = true
+	if r.status != "" {
+		m.Status = r.status
+	}
+	// Kick off phase 2 (build wait + PDF/SyncTeX reopen). Captures
+	// oldPDF *now* — at the point we know phase 1 installed the doc —
+	// so the eventual close in applyReloadResult retires the right
+	// handle even if the user navigates between phase 1 and phase 2.
+	path := m.Doc.File
 	oldPDF := m.PDF
 	buildCmd := ""
 	if m.Config != nil {
 		buildCmd = m.Config.BuildCmd
 	}
-	m.reloadGen++
-	gen := m.reloadGen
-	m.Status = "rebuilding…"
-
-	cmd := func() tea.Msg {
-		return performReload(path, gen, oldPDF, buildCmd)
+	gen := r.gen
+	return m, func() tea.Msg {
+		return performBuildAndReopen(path, gen, oldPDF, buildCmd)
 	}
-	return m, cmd
 }
 
 // applyReloadResult installs the outcome of startReload on the model.
@@ -146,6 +264,26 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	}
 	if r.newSyncTeX != nil {
 		m.Synctex = r.newSyncTeX
+		// Populate PDFRegion on m.Doc's blocks against the freshly
+		// opened SyncTeX index. Phase 2's goroutine no longer carries
+		// a doc handle — phase 1 owns the doc install — so this
+		// (cheap) loop runs at apply time on the main goroutine.
+		populateRegions(m.Doc, r.newSyncTeX)
+	}
+
+	// On a successful build, re-apply aux/bbl from disk so theorem
+	// numbers and citation entries reflect the post-build artefacts.
+	// Phase 1 already applied a best-effort enrichment from disk-as-
+	// of-parse-time; redoing it here picks up any numbering shifts
+	// the rebuild introduced (added theorems, new \cite keys, etc.).
+	if !r.buildStale && m.Doc != nil && m.Doc.File != "" {
+		buildRes := build.ResolveBuildOutputsOnDisk(m.Doc.File)
+		if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
+			parser.ApplyAux(m.Doc, auxEntries)
+		}
+		if bibEntries, err := parser.LoadBBL(buildRes.BBLPath); err == nil {
+			parser.ApplyBBL(m.Doc, bibEntries)
+		}
 	}
 
 	// Remap the *live* sidecar against the new doc. Any annotations
@@ -207,39 +345,28 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	return m, m.schedulePDFRender()
 }
 
-// performReload is the goroutine body launched by startReload. Doing
-// the full pipeline here (parse → build → reopen PDF+SyncTeX) keeps
-// the Update loop responsive; we only touch the model through the
-// reloadResultMsg it returns. Sidecar remap and cursor resolution are
-// intentionally deferred to applyReloadResult so they see live state.
-func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloadResultMsg {
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return reloadResultMsg{gen: gen, status: "reload: " + err.Error()}
-	}
-	newDoc, err := parser.Parse(src)
-	if err != nil {
-		return reloadResultMsg{gen: gen, status: "reload: parse: " + err.Error()}
-	}
-	newDoc.File = path
-
+// performBuildAndReopen is the goroutine body for the slow leg of
+// startReload. By the time this runs, applyReloadDocResult has already
+// installed the new doc on the live model — this leg's only job is to
+// wait for the build (lmkf log marker, or run latexmk) and reopen the
+// PDF + SyncTeX pair. Sidecar remap, cursor resolution, populateRegions,
+// and aux/bbl re-application happen at apply time against the live
+// model so they don't race with phase 1.
+func performBuildAndReopen(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloadResultMsg {
 	buildRes := build.ResolveBuildOutputsOnDisk(path)
 	status := ""
 	// buildStale flips to true whenever the reload can't deliver a
 	// coherent (Doc, PDF, SyncTeX) triple back to the model. Sources:
 	//
 	//   - latexmk reported an error or lmkf returned error/timeout
-	//     (the new artefacts on disk do not match newDoc);
+	//     (the new artefacts on disk do not match the doc that
+	//     phase 1 already installed);
 	//   - both pdf.Open and synctex.Open are needed for a coherent
 	//     pair, and a partial success would leave the model with new
 	//     PDF + old SyncTeX or old PDF + new SyncTeX. Both opens must
 	//     therefore succeed together; on partial success we close the
 	//     orphan, keep the previous handles, and treat the reload as
 	//     stale.
-	//
-	// Aux/bbl loads are gated on the build step alone (rebuildOK below)
-	// — they only enrich newDoc and don't participate in the rendering
-	// pair, so a mid-pair failure shouldn't suppress them.
 	rebuildOK := true
 	buildStale := false
 	editTime := time.Now()
@@ -271,7 +398,7 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 			// pdf.Open / synctex.Open — otherwise we'd open the stale
 			// pre-edit copies and present them as the rebuild output.
 			waitForArtefactsFresh(buildRes.PDFPath, buildRes.SyncTeXPath, editTime, 5*time.Second)
-			status = fmt.Sprintf("lmkf rebuild ok · %d blocks", len(newDoc.Blocks))
+			status = "lmkf rebuild ok"
 		case "error":
 			status = "lmkf rebuild error — " + errLine
 			rebuildOK = false
@@ -289,39 +416,24 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 			rebuildOK = false
 		} else {
 			buildRes = res
-			status = fmt.Sprintf("rebuilt + reloaded · %d blocks", len(newDoc.Blocks))
+			status = "rebuilt + reloaded"
 		}
 	default:
-		status = fmt.Sprintf("reloaded · %d blocks", len(newDoc.Blocks))
+		status = ""
 	}
 
 	if !rebuildOK {
 		buildStale = true
 	}
 
-	// Aux/bbl enrich newDoc with theorem numbers and citation entries.
-	// They're only safe to apply when the build that produced them
-	// matches newDoc — i.e. when the current rebuild succeeded. On
-	// failure we leave newDoc un-enriched (numbers blank) rather than
-	// pulling stale numbers off disk.
-	if rebuildOK {
-		if auxEntries, err := parser.LoadAux(buildRes.AuxPath); err == nil {
-			parser.ApplyAux(newDoc, auxEntries)
-		}
-		if bibEntries, err := parser.LoadBBL(buildRes.BBLPath); err == nil {
-			parser.ApplyBBL(newDoc, bibEntries)
-		}
-	}
-
 	// PDF + SyncTeX must update as a coherent pair. The render path
 	// (renderPDFForBlock) calls Index.RegionForLines(file, doc.StartLine,
-	// doc.EndLine) — feeding *new* doc line numbers into an *old* SyncTeX
-	// index would silently produce wrong regions, and pairing a new PDF
-	// with an old SyncTeX (or vice versa) breaks coherence in subtler
-	// ways. So: only adopt the new pair when both opens succeed; on any
-	// partial success, close the orphan handle, keep the previous
-	// handles in the model (applyReloadResult is nil-preserving), and
-	// flag the reload as stale so the next render is suppressed.
+	// doc.EndLine) — pairing a new PDF with an old SyncTeX (or vice
+	// versa) breaks coherence. So: only adopt the new pair when both
+	// opens succeed; on any partial success, close the orphan handle,
+	// keep the previous handles in the model (applyReloadResult is
+	// nil-preserving), and flag the reload as stale so the next render
+	// is suppressed.
 	var newPDF *pdf.Doc
 	var newSyncTeX *synctex.Index
 	if rebuildOK {
@@ -330,7 +442,8 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 		if pdfErr == nil && sxErr == nil {
 			newPDF = pdfDoc
 			newSyncTeX = idx
-			populateRegions(newDoc, idx)
+			// populateRegions runs at apply time against the live
+			// m.Doc — phase 2 doesn't carry a doc handle.
 			// Don't close oldPDF here — applyReloadResult owns that
 			// decision. A goroutine closing oldPDF while a newer reload
 			// is in flight would leave the live model pointing at a
@@ -348,7 +461,6 @@ func performReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string) reloa
 
 	return reloadResultMsg{
 		gen:        gen,
-		newDoc:     newDoc,
 		newPDF:     newPDF,
 		newSyncTeX: newSyncTeX,
 		status:     status,

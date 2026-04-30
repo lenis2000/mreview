@@ -28,6 +28,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		nm, cmd := m.startReload()
 		return nm, cmd
 	}
+	if rd, ok := msg.(reloadDocMsg); ok {
+		return m.applyReloadDocResult(rd)
+	}
 	if rr, ok := msg.(reloadResultMsg); ok {
 		return m.applyReloadResult(rr)
 	}

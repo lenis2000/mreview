@@ -357,6 +357,73 @@ func TestApplyReloadResult_MergesLiveSidecarEdits(t *testing.T) {
 	assert.Equal(t, targetID, nm.Sidecar.Annotations[0].BlockID)
 }
 
+// TestApplyReloadDocResult_FastPath_InstallsDocAndDefersBuild is
+// the regression guard for the split-phase reload: phase 1 must
+// install the freshly parsed doc immediately, set BuildStale=true so
+// renders are suppressed against the still-old SyncTeX, and return
+// a non-nil cmd that launches phase 2 (the build wait + PDF reopen).
+func TestApplyReloadDocResult_FastPath_InstallsDocAndDefersBuild(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 1
+
+	// Build a *different* doc pointer to confirm the install actually
+	// swapped m.Doc rather than no-op'd on equality.
+	newDoc := parsedSample(t)
+	require.NotSame(t, doc, newDoc)
+
+	nm, cmd := m.applyReloadDocResult(reloadDocMsg{
+		gen:    1,
+		newDoc: newDoc,
+	})
+
+	assert.Same(t, newDoc, nm.Doc, "phase 1 must install the freshly parsed doc")
+	assert.True(t, nm.BuildStale,
+		"phase 1 must assert BuildStale so renders are suppressed until phase 2 lands")
+	require.NotNil(t, cmd,
+		"phase 1 must return a non-nil cmd that kicks off the build wait (phase 2)")
+}
+
+// TestApplyReloadDocResult_StaleGenIsDropped guards the same
+// gen-mismatch contract applyReloadResult enforces: a phase-1
+// message arriving after a newer reload has been started must not
+// roll the doc back to the older parse.
+func TestApplyReloadDocResult_StaleGenIsDropped(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 5
+
+	otherDoc := parsedSample(t)
+	nm, cmd := m.applyReloadDocResult(reloadDocMsg{
+		gen:    3, // older than m.reloadGen → stale
+		newDoc: otherDoc,
+	})
+
+	assert.Same(t, doc, nm.Doc, "stale phase-1 message must not replace m.Doc")
+	assert.Nil(t, cmd, "stale phase-1 message must not kick off a phase-2 build")
+}
+
+// TestApplyReloadDocResult_ParseErrorSetsStatusOnly covers the
+// read/parse-failure branch of performParse. With newDoc nil, the
+// model must surface the error in the status line and skip phase 2
+// — a build wait against a doc we never parsed would just compound
+// the failure.
+func TestApplyReloadDocResult_ParseErrorSetsStatusOnly(t *testing.T) {
+	doc := parsedSample(t)
+	m := New(doc, &persist.Sidecar{})
+	m.reloadGen = 1
+
+	nm, cmd := m.applyReloadDocResult(reloadDocMsg{
+		gen:    1,
+		status: "reload: parse: unexpected EOF",
+	})
+
+	assert.Same(t, doc, nm.Doc, "parse failure must leave m.Doc untouched")
+	assert.False(t, nm.BuildStale, "parse failure must not flip BuildStale")
+	assert.Contains(t, nm.Status, "reload: parse")
+	assert.Nil(t, cmd, "parse failure must not launch phase 2")
+}
+
 // TestApplyReloadResult_RespectsLiveCursor is the counterpart for
 // cursor navigation during a rebuild. resolveReloadCursor now runs
 // against m.CursorBlockID (live), not a snapshot taken at
