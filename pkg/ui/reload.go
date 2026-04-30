@@ -269,6 +269,15 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		// a doc handle — phase 1 owns the doc install — so this
 		// (cheap) loop runs at apply time on the main goroutine.
 		populateRegions(m.Doc, r.newSyncTeX)
+		// Refresh the pdf-watch baseline so its tick only fires when
+		// a *later* external rebuild advances the synctex.gz mtime
+		// past the file phase 2 just opened.
+		if m.Doc != nil && m.Doc.File != "" {
+			sxPath := build.ResolveBuildOutputsOnDisk(m.Doc.File).SyncTeXPath
+			if info, statErr := os.Stat(sxPath); statErr == nil {
+				m.SyncTeXMtime = info.ModTime()
+			}
+		}
 	}
 
 	// On a successful build, re-apply aux/bbl from disk so theorem

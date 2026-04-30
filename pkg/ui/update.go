@@ -37,6 +37,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(tickSourceWatchMsg); ok {
 		return m.handleSourceWatch()
 	}
+	if _, ok := msg.(tickPDFWatchMsg); ok {
+		return m.handlePDFWatch()
+	}
+	if pw, ok := msg.(pdfWatchResultMsg); ok {
+		return m.applyPDFWatchResult(pw)
+	}
 	if or, ok := msg.(ocrReportMsg); ok {
 		m.Status = or.status
 		return m, nil

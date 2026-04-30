@@ -161,6 +161,14 @@ type Model struct {
 	// without firing.
 	SourceMtime time.Time
 
+	// SyncTeXMtime is the on-disk mtime of the synctex.gz that backs
+	// m.Synctex, captured when synctex.Open succeeded. Polled by the
+	// pdf-watch tick: when the on-disk mtime advances past this value
+	// the watcher reopens the PDF + SyncTeX pair so an external rebuild
+	// (lmkf, manual latexmk, …) lands in the pane without waiting for
+	// the source-watch lmkf-marker handshake.
+	SyncTeXMtime time.Time
+
 	// Pending holds the target of an in-flight `d` delete awaiting [y/N]
 	// confirmation in the status bar.
 	Pending *PendingDelete
@@ -191,6 +199,13 @@ type Model struct {
 	// it lets us discard stale pdfRenderMsg results delivered after the
 	// user has already moved on.
 	pdfGen int
+
+	// pdfWatchGen is the equivalent for the pdf-watch reopen pipeline:
+	// handlePDFWatch bumps it when it kicks off an async reopen; the
+	// goroutine echoes it into pdfWatchResultMsg; applyPDFWatchResult
+	// drops messages whose gen no longer matches so a slow reopen
+	// finishing late cannot roll the model back.
+	pdfWatchGen int
 
 	// pdfCache memoises kitty escape strings by (block, mtime, geometry).
 	pdfCache *pdfCropCache
@@ -419,5 +434,5 @@ func (m Model) Init() tea.Cmd {
 	if !autoReloadSourceEnabled(m.Config) {
 		return nil
 	}
-	return tickSourceWatch()
+	return tea.Batch(tickSourceWatch(), tickPDFWatch())
 }

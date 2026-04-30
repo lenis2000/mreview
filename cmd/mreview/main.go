@@ -353,6 +353,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		// Fill in Block.PDFRegion so the outline's ⊘ marker only shows up on
 		// blocks that SyncTeX genuinely could not locate.
 		populatePDFRegions(doc, idx)
+		// Seed the pdf-watch baseline so the first tick only fires when
+		// an external rebuild advances the synctex.gz mtime past startup.
+		if info, statErr := os.Stat(buildRes.SyncTeXPath); statErr == nil {
+			model.SyncTeXMtime = info.ModTime()
+		}
 	}
 
 	final, err := runTUI(model, stdout, stderr)
