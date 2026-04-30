@@ -98,6 +98,8 @@ type opts struct {
 	NoConfig bool   `long:"noconfig" description:"ignore config files; use built-in defaults"`
 	Version  bool   `short:"v" long:"version" description:"print version and exit"`
 
+	AllowModifications bool `long:"allow-modifications" description:"allow in-TUI edits to the source file (e/E); default is read-only with annotations only"`
+
 	File string `positional-arg-name:"paper.tex" description:"path to LaTeX paper source"`
 }
 
@@ -294,6 +296,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	model := ui.New(doc, side)
 	model.SidecarPath = sidecarPath
 	model.Config = cfg
+	model.AllowModifications = o.AllowModifications
 	// Seed the sync baseline so saveSidecar's mtime guard can detect
 	// external edits (e.g. an agent deleting addressed annotations
 	// while the user keeps adding new ones) and 3-way-merge instead of

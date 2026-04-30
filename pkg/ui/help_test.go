@@ -10,7 +10,7 @@ import (
 )
 
 func TestHelpRows_CoverCoreBindings(t *testing.T) {
-	rows := HelpRows()
+	rows := HelpRows(true)
 	joined := ""
 	for _, r := range rows {
 		joined += r.Keys + "|" + r.Desc + "\n"
@@ -20,8 +20,16 @@ func TestHelpRows_CoverCoreBindings(t *testing.T) {
 	}
 }
 
+func TestHelpRows_ReadOnlyBanner(t *testing.T) {
+	roRows := HelpRows(false)
+	rwRows := HelpRows(true)
+	assert.Equal(t, len(rwRows)+2, len(roRows), "read-only adds a 2-row banner")
+	assert.Contains(t, roRows[0].Desc, "READ-ONLY")
+	assert.Contains(t, roRows[0].Desc, "--allow-modifications")
+}
+
 func TestRenderHelpBody_Alignment(t *testing.T) {
-	body := RenderHelpBody(120)
+	body := RenderHelpBody(120, true)
 	lines := strings.Split(body, "\n")
 	// Every row should start with a keys column followed by two spaces and the
 	// description; find the longest key and assert at least one row contains
@@ -30,7 +38,7 @@ func TestRenderHelpBody_Alignment(t *testing.T) {
 	assert.Contains(t, joined, "gg / G")
 	assert.Contains(t, joined, "gd")
 	// One row per HelpRow.
-	assert.Equal(t, len(HelpRows()), len(lines))
+	assert.Equal(t, len(HelpRows(true)), len(lines))
 }
 
 func TestOpenHelp_TogglesPopup(t *testing.T) {

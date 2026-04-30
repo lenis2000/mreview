@@ -347,10 +347,18 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if matches(key, m.Keymap.ExternalEdit) {
 		m.CountBuf = ""
+		if !m.AllowModifications {
+			m.Status = "read-only — pass --allow-modifications to edit source"
+			return m, nil
+		}
 		return m.editInExternalEditor()
 	}
 	if matches(key, m.Keymap.InlineEdit) {
 		m.CountBuf = ""
+		if !m.AllowModifications {
+			m.Status = "read-only — pass --allow-modifications to edit source"
+			return m, nil
+		}
 		return m.StartLineEdit()
 	}
 	if matches(key, m.Keymap.Undo) {

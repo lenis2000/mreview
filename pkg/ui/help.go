@@ -33,8 +33,20 @@ type HelpRow struct {
 
 // HelpRows returns the keybinding table presented by the help overlay. The
 // rows are deterministic so tests can assert on individual entries.
-func HelpRows() []HelpRow {
-	rows := []HelpRow{
+//
+// allowMods controls a banner pair at the top: when false (the default
+// read-only mode) the banner explains that `e` / `E` are gated behind
+// --allow-modifications. The edit-key rows themselves are kept either
+// way so the binding table stays a complete reference.
+func HelpRows(allowMods bool) []HelpRow {
+	var rows []HelpRow
+	if !allowMods {
+		rows = append(rows,
+			HelpRow{"", "READ-ONLY — pass --allow-modifications to enable e / E"},
+			HelpRow{"", ""},
+		)
+	}
+	rows = append(rows, []HelpRow{
 		{"j / k", "next / prev outer sibling"},
 		{"J / K", "next / prev inner block (proof-step, display, …)"},
 		{"{ / }", "previous / next section"},
@@ -71,7 +83,7 @@ func HelpRows() []HelpRow {
 		{MarkerNoRegion, "no PDF region (SyncTeX miss)"},
 		{"", ""},
 		{"", "Issue markers (filter:issues)"},
-	}
+	}...)
 	for _, m := range IssueMarkers() {
 		rows = append(rows, HelpRow{Keys: m.Glyph, Desc: m.Desc})
 	}
@@ -85,8 +97,8 @@ func HelpRows() []HelpRow {
 // used so emoji-keyed marker rows align with text-keyed binding rows.
 // Rows with empty Keys render as section headers (or blank lines if
 // Desc is also empty).
-func RenderHelpBody(innerW int) string {
-	rows := HelpRows()
+func RenderHelpBody(innerW int, allowMods bool) string {
+	rows := HelpRows(allowMods)
 	keyW := 0
 	for _, r := range rows {
 		if r.Keys == "" {

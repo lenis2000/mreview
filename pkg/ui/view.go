@@ -224,7 +224,7 @@ func (m Model) renderSourcePane(width, height int) string {
 		body = RenderBibBody(p, innerW, bodyH, m.Styles)
 	case *HelpPopup:
 		title = m.Styles.PaneTitle.Render("Help")
-		body = RenderHelpBody(innerW)
+		body = RenderHelpBody(innerW, m.AllowModifications)
 		_ = p
 	case *LineEditPopup:
 		title = m.Styles.PaneTitle.Render(fmt.Sprintf("Edit line %d · %s", p.AbsoluteLine, m.Doc.File))

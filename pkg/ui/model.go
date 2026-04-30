@@ -125,6 +125,15 @@ type Model struct {
 	Keymap Keymap
 	Styles Styles
 
+	// AllowModifications gates the in-TUI source-edit keys (`e`, `E`).
+	// False (the default — `mreview file.tex`) is read-only: edit keys
+	// show a hint in the status bar instead of mutating paper.tex.
+	// True (`--allow-modifications`) restores the full edit pipeline.
+	// External edits to the source still flow in via the auto-reload
+	// watcher regardless of this flag — read-only refers to the TUI's
+	// own writes, not the file's overall mutability.
+	AllowModifications bool
+
 	// SidecarPath is the on-disk path written by saveSidecar. Empty in tests
 	// that exercise model logic without touching disk.
 	SidecarPath string
