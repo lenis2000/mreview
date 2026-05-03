@@ -338,21 +338,15 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		go saveLayoutFracs()
 		return m, m.schedulePDFRender()
 	}
-	if matches(key, m.Keymap.SourceLineUp) {
-		n := parseCount(m.CountBuf)
-		m.CountBuf = ""
-		for i := 0; i < n; i++ {
-			m = m.scrollSource(-1)
-		}
-		return m, nil
+	// `[` / `]` are pane-agnostic block navigation — explicit prev/next
+	// sibling regardless of focus. In the source pane, j/k still scroll
+	// by line (the focus-hijack below), so `[` / `]` are the way to
+	// step blocks while keeping the source pane focused.
+	if matches(key, m.Keymap.BlockPrev) {
+		return m.applyMotion(PrevSibling), nil
 	}
-	if matches(key, m.Keymap.SourceLineDown) {
-		n := parseCount(m.CountBuf)
-		m.CountBuf = ""
-		for i := 0; i < n; i++ {
-			m = m.scrollSource(+1)
-		}
-		return m, nil
+	if matches(key, m.Keymap.BlockNext) {
+		return m.applyMotion(NextSibling), nil
 	}
 	if matches(key, m.Keymap.ExternalEdit) {
 		m.CountBuf = ""

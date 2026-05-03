@@ -48,6 +48,7 @@ func HelpRows(allowMods bool) []HelpRow {
 	}
 	rows = append(rows, []HelpRow{
 		{"j / k", "next / prev outer sibling"},
+		{"[ / ]", "prev / next block (works in source pane too)"},
 		{"J / K", "next / prev inner block (proof-step, display, …)"},
 		{"{ / }", "previous / next section"},
 		{"gg / G", "first / last visible block"},

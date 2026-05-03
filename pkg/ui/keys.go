@@ -71,11 +71,13 @@ type Keymap struct {
 	PDFDarkSimple []string // D — simple invert (gray-bg RGB invert)
 	PDFGotoStart  []string // 0 — first page / reset zoom
 
-	// Source-line cursor — moves the per-block 1-based line marker that the
-	// `a` (line annotation) key operates on. Independent of pane focus so
-	// keyboard users can drive line nav without leaving the outline pane.
-	SourceLineUp   []string // [ — previous source line (spills into prev block at boundary)
-	SourceLineDown []string // ] — next source line (spills into next block at boundary)
+	// Block navigation — pane-agnostic prev/next sibling. j/k do the
+	// same thing in non-source panes but get hijacked to scroll source
+	// lines when the source pane is focused, so these are the keys to
+	// reach for when the user wants to step blocks while staying in
+	// the source pane.
+	BlockPrev []string // [
+	BlockNext []string // ]
 
 	// Edit-in-place. E suspends mreview and runs $EDITOR on paper.tex
 	// positioned at the cursor's absolute source line; on return the
@@ -167,8 +169,8 @@ func DefaultKeymap() Keymap {
 		PDFDarkSimple: []string{"D"},
 		PDFGotoStart:  []string{"0"},
 
-		SourceLineUp:   []string{"["},
-		SourceLineDown: []string{"]"},
+		BlockPrev: []string{"["},
+		BlockNext: []string{"]"},
 
 		ExternalEdit: []string{"E"},
 		InlineEdit:   []string{"e"},
