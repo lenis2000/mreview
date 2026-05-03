@@ -72,7 +72,7 @@ func HelpRows(allowMods bool) []HelpRow {
 		{"h / l / ← / →", "focus pane left / right (outline ↔ source ↔ PDF)"},
 		{"< / >", "shrink / grow focused pane (saved globally)"},
 		{"S", "open current PDF in Skim at cursor line"},
-		{"R", "reload PDF in Skim (revert without jumping)"},
+		{"R", "reload PDF in Skim and TUI pane (revert without jumping)"},
 		{"B", "build (reparse + latexmk; lmkf-aware)"},
 		{"?", "toggle this help overlay"},
 		{"q", "quit and emit annotations"},

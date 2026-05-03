@@ -20,6 +20,7 @@ _mreview() {
     '--stdout=[format for annotations emitted on quit]:format:(md json none)' \
     '--config=[path to config file]:config file:_files -g "*.toml"' \
     '--noconfig[ignore config files; use built-in defaults]' \
+    '--allow-modifications[allow in-TUI edits to the source file (e/E); default is read-only]' \
     '1: :->cmd_or_paper' \
     '*:: :->args'
 

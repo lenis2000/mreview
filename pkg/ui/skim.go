@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"mreview/pkg/build"
 )
 
 // skimDisplaylinePath is the SyncTeX forward-search helper shipped with
@@ -165,20 +167,48 @@ func (m Model) reloadSkim() (tea.Model, tea.Cmd) {
 end tell
 return didRevert`, pdfPath)
 	out, _ := exec.Command("osascript", "-e", script).Output()
-	if strings.TrimSpace(string(out)) == "true" {
-		m.Status = "Skim reloaded"
-		return m, nil
+	reverted := strings.TrimSpace(string(out)) == "true"
+	if !reverted {
+		// Step 2: not currently open. Use the shell `open -a Skim` so
+		// Launch Services hands the file to Skim explicitly, never to
+		// the default PDF handler.
+		cmd := exec.Command("open", "-a", "Skim", pdfPath)
+		if err := cmd.Start(); err != nil {
+			m.Status = "R: " + err.Error()
+			return m, nil
+		}
+		go cmd.Wait()
 	}
 
-	// Step 2: not currently open. Use the shell `open -a Skim` so
-	// Launch Services hands the file to Skim explicitly, never to the
-	// default PDF handler.
-	cmd := exec.Command("open", "-a", "Skim", pdfPath)
-	if err := cmd.Start(); err != nil {
-		m.Status = "R: " + err.Error()
-		return m, nil
-	}
-	go cmd.Wait()
+	// Step 3: piggyback on the pdf-watch reopen pipeline so the in-TUI
+	// pane picks up the same on-disk PDF + SyncTeX Skim was just told
+	// to revert against. Without this, R refreshed Skim but left the
+	// embedded preview frozen on the previous build's render.
+	cmd := m.forcePDFReopen()
 	m.Status = "Skim reloaded"
-	return m, nil
+	return m, cmd
+}
+
+// forcePDFReopen kicks off the pdf-watch async reopen unconditionally,
+// bypassing the mtime-changed gate handlePDFWatch uses. Returns nil if
+// no doc / PDF is loaded so the caller can still hand back a no-op cmd.
+func (m *Model) forcePDFReopen() tea.Cmd {
+	if m.PDF == nil || m.Doc == nil || m.Doc.File == "" {
+		return nil
+	}
+	buildRes := build.ResolveBuildOutputsOnDisk(m.Doc.File)
+	pdfPath := buildRes.PDFPath
+	sxPath := buildRes.SyncTeXPath
+	if _, err := os.Stat(pdfPath); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(sxPath); err != nil {
+		return nil
+	}
+	m.pdfWatchGen++
+	gen := m.pdfWatchGen
+	oldPDF := m.PDF
+	return func() tea.Msg {
+		return performPDFWatchReopen(pdfPath, sxPath, gen, oldPDF)
+	}
 }
