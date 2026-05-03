@@ -189,9 +189,17 @@ return didRevert`, pdfPath)
 	return m, cmd
 }
 
-// forcePDFReopen kicks off the pdf-watch async reopen unconditionally,
-// bypassing the mtime-changed gate handlePDFWatch uses. Returns nil if
-// no doc / PDF is loaded so the caller can still hand back a no-op cmd.
+// forcePDFReopen kicks off the pdf-watch async reopen path so the
+// in-TUI pane catches up to the on-disk PDF + SyncTeX. Gated on the
+// same mtime-advanced check handlePDFWatch uses: when neither artefact
+// has changed, this is a no-op.
+//
+// The gate is load-bearing — reopening an unchanged pair would still
+// route through applyPDFWatchResult, which unconditionally clears
+// BuildStale. After a failed rebuild that flag is what suppresses auto
+// renders against the now-mismatched SyncTeX index; clobbering it lets
+// the next cursor move feed new line numbers into the stale index and
+// render a wrong region.
 func (m *Model) forcePDFReopen() tea.Cmd {
 	if m.PDF == nil || m.Doc == nil || m.Doc.File == "" {
 		return nil
@@ -199,10 +207,23 @@ func (m *Model) forcePDFReopen() tea.Cmd {
 	buildRes := build.ResolveBuildOutputsOnDisk(m.Doc.File)
 	pdfPath := buildRes.PDFPath
 	sxPath := buildRes.SyncTeXPath
-	if _, err := os.Stat(pdfPath); err != nil {
+	pdfStat, err := os.Stat(pdfPath)
+	if err != nil {
 		return nil
 	}
-	if _, err := os.Stat(sxPath); err != nil {
+	sxStat, err := os.Stat(sxPath)
+	if err != nil {
+		return nil
+	}
+	pdfChanged := pdfStat.ModTime().After(m.PDF.Mtime())
+	sxChanged := sxStat.ModTime().After(m.SyncTeXMtime)
+	if !pdfChanged && !sxChanged {
+		return nil
+	}
+	if m.BuildStale {
+		// A source-watch reload is mid-flight (phase 1 installed the new
+		// doc, phase 2 still owes us the rebuilt artefacts). Let it own
+		// the swap so we don't double-apply against the same on-disk pair.
 		return nil
 	}
 	m.pdfWatchGen++

@@ -21,7 +21,7 @@ func TestResolveReloadCursor_KeepsLiveID(t *testing.T) {
 	doc := parsedSample(t)
 	require.GreaterOrEqual(t, len(doc.Blocks), 3)
 	cur := doc.Blocks[2].ID
-	got := resolveReloadCursor(cur, doc, &persist.Sidecar{})
+	got := resolveReloadCursor(cur, "", 0, doc, &persist.Sidecar{})
 	assert.Equal(t, cur, got)
 }
 
@@ -31,7 +31,7 @@ func TestResolveReloadCursor_LabelRescue(t *testing.T) {
 	doc := parsedSample(t)
 	b, ok := doc.ByLabel["thm:main"]
 	require.True(t, ok, "fixture must expose thm:main")
-	got := resolveReloadCursor("thm:main", doc, &persist.Sidecar{})
+	got := resolveReloadCursor("thm:main", "", 0, doc, &persist.Sidecar{})
 	assert.Equal(t, b.ID, got)
 }
 
@@ -56,7 +56,7 @@ func TestResolveReloadCursor_FallsBackToFirstUnreviewed(t *testing.T) {
 	}
 	side := &persist.Sidecar{Reviewed: reviewed}
 
-	got := resolveReloadCursor("gone-block-id", doc, side)
+	got := resolveReloadCursor("gone-block-id", "", 0, doc, side)
 	require.NotEmpty(t, got)
 	for _, rid := range reviewed {
 		assert.NotEqual(t, rid, got, "fallback must not pick an already-reviewed block")
@@ -77,7 +77,7 @@ func TestResolveReloadCursor_AllReviewedStillReturnsABlock(t *testing.T) {
 		all = append(all, b.ID)
 	}
 	side := &persist.Sidecar{Reviewed: all}
-	got := resolveReloadCursor("missing", doc, side)
+	got := resolveReloadCursor("missing", "", 0, doc, side)
 	assert.Equal(t, firstContentBlockID(doc), got)
 }
 
@@ -86,8 +86,45 @@ func TestResolveReloadCursor_AllReviewedStillReturnsABlock(t *testing.T) {
 // helper on a nil document, but the helper should still not panic
 // if it ever gets one.
 func TestResolveReloadCursor_NilDocReturnsEmpty(t *testing.T) {
-	got := resolveReloadCursor("any", nil, &persist.Sidecar{})
+	got := resolveReloadCursor("any", "", 0, nil, &persist.Sidecar{})
 	assert.Empty(t, got)
+}
+
+// TestResolveReloadCursor_LineAnchorFallback exercises the line-range
+// fallback: an edit inside an unlabeled block changes its sha-derived
+// ID, so neither ID nor label lookup hits, but the new doc has a block
+// straddling the same source line. Without the anchor we would jump to
+// firstUnreviewedOrAny — typically the top of the document — which is
+// the bug this fallback fixes.
+func TestResolveReloadCursor_LineAnchorFallback(t *testing.T) {
+	doc := parsedSample(t)
+	// Pick a non-root block with a real line range; reviewed-mark every
+	// other block so firstUnreviewedOrAny would land on a *different*
+	// block if our anchor lookup didn't fire.
+	var target *parser.Block
+	for _, b := range doc.Blocks {
+		if b == doc.Root || b.StartLine == 0 {
+			continue
+		}
+		target = b
+		break
+	}
+	require.NotNil(t, target, "fixture must expose a block with a line range")
+	var reviewed []string
+	for _, b := range doc.Blocks {
+		if b == doc.Root || b == target {
+			continue
+		}
+		reviewed = append(reviewed, b.ID)
+	}
+	side := &persist.Sidecar{Reviewed: reviewed}
+
+	file := target.File
+	if file == "" {
+		file = doc.File
+	}
+	got := resolveReloadCursor("stale-sha-id", file, target.StartLine, doc, side)
+	assert.Equal(t, target.ID, got)
 }
 
 // TestNew_FallsBackToFirstUnreviewed covers the startup-side

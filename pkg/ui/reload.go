@@ -169,6 +169,11 @@ func (m Model) applyReloadDocResult(r reloadDocMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// Snapshot the cursor's anchor (file + line) against the OLD doc
+	// before we swap it out, so resolveReloadCursor can fall back to
+	// "the new block at the same source line" when content edits have
+	// shifted the sha-derived ID of the cursor block.
+	oldFile, oldLine := cursorAnchor(m.Doc, m.CursorBlockID)
 	m.Doc = r.newDoc
 	if m.Sidecar != nil {
 		newSidecar, detached := persist.Remap(m.Sidecar, m.Doc)
@@ -183,7 +188,7 @@ func (m Model) applyReloadDocResult(r reloadDocMsg) (Model, tea.Cmd) {
 			m.ExternalIssues = ext
 		}
 	}
-	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, m.Doc, m.Sidecar)
+	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, oldFile, oldLine, m.Doc, m.Sidecar)
 	if paths := m.sourceWatchPaths(); len(paths) > 0 {
 		if newest := newestSourceMtime(paths); !newest.IsZero() {
 			m.SourceMtime = newest
@@ -320,8 +325,13 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 	}
 	// Resolve the cursor against the *live* cursor too — if the user
 	// navigated during the rebuild, m.CursorBlockID is what they
-	// expect to stay on, not the snapshot.
-	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, m.Doc, m.Sidecar)
+	// expect to stay on, not the snapshot. Phase 2 runs after phase 1
+	// already swapped m.Doc, so the live doc is the post-reload doc;
+	// look up the anchor against it (a no-op for ID-stable cursors,
+	// load-bearing only when the user navigated to a block whose
+	// content also drifted across this same reload).
+	liveFile, liveLine := cursorAnchor(m.Doc, m.CursorBlockID)
+	m.CursorBlockID = resolveReloadCursor(m.CursorBlockID, liveFile, liveLine, m.Doc, m.Sidecar)
 	// Refresh the source-watch baseline against the current state of
 	// disk: another external edit between our startReload and now must
 	// trigger again on the next tick rather than getting absorbed into
@@ -482,10 +492,17 @@ func performBuildAndReopen(path string, gen int, oldPDF *pdf.Doc, buildCmd strin
 // Preference order:
 //  1. The previous cursor if its ID still resolves in newDoc.
 //  2. The previous cursor treated as a LaTeX label (remap rescue).
-//  3. firstUnreviewedOrAny — mirrors ui.New's fallback so an edit that
-//     deletes or splits the cursor block reopens on outstanding work
-//     instead of bouncing back to the start of the document.
-func resolveReloadCursor(oldCursor string, newDoc *parser.Document, newSidecar *persist.Sidecar) string {
+//  3. The deepest block in newDoc whose [StartLine, EndLine] contains
+//     oldLine (matching oldFile). Catches the common case where an
+//     unlabeled block (proof step, paragraph, inline math) keeps the
+//     same source position but its sha-derived ID drifted because the
+//     cursor block's first 40 chars changed — without this fallback
+//     every save inside the cursor block bounced the cursor to the
+//     first unreviewed item near the top of the document.
+//  4. firstUnreviewedOrAny — mirrors ui.New's fallback so an edit that
+//     deletes the cursor block entirely (no line-range hit either)
+//     reopens on outstanding work instead of returning a dead ID.
+func resolveReloadCursor(oldCursor, oldFile string, oldLine int, newDoc *parser.Document, newSidecar *persist.Sidecar) string {
 	if newDoc == nil {
 		return ""
 	}
@@ -495,7 +512,70 @@ func resolveReloadCursor(oldCursor string, newDoc *parser.Document, newSidecar *
 	if b, ok := newDoc.ByLabel[oldCursor]; ok {
 		return b.ID
 	}
+	if id := blockAtLine(newDoc, oldFile, oldLine); id != "" {
+		return id
+	}
 	return firstUnreviewedOrAny(newDoc, newSidecar)
+}
+
+// cursorAnchor returns (file, startLine) for the block id'd by `cursor`
+// in `doc`. Returns ("", 0) on miss so callers can pass these straight
+// through to resolveReloadCursor without a separate ok check —
+// blockAtLine treats a zero line as "no anchor available" and skips the
+// line-range fallback.
+func cursorAnchor(doc *parser.Document, cursor string) (string, int) {
+	if doc == nil || cursor == "" {
+		return "", 0
+	}
+	b := doc.ByID[cursor]
+	if b == nil {
+		return "", 0
+	}
+	file := b.File
+	if file == "" {
+		file = doc.File
+	}
+	return file, b.StartLine
+}
+
+// blockAtLine returns the ID of the deepest block in doc whose
+// [StartLine, EndLine] contains line, restricted to blocks whose File
+// matches (or whose File is empty when the cursor was anchored in the
+// root file). "Deepest" = smallest line span among the candidates,
+// which picks a proof step over its enclosing proof over its enclosing
+// theorem when all three contain the line. Returns "" when the anchor
+// is unset or no block straddles the line.
+func blockAtLine(doc *parser.Document, file string, line int) string {
+	if doc == nil || line <= 0 {
+		return ""
+	}
+	rootFile := doc.File
+	bestID := ""
+	bestSpan := 0
+	for _, b := range doc.Blocks {
+		if b == nil || b == doc.Root {
+			continue
+		}
+		if b.StartLine == 0 || b.EndLine < b.StartLine {
+			continue
+		}
+		bf := b.File
+		if bf == "" {
+			bf = rootFile
+		}
+		if file != "" && bf != "" && bf != file {
+			continue
+		}
+		if line < b.StartLine || line > b.EndLine {
+			continue
+		}
+		span := b.EndLine - b.StartLine
+		if bestID == "" || span < bestSpan {
+			bestID = b.ID
+			bestSpan = span
+		}
+	}
+	return bestID
 }
 
 // shouldRebuild reports whether tex mtime is newer than pdf mtime. A
