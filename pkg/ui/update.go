@@ -671,7 +671,7 @@ func (m Model) updatePopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch p := m.Popup.(type) {
 	case *AnnotationPopup:
 		switch msg.Type {
-		case tea.KeyCtrlS:
+		case tea.KeyEnter:
 			return m.SubmitAnnotation()
 		case tea.KeyEsc, tea.KeyCtrlC:
 			return m.CancelAnnotation()

@@ -156,7 +156,14 @@ func (m Model) SubmitAnnotation() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	// Annotations are conceptually one line that wraps when displayed, so
+	// any embedded newlines (typically from a paste) are collapsed to
+	// spaces before persisting. Enter is bound to submit at the popup
+	// level, so the editor itself can no longer introduce newlines.
 	text := strings.TrimSpace(p.TA.Value())
+	if text != "" {
+		text = strings.Join(strings.Fields(text), " ")
+	}
 	if text == "" {
 		m.Popup = nil
 		return m, nil

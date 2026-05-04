@@ -303,7 +303,7 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 // renderAnnotationBody lays out the textarea and a help hint within the
 // source pane's inner area.
 func renderAnnotationBody(p *AnnotationPopup, innerW, innerH int) string {
-	hint := "[Ctrl-S/Esc submit · Ctrl-C cancel]"
+	hint := "[Enter submit · Esc/Ctrl-C cancel]"
 	taH := innerH - 1
 	if taH < 1 {
 		taH = 1

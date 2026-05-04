@@ -89,7 +89,7 @@ func TestAnnotation_SubmitPersists(t *testing.T) {
 	p := m.Popup.(*AnnotationPopup)
 	p.TA.SetValue("needs citation")
 
-	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = res.(Model)
 
 	assert.Nil(t, m.Popup)
@@ -140,7 +140,7 @@ func TestAnnotation_EditReplaces(t *testing.T) {
 	assert.True(t, p.Editing)
 
 	p.TA.SetValue("updated")
-	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = res.(Model)
 
 	assert.Equal(t, 1, *saves)
@@ -363,7 +363,7 @@ func TestSaveSidecar_UsesPersistSaveWhenNoFn(t *testing.T) {
 	res, _ := m.Update(rkey('a'))
 	m = res.(Model)
 	m.Popup.(*AnnotationPopup).TA.SetValue("note")
-	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	res, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = res.(Model)
 
 	got, err := persist.Load(m.SidecarPath)

@@ -261,7 +261,7 @@ func editorRows(editor *AnnotationPopup, gutterW, bodyWidth int, styles Styles) 
 		editor.TA.SetWidth(noteWidth)
 	}
 	view := editor.TA.View()
-	hint := "[Ctrl-S submit · Ctrl-C cancel]"
+	hint := "[Enter submit · Ctrl-C cancel]"
 	rows := strings.Split(view, "\n")
 	out := make([]string, 0, len(rows)+1)
 	style := styles.SourceAnnotation
