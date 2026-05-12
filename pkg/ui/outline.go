@@ -504,9 +504,20 @@ func RenderOutline(rows []OutlineRow, doc *parser.Document, cursor string, width
 	// the row vanishes but we still want the outline near it.
 	cur := cursorOutlineIndex(rows, cursor)
 	anchor := scrollAnchorIndex(rows, doc, cursor)
+	// Park the anchor row a quarter of the way down the pane so the user
+	// always has context above and a runway of unseen rows below. Without
+	// this, navigation pinned the anchor at the bottom edge of the viewport
+	// — fine on short docs, disorienting on long ones where the next
+	// hundred rows live just out of view.
 	offset := 0
-	if anchor >= 0 && anchor >= height {
-		offset = anchor - height + 1
+	if anchor >= 0 {
+		offset = anchor - height/4
+		if offset > len(rows)-height {
+			offset = len(rows) - height
+		}
+		if offset < 0 {
+			offset = 0
+		}
 	}
 	end := offset + height
 	if end > len(rows) {
