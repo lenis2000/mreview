@@ -210,44 +210,44 @@ type Review struct {
 
 Alignment rules, in priority order:
 
-- [ ] Exact label match (`Block.Label != ""`).
-- [ ] Exact parser stable ID match.
-- [ ] Exact normalized-source hash match inside same kind/near section.
-- [ ] Fuzzy match within compatible kind and nearest section path.
-- [ ] Proof following a matched theorem should preferentially match the corresponding proof.
-- [ ] Paragraph/display matching must be conservative; repeated generic paragraphs should remain unmatched rather than incorrectly matched.
+- [x] Exact label match (`Block.Label != ""`).
+- [x] Exact parser stable ID match.
+- [x] Exact normalized-source hash match inside same kind/near section.
+- [x] Fuzzy match within compatible kind and nearest section path.
+- [x] Proof following a matched theorem should preferentially match the corresponding proof.
+- [x] Paragraph/display matching must be conservative; repeated generic paragraphs should remain unmatched rather than incorrectly matched.
 
 Normalization for matching only:
 
-- [ ] Strip comments outside escaped `%`.
-- [ ] Collapse whitespace.
-- [ ] Ignore `\label{...}` for fuzzy scoring.
-- [ ] Preserve math/control words enough that genuinely changed formulas do not collapse to equal.
+- [x] Strip comments outside escaped `%`.
+- [x] Collapse whitespace.
+- [x] Ignore `\label{...}` for fuzzy scoring.
+- [x] Preserve math/control words enough that genuinely changed formulas do not collapse to equal.
 
 Ordering:
 
-- [ ] Main order follows the new document.
-- [ ] Deleted old blocks are inserted near their old neighboring matched blocks: before a matched new block, insert unmatched old blocks whose old index lies between previous matched old index and current matched old index; append remaining deleted blocks at end.
+- [x] Main order follows the new document.
+- [x] Deleted old blocks are inserted near their old neighboring matched blocks: before a matched new block, insert unmatched old blocks whose old index lies between previous matched old index and current matched old index; append remaining deleted blocks at end.
 
 Status rules:
 
-- [ ] `Added`: new only.
-- [ ] `Deleted`: old only.
-- [ ] `Unchanged`: matched and raw source equal.
-- [ ] `FormatOnly`: raw differs but normalized source equal.
-- [ ] `Changed`: matched and normalized source differs.
-- [ ] `Moved`: matched by label/ID but section path changed; can also be changed internally.
+- [x] `Added`: new only.
+- [x] `Deleted`: old only.
+- [x] `Unchanged`: matched and raw source equal.
+- [x] `FormatOnly`: raw differs but normalized source equal.
+- [x] `Changed`: matched and normalized source differs.
+- [x] `Moved`: matched by label/ID but section path changed; can also be changed internally.
 
 Tests:
 
-- [ ] Labeled theorem survives line drift and text edits.
-- [ ] Unlabeled paragraphs match by normalized text.
-- [ ] Added and deleted paragraphs appear in useful order.
-- [ ] Proofs follow matched theorem labels.
-- [ ] Repeated identical generic text does not produce unstable bogus matches.
-- [ ] Format-only change is detected separately.
-- [ ] Moved labeled block is detected.
-- [ ] Run `go test ./pkg/diffreview`.
+- [x] Labeled theorem survives line drift and text edits.
+- [x] Unlabeled paragraphs match by normalized text.
+- [x] Added and deleted paragraphs appear in useful order.
+- [x] Proofs follow matched theorem labels.
+- [x] Repeated identical generic text does not produce unstable bogus matches.
+- [x] Format-only change is detected separately.
+- [x] Moved labeled block is detected.
+- [x] Run `go test ./pkg/diffreview`.
 
 ### Task 3: CLI subcommand `mreview diff`
 
