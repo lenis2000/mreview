@@ -115,6 +115,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		switch args[0] {
 		case "fmt":
 			return runFmt(args[1:], stdout, stderr)
+		case "diff":
+			return runDiff(args[1:], stdout, stderr)
 		case "config":
 			return runConfig(args[1:], stdout, stderr)
 		case "pdf-comments":
@@ -421,7 +423,7 @@ func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
 
 // knownSubcommands lists the dispatch targets recognised by run(). Used by
 // closestSubcommand to suggest fixes for typos.
-var knownSubcommands = []string{"fmt", "config", "pdf-comments", "pdf-review"}
+var knownSubcommands = []string{"fmt", "diff", "config", "pdf-comments", "pdf-review"}
 
 // closestSubcommand returns the known subcommand whose Levenshtein distance
 // from name is smallest, provided that distance is ≤ 2. Returns "" when no

@@ -259,17 +259,17 @@ Tests:
 
 Requirements:
 
-- [ ] Add `diff` to known subcommands and typo suggestions.
-- [ ] Implement `runDiff(args, stdout, stderr)`.
-- [ ] Support primary form: `mreview diff --base REV path.tex`.
-- [ ] Support explicit form: `mreview diff OLD NEW`.
-- [ ] Reject ambiguous calls with clear usage.
-- [ ] Parse old/new sources, call `parser.Parse` for both, call aligner, and construct diff review state.
-- [ ] Reuse config loading (`ui.LoadConfig`) and theme selection.
-- [ ] Stub `runDiffTUI` in tests, mirroring existing `runTUI` pattern.
-- [ ] Do not build PDFs yet in this task; `--no-build` should work from the beginning.
-- [ ] Tests: missing args, bad refs, primary `--base`, explicit old/new, `--allow-modifications` toggles edit permission in captured model/state, and read-only new endpoint still disables edit even when the flag is supplied.
-- [ ] Run `go test ./cmd/mreview ./pkg/diffreview`.
+- [x] Add `diff` to known subcommands and typo suggestions.
+- [x] Implement `runDiff(args, stdout, stderr)`.
+- [x] Support primary form: `mreview diff --base REV path.tex`.
+- [x] Support explicit form: `mreview diff OLD NEW`.
+- [x] Reject ambiguous calls with clear usage.
+- [x] Parse old/new sources, call `parser.Parse` for both, call aligner, and construct diff review state.
+- [x] Reuse config loading (`ui.LoadConfig`) and theme selection.
+- [x] Stub `runDiffTUI` in tests, mirroring existing `runTUI` pattern.
+- [x] Do not build PDFs yet in this task; `--no-build` should work from the beginning.
+- [x] Tests: missing args, bad refs, primary `--base`, explicit old/new, `--allow-modifications` toggles edit permission in captured model/state, and read-only new endpoint still disables edit even when the flag is supplied.
+- [x] Run `go test ./cmd/mreview ./pkg/diffreview`.
 
 ### Task 4: Diff TUI skeleton with semantic outline and side-by-side source
 

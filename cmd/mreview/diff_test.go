@@ -1,0 +1,265 @@
+package main
+
+import (
+	"bytes"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"mreview/pkg/diffreview"
+)
+
+func withStubDiffTUI(t *testing.T) *tea.Model {
+	t.Helper()
+	saved := runDiffTUI
+	var captured tea.Model
+	runDiffTUI = func(model tea.Model, _, _ io.Writer) (tea.Model, error) {
+		captured = model
+		return model, nil
+	}
+	t.Cleanup(func() { runDiffTUI = saved })
+	return &captured
+}
+
+func capturedDiffModel(t *testing.T, captured *tea.Model) diffModel {
+	t.Helper()
+	if captured == nil || *captured == nil {
+		t.Fatalf("expected runDiffTUI to be invoked")
+	}
+	m, ok := (*captured).(diffModel)
+	if !ok {
+		t.Fatalf("unexpected diff model type %T", *captured)
+	}
+	if m.Review == nil {
+		t.Fatalf("expected review to be populated")
+	}
+	return m
+}
+
+func TestRunDiffSubcommandTypoSuggestsDiff(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"dif"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	msg := stderr.String()
+	if !strings.Contains(msg, "unknown subcommand") || !strings.Contains(msg, "diff") {
+		t.Fatalf("expected diff typo suggestion, got %q", msg)
+	}
+}
+
+func TestRunDiffMissingArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	msg := stderr.String()
+	if !strings.Contains(msg, "missing endpoints") || !strings.Contains(msg, "usage: mreview diff") {
+		t.Fatalf("expected missing-endpoints usage message, got %q", msg)
+	}
+}
+
+func TestRunDiffRejectsAmbiguousBaseCall(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--base", "HEAD", "old.tex", "new.tex"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "--base cannot be combined") {
+		t.Fatalf("expected ambiguous --base message, got %q", stderr.String())
+	}
+}
+
+func TestRunDiffBadRefReportsResolveError(t *testing.T) {
+	repo := initDiffRepo(t)
+	writeDiffFile(t, repo, "paper.tex", diffFixture("Base paragraph for bad ref."))
+	gitDiff(t, repo, "add", "paper.tex")
+	gitDiff(t, repo, "commit", "-m", "base")
+	chdir(t, repo)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--base", "missing-ref", "--no-build", "--noconfig", "paper.tex"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	msg := stderr.String()
+	if !strings.Contains(msg, "resolve --base endpoints") || !strings.Contains(msg, "git show") {
+		t.Fatalf("expected git-show resolve error, got %q", msg)
+	}
+}
+
+func TestRunDiffPrimaryBaseBuildsReview(t *testing.T) {
+	repo := initDiffRepo(t)
+	writeDiffFile(t, repo, "paper.tex", diffFixture("Base paragraph has enough shared words for matching."))
+	gitDiff(t, repo, "add", "paper.tex")
+	gitDiff(t, repo, "commit", "-m", "base")
+	writeDiffFile(t, repo, "paper.tex", diffFixture("Dirty paragraph has enough shared words for matching."))
+	chdir(t, repo)
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--base", "HEAD", "--no-build", "--noconfig", "--stdout=none", "paper.tex"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if m.Review.Old.Kind != diffreview.GitBlob {
+		t.Fatalf("expected old endpoint to be git blob, got %s", m.Review.Old.Kind)
+	}
+	if m.Review.New.Kind != diffreview.WorkingFile {
+		t.Fatalf("expected new endpoint to be working file, got %s", m.Review.New.Kind)
+	}
+	if !m.Review.New.Editable {
+		t.Fatalf("expected working-tree new endpoint to be editable")
+	}
+	if m.AllowModifications || m.RequestedAllowModifications {
+		t.Fatalf("expected edit permission to be disabled without --allow-modifications")
+	}
+	if !m.NoBuild {
+		t.Fatalf("expected --no-build to be captured")
+	}
+	if m.Config == nil {
+		t.Fatalf("expected config to be loaded")
+	}
+	if m.Review.Stats.Total == 0 {
+		t.Fatalf("expected semantic pairs to be generated")
+	}
+	if !strings.Contains(string(m.Review.Old.Source), "Base paragraph") {
+		t.Fatalf("old source was not read from HEAD")
+	}
+	if !strings.Contains(string(m.Review.New.Source), "Dirty paragraph") {
+		t.Fatalf("new source was not read from working tree")
+	}
+}
+
+func TestRunDiffExplicitOldNewBuildsReview(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Original explicit endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("Updated explicit endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--no-build", "--noconfig", "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if m.Review.Old.Spec != oldPath {
+		t.Fatalf("expected old spec %q, got %q", oldPath, m.Review.Old.Spec)
+	}
+	if m.Review.New.Spec != newPath {
+		t.Fatalf("expected new spec %q, got %q", newPath, m.Review.New.Spec)
+	}
+	if !m.Review.New.Editable {
+		t.Fatalf("expected filesystem new endpoint to be editable")
+	}
+}
+
+func TestRunDiffAllowModificationsTogglesEditPermission(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Old editable endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("New editable endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--allow-modifications", "--no-build", "--noconfig", "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if !m.RequestedAllowModifications {
+		t.Fatalf("expected requested allow-modifications flag to be captured")
+	}
+	if !m.AllowModifications {
+		t.Fatalf("expected effective edit permission for filesystem new endpoint")
+	}
+}
+
+func TestRunDiffReadOnlyNewEndpointDisablesEditPermission(t *testing.T) {
+	repo := initDiffRepo(t)
+	writeDiffFile(t, repo, "paper.tex", diffFixture("Committed read-only endpoint paragraph."))
+	gitDiff(t, repo, "add", "paper.tex")
+	gitDiff(t, repo, "commit", "-m", "base")
+	chdir(t, repo)
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--allow-modifications", "--no-build", "--noconfig", "--stdout=none", "HEAD:paper.tex", "HEAD:paper.tex"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if m.Review.New.Editable {
+		t.Fatalf("expected git-blob new endpoint to be read-only")
+	}
+	if !m.RequestedAllowModifications {
+		t.Fatalf("expected requested allow-modifications flag to be captured")
+	}
+	if m.AllowModifications {
+		t.Fatalf("expected effective edit permission to stay disabled")
+	}
+	if !strings.Contains(m.Status, "new endpoint is read-only") {
+		t.Fatalf("expected read-only status message, got %q", m.Status)
+	}
+}
+
+func diffFixture(paragraph string) string {
+	return "\\documentclass{amsart}\n" +
+		"\\begin{document}\n" +
+		"\\section{Intro}\n" +
+		paragraph + "\n" +
+		"\\end{document}\n"
+}
+
+func initDiffRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	gitDiff(t, dir, "init")
+	gitDiff(t, dir, "config", "user.name", "Test User")
+	gitDiff(t, dir, "config", "user.email", "test@example.com")
+	gitDiff(t, dir, "config", "commit.gpgsign", "false")
+	return dir
+}
+
+func writeDiffFile(t *testing.T, repo, relPath, content string) {
+	t.Helper()
+	path := filepath.Join(repo, filepath.FromSlash(relPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", relPath, err)
+	}
+}
+
+func gitDiff(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+}
