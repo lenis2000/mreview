@@ -114,10 +114,41 @@ func TestResolveEndpointsMarksOnlyNewFilesystemEndpointEditable(t *testing.T) {
 
 	assert.Equal(t, WorkingFile, oldEndpoint.Kind)
 	assert.False(t, oldEndpoint.Editable)
+	assert.True(t, oldEndpoint.Materialized)
 	assert.Equal(t, []byte("old"), oldEndpoint.Source)
+	assert.NotEqual(t, oldPath, oldEndpoint.Path)
+	assert.Contains(t, filepath.ToSlash(oldEndpoint.Path), "/.mreview-diff/")
+	gotOld, err := os.ReadFile(oldEndpoint.Path)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("old"), gotOld)
+	info, err := os.Stat(oldEndpoint.Path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o400), info.Mode().Perm())
+
 	assert.Equal(t, WorkingFile, newEndpoint.Kind)
 	assert.True(t, newEndpoint.Editable)
+	assert.False(t, newEndpoint.Materialized)
+	assert.Equal(t, newPath, newEndpoint.Path)
 	assert.Equal(t, []byte("new"), newEndpoint.Source)
+}
+
+func TestMaterializeRejectsSymlinkedCacheDirectory(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "paper.tex", "committed\n")
+	git(t, repo, "add", "paper.tex")
+	git(t, repo, "commit", "-m", "base")
+	outside := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".mreview-diff", "safe-session"), 0o700))
+	require.NoError(t, os.Symlink(outside, filepath.Join(repo, ".mreview-diff", "safe-session", "HEAD")))
+
+	endpoint, err := Resolver{
+		WorkDir:   repo,
+		SessionID: "safe-session",
+	}.ResolveEndpoint(context.Background(), "HEAD:paper.tex", false)
+	require.Error(t, err)
+	assert.Empty(t, endpoint.Path)
+	_, outsideErr := os.Stat(filepath.Join(outside, "paper.tex"))
+	assert.True(t, os.IsNotExist(outsideErr), "materialization wrote through symlink")
 }
 
 func TestResolveEndpointRejectsMissingFilesystemSpec(t *testing.T) {

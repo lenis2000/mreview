@@ -13,6 +13,7 @@ import (
 
 	"mreview/pkg/diffreview"
 	"mreview/pkg/diffui"
+	"mreview/pkg/format"
 )
 
 func withStubDiffTUI(t *testing.T) *tea.Model {
@@ -172,6 +173,9 @@ func TestRunDiffExplicitOldNewBuildsReview(t *testing.T) {
 	if m.Review.Old.Spec != oldPath {
 		t.Fatalf("expected old spec %q, got %q", oldPath, m.Review.Old.Spec)
 	}
+	if !m.Review.Old.Materialized || m.Review.Old.Path == oldPath {
+		t.Fatalf("expected old filesystem endpoint to use a stable snapshot, got materialized=%v path=%q", m.Review.Old.Materialized, m.Review.Old.Path)
+	}
 	if m.Review.New.Spec != newPath {
 		t.Fatalf("expected new spec %q, got %q", newPath, m.Review.New.Spec)
 	}
@@ -227,6 +231,49 @@ func TestRunDiffSavesSidecarAndEmitsMarkdown(t *testing.T) {
 	}
 	if notes := saved.AnnotationNotes(); notes[finalPairID] != "final note" {
 		t.Fatalf("saved sidecar did not include final annotation state: %#v", notes)
+	}
+}
+
+func TestRunDiffLoadsFmtReportIssuesForNewPairs(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Original paragraph with enough shared words for matching.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("Updated paragraph with enough shared words for matching.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+	if err := format.WriteReport(format.ReportPath(newPath), format.Report{
+		File: filepath.Base(newPath),
+		Diags: []format.ReportDiag{{
+			RuleID:  "lint.todo-marker",
+			Line:    4,
+			Message: "TODO marker",
+		}},
+	}); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--no-build", "--noconfig", "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if len(m.Issues) == 0 {
+		t.Fatalf("expected fmt-report diagnostics mapped to diff pair IDs")
+	}
+	for pairID, issues := range m.Issues {
+		if m.Review.ByID[pairID] == nil {
+			t.Fatalf("issue keyed by non-pair ID %q: %#v", pairID, m.Issues)
+		}
+		if !strings.Contains(strings.Join(issues, "\n"), "lint.todo-marker") {
+			t.Fatalf("unexpected issue text for %q: %#v", pairID, issues)
+		}
+		return
 	}
 }
 

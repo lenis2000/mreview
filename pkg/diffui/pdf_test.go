@@ -89,6 +89,51 @@ func TestPrepareNewPDFBuildFailureHonorsDraft(t *testing.T) {
 	}
 }
 
+func TestDiffPDFReloadUsesFreshArtifactsAfterBuildWarning(t *testing.T) {
+	_, _, newPath := pdfReviewFixture(t)
+	samplePDF, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.pdf"))
+	if err != nil {
+		t.Fatalf("sample pdf path: %v", err)
+	}
+	sampleSyncTeX, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.synctex.gz"))
+	if err != nil {
+		t.Fatalf("sample synctex path: %v", err)
+	}
+	t.Setenv("SAMPLE_PDF", samplePDF)
+	t.Setenv("SAMPLE_SYNCTEX", sampleSyncTeX)
+	cmd := `cp "$SAMPLE_PDF" "$MREVIEW_BASENAME.pdf"; cp "$SAMPLE_SYNCTEX" "$MREVIEW_BASENAME.synctex.gz"; false`
+
+	msg := performDiffPDFReload(newPath, 1, nil, cmd, true)
+	if msg.NewPDF != nil {
+		defer func() { _ = msg.NewPDF.Close() }()
+	}
+	if msg.BuildStale {
+		t.Fatalf("fresh artifacts after build warning were marked stale: %#v", msg)
+	}
+	if msg.NewPDF == nil || msg.NewSyncTeX == nil {
+		t.Fatalf("fresh artifacts were not opened: %#v", msg)
+	}
+	if !strings.Contains(msg.Status, "rebuild failed") {
+		t.Fatalf("expected warning status, got %q", msg.Status)
+	}
+}
+
+func TestDiffPDFReloadDoesNotLoadAuxWhenArtifactsAreStale(t *testing.T) {
+	_, _, newPath := pdfReviewFixture(t)
+	auxPath := strings.TrimSuffix(newPath, filepath.Ext(newPath)) + ".aux"
+	if err := os.WriteFile(auxPath, []byte("\\newlabel{eq:x}{{1}{1}}\n"), 0o600); err != nil {
+		t.Fatalf("write aux: %v", err)
+	}
+
+	msg := performDiffPDFReload(newPath, 1, nil, "false", true)
+	if !msg.BuildStale {
+		t.Fatalf("expected stale build after failed reload without artifacts")
+	}
+	if msg.Aux != nil || msg.BBL != nil {
+		t.Fatalf("stale reload loaded build metadata: aux=%#v bbl=%#v", msg.Aux, msg.BBL)
+	}
+}
+
 func TestPrepareNewPDFSkipsBuildWhenLmkfIsWatching(t *testing.T) {
 	review, _, newPath := pdfReviewFixture(t)
 	statusFile := writeLmkfStatus(t, newPath)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -98,6 +99,50 @@ func SaveSidecar(path string, side *Sidecar) error {
 		return err
 	}
 	return persist.WriteFileAtomic(path, out)
+}
+
+// SaveSidecarMerging writes mem to path, merging in concurrent on-disk edits
+// when the sidecar changed since loadedModTime was observed.
+func SaveSidecarMerging(path string, base *Sidecar, loadedModTime time.Time, mem *Sidecar) error {
+	if !sidecarChangedOnDisk(path, loadedModTime) {
+		return SaveSidecar(path, mem)
+	}
+	disk, err := LoadSidecar(path)
+	if err != nil {
+		return err
+	}
+	return SaveSidecar(path, MergeSidecars(base, disk, mem))
+}
+
+func sidecarChangedOnDisk(path string, loadedModTime time.Time) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return !loadedModTime.IsZero()
+	}
+	if loadedModTime.IsZero() {
+		return true
+	}
+	return !info.ModTime().Equal(loadedModTime)
+}
+
+// MergeSidecars applies the in-memory changes since base on top of disk.
+// Annotations are keyed by pair ID; reviewed state is merged as set arithmetic:
+// (disk ∪ user-added) - user-removed.
+func MergeSidecars(base, disk, mem *Sidecar) *Sidecar {
+	if base == nil {
+		base = &Sidecar{}
+	}
+	if disk == nil {
+		disk = &Sidecar{}
+	}
+	if mem == nil {
+		mem = &Sidecar{}
+	}
+	out := cloneSidecar(mem)
+	out.Reviewed = mergeReviewedIDs(base.Reviewed, disk.Reviewed, mem.Reviewed)
+	out.Annotations = mergeDiffAnnotations(base.Annotations, disk.Annotations, mem.Annotations)
+	out.Detached = mergeDiffAnnotations(base.Detached, disk.Detached, mem.Detached)
+	return out
 }
 
 // MarshalSidecar serializes a sidecar as markdown with YAML frontmatter.
@@ -326,6 +371,120 @@ func (s *Sidecar) DeleteAnnotation(pairID string) bool {
 		}
 	}
 	return false
+}
+
+func cloneSidecar(s *Sidecar) *Sidecar {
+	if s == nil {
+		return &Sidecar{}
+	}
+	out := *s
+	out.Reviewed = append([]string(nil), s.Reviewed...)
+	out.Annotations = append([]Annotation(nil), s.Annotations...)
+	out.Detached = append([]Annotation(nil), s.Detached...)
+	return &out
+}
+
+func mergeReviewedIDs(base, disk, mem []string) []string {
+	baseSet := idSet(base)
+	memSet := idSet(mem)
+	out := idSet(disk)
+	for id := range memSet {
+		if _, ok := baseSet[id]; !ok {
+			out[id] = struct{}{}
+		}
+	}
+	for id := range baseSet {
+		if _, ok := memSet[id]; !ok {
+			delete(out, id)
+		}
+	}
+	ids := make([]string, 0, len(out))
+	for id := range out {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func mergeDiffAnnotations(base, disk, mem []Annotation) []Annotation {
+	baseByID := indexDiffAnnotations(base)
+	memByID := indexDiffAnnotations(mem)
+	out := append([]Annotation(nil), disk...)
+	pos := indexDiffAnnotationPositions(out)
+	upsert := func(a Annotation) {
+		if a.PairID == "" {
+			return
+		}
+		if i, ok := pos[a.PairID]; ok {
+			out[i] = a
+			return
+		}
+		pos[a.PairID] = len(out)
+		out = append(out, a)
+	}
+	remove := func(pairID string) {
+		i, ok := pos[pairID]
+		if !ok {
+			return
+		}
+		out = append(out[:i], out[i+1:]...)
+		pos = indexDiffAnnotationPositions(out)
+	}
+	for _, a := range mem {
+		baseA, hadBase := baseByID[a.PairID]
+		if !hadBase || !sameAnnotation(a, baseA) {
+			upsert(a)
+		}
+	}
+	for pairID := range baseByID {
+		if _, stillInMem := memByID[pairID]; !stillInMem {
+			remove(pairID)
+		}
+	}
+	return out
+}
+
+func idSet(ids []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			out[id] = struct{}{}
+		}
+	}
+	return out
+}
+
+func indexDiffAnnotations(xs []Annotation) map[string]Annotation {
+	out := make(map[string]Annotation, len(xs))
+	for _, a := range xs {
+		if a.PairID != "" {
+			out[a.PairID] = a
+		}
+	}
+	return out
+}
+
+func indexDiffAnnotationPositions(xs []Annotation) map[string]int {
+	out := make(map[string]int, len(xs))
+	for i, a := range xs {
+		if a.PairID != "" {
+			out[a.PairID] = i
+		}
+	}
+	return out
+}
+
+func sameAnnotation(a, b Annotation) bool {
+	return a.PairID == b.PairID &&
+		a.Status == b.Status &&
+		a.Side == b.Side &&
+		a.File == b.File &&
+		a.StartLine == b.StartLine &&
+		a.EndLine == b.EndLine &&
+		a.SourceQuote == b.SourceQuote &&
+		a.Note == b.Note
 }
 
 // ParseStdoutFormat maps the CLI stdout flag to a diff stdout format.

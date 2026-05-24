@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -201,4 +202,62 @@ func TestDiffStdoutJSONContainsPairs(t *testing.T) {
 
 	assert.Contains(t, out.String(), `"old_spec": "old.tex"`)
 	assert.Contains(t, out.String(), `"status": "changed"`)
+}
+
+func TestMergeSidecarsPreservesConcurrentDiskAndMemoryChanges(t *testing.T) {
+	base := &Sidecar{
+		Reviewed: []string{"a", "remove"},
+		Annotations: []Annotation{
+			{PairID: "edit", Note: "old note"},
+			{PairID: "delete", Note: "delete me"},
+		},
+	}
+	disk := &Sidecar{
+		Reviewed: []string{"a", "external"},
+		Annotations: []Annotation{
+			{PairID: "external", Note: "external note"},
+		},
+	}
+	mem := &Sidecar{
+		OldSpec:      "old.tex",
+		NewSpec:      "new.tex",
+		CursorPairID: "cursor",
+		Reviewed:     []string{"a", "memory"},
+		Annotations: []Annotation{
+			{PairID: "edit", Note: "edited note"},
+			{PairID: "memory", Note: "memory note"},
+		},
+	}
+
+	merged := MergeSidecars(base, disk, mem)
+	reviewed := merged.ReviewedSet()
+	for _, id := range []string{"a", "external", "memory"} {
+		assert.True(t, reviewed[id], "merged reviewed missing %q: %#v", id, merged.Reviewed)
+	}
+	assert.False(t, reviewed["remove"], "user-removed reviewed ID survived: %#v", merged.Reviewed)
+	notes := merged.AnnotationNotes()
+	assert.Equal(t, "external note", notes["external"])
+	assert.Equal(t, "edited note", notes["edit"])
+	assert.Equal(t, "memory note", notes["memory"])
+	assert.Empty(t, notes["delete"])
+	assert.Equal(t, "cursor", merged.CursorPairID)
+	assert.Equal(t, "old.tex", merged.OldSpec)
+	assert.Equal(t, "new.tex", merged.NewSpec)
+}
+
+func TestSaveSidecarMergingMergesFileCreatedDuringSession(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "review.md")
+	require.NoError(t, SaveSidecar(path, &Sidecar{
+		Annotations: []Annotation{{PairID: "external", Note: "external note"}},
+	}))
+
+	require.NoError(t, SaveSidecarMerging(path, &Sidecar{}, time.Time{}, &Sidecar{
+		Annotations: []Annotation{{PairID: "memory", Note: "memory note"}},
+	}))
+
+	saved, err := LoadSidecar(path)
+	require.NoError(t, err)
+	notes := saved.AnnotationNotes()
+	assert.Equal(t, "external note", notes["external"])
+	assert.Equal(t, "memory note", notes["memory"])
 }

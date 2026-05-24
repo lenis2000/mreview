@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
 
 	"mreview/pkg/diffreview"
 	"mreview/pkg/diffui"
+	"mreview/pkg/format"
 	"mreview/pkg/ui"
 )
 
@@ -123,7 +125,12 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: load sidecar %q: %v\n", sidecarPath, sideErr)
 		return 1
 	}
+	loadedSidecarMTime := sidecarModTime(sidecarPath)
 	sidecar := diffreview.RemapSidecar(loadedSidecar, review)
+	issues, issuesErr := diffIssuesForReview(review)
+	if issuesErr != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: warning: load fmt-report: %v\n", issuesErr)
+	}
 
 	allowEdits := o.AllowModifications && review.New.Editable
 	model := diffui.New(review, diffui.Options{
@@ -137,6 +144,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		BuildCmd:           buildCmd,
 		SidecarPath:        sidecarPath,
 		StdoutFormat:       o.Stdout,
+		Issues:             issues,
 		OpenZed:            o.OpenZed,
 		PDF:                pdfArtifacts.PDF,
 		Synctex:            pdfArtifacts.Synctex,
@@ -158,7 +166,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		finalReview = fm.Review
 		finalPDF = fm.PDF
 	}
-	if err := diffreview.SaveSidecar(sidecarPath, finalSidecar); err != nil {
+	if err := diffreview.SaveSidecarMerging(sidecarPath, sidecar, loadedSidecarMTime, finalSidecar); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
 		return 1
 	}
@@ -167,6 +175,14 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func sidecarModTime(path string) time.Time {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
 }
 
 func pdfArtifactPDFStatus(a *diffui.PDFArtifacts) string {
@@ -241,4 +257,39 @@ func initialDiffStatus(o diffOpts, review *diffreview.Review) string {
 		return "new endpoint is read-only; run from the branch and use --base REV path.tex"
 	}
 	return ""
+}
+
+func diffIssuesForReview(review *diffreview.Review) (map[string][]string, error) {
+	if review == nil || review.NewDoc == nil || review.New.Kind != diffreview.WorkingFile || review.New.Materialized || review.New.Path == "" {
+		return nil, nil
+	}
+	ext, err := ui.LoadExternalIssues(format.ReportPath(review.New.Path), review.NewDoc)
+	if err != nil || len(ext) == 0 {
+		return nil, err
+	}
+	issues := make(map[string][]string)
+	for _, pair := range review.Pairs {
+		if pair.New == nil {
+			continue
+		}
+		diags := ext[pair.New.ID]
+		if len(diags) == 0 {
+			continue
+		}
+		for _, diag := range diags {
+			issues[pair.ID] = append(issues[pair.ID], diffIssueText(diag))
+		}
+	}
+	return issues, nil
+}
+
+func diffIssueText(diag format.ReportDiag) string {
+	switch {
+	case diag.RuleID != "" && diag.Message != "":
+		return diag.RuleID + ": " + diag.Message
+	case diag.RuleID != "":
+		return diag.RuleID
+	default:
+		return diag.Message
+	}
 }

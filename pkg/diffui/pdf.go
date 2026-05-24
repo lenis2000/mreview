@@ -171,16 +171,18 @@ func performDiffPDFReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string
 			}
 			if err != nil {
 				status = "rebuild failed — " + shortDiffBuildWarning(err)
-				buildStale = true
+				if diffStartupArtifactsStale(path, res.PDFPath, res.SyncTeXPath) {
+					buildStale = true
+				}
 			} else {
 				status = "rebuilt new PDF"
 			}
 		}
 	}
-	aux, _ := parser.LoadAux(res.AuxPath)
-	bbl, _ := parser.LoadBBL(res.BBLPath)
 	var pdfDoc *pdf.Doc
 	var idx *synctex.Index
+	var aux map[string]parser.AuxEntry
+	var bbl []parser.BibEntry
 	if !buildStale {
 		var openStatus string
 		var openStale bool
@@ -190,6 +192,10 @@ func performDiffPDFReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string
 		}
 		if openStale {
 			buildStale = true
+		}
+		if !buildStale {
+			aux, _ = parser.LoadAux(res.AuxPath)
+			bbl, _ = parser.LoadBBL(res.BBLPath)
 		}
 	}
 	return diffPDFReloadMsg{
@@ -211,7 +217,7 @@ func (m Model) applyPDFReload(msg diffPDFReloadMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.Review != nil && m.Review.NewDoc != nil {
+	if !msg.BuildStale && m.Review != nil && m.Review.NewDoc != nil {
 		if msg.Aux != nil {
 			parser.ApplyAux(m.Review.NewDoc, msg.Aux)
 		}

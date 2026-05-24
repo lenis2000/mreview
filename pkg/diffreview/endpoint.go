@@ -107,6 +107,12 @@ func (r Resolver) ResolveEndpoints(ctx context.Context, oldSpec, newSpec string)
 	if err != nil {
 		return Endpoint{}, Endpoint{}, fmt.Errorf("resolve old endpoint: %w", err)
 	}
+	if oldEndpoint.Kind == WorkingFile {
+		oldEndpoint, err = r.materializeWorkingSnapshot(oldEndpoint)
+		if err != nil {
+			return Endpoint{}, Endpoint{}, fmt.Errorf("materialize old endpoint: %w", err)
+		}
+	}
 	newEndpoint, err := r.ResolveEndpoint(ctx, newSpec, true)
 	if err != nil {
 		return Endpoint{}, Endpoint{}, fmt.Errorf("resolve new endpoint: %w", err)
@@ -193,17 +199,9 @@ func (r Resolver) resolveGitBlobInRepo(ctx context.Context, repoRoot, spec, rev,
 	if err != nil {
 		return Endpoint{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(matPath), 0o700); err != nil {
-		return Endpoint{}, fmt.Errorf("create materialization directory: %w", err)
-	}
-	_ = os.Chmod(filepath.Join(repoRoot, ".mreview-diff"), 0o700)
-	_ = os.Chmod(filepath.Join(repoRoot, ".mreview-diff", sessionID), 0o700)
-	_ = os.Chmod(filepath.Dir(matPath), 0o700)
-	_ = os.Chmod(matPath, 0o600)
-	if err := os.WriteFile(matPath, source, 0o600); err != nil {
+	if err := writeMaterializedFile(repoRoot, matPath, source); err != nil {
 		return Endpoint{}, fmt.Errorf("materialize %q: %w", spec, err)
 	}
-	_ = os.Chmod(matPath, 0o400)
 
 	return Endpoint{
 		Kind:         GitBlob,
@@ -216,6 +214,32 @@ func (r Resolver) resolveGitBlobInRepo(ctx context.Context, repoRoot, spec, rev,
 		Source:       source,
 		Materialized: true,
 	}, nil
+}
+
+func (r Resolver) materializeWorkingSnapshot(endpoint Endpoint) (Endpoint, error) {
+	root := endpoint.RepoRoot
+	if root == "" {
+		var err error
+		root, err = r.workDir()
+		if err != nil {
+			return Endpoint{}, err
+		}
+	}
+	relPath := endpoint.RelPath
+	if relPath == "" {
+		relPath = filepath.Base(endpoint.Path)
+	}
+	matPath, err := materializePath(root, r.sessionID(), "old-file", relPath)
+	if err != nil {
+		return Endpoint{}, err
+	}
+	if err := writeMaterializedFile(root, matPath, endpoint.Source); err != nil {
+		return Endpoint{}, fmt.Errorf("materialize %q: %w", endpoint.Spec, err)
+	}
+	endpoint.Path = matPath
+	endpoint.Editable = false
+	endpoint.Materialized = true
+	return endpoint, nil
 }
 
 func (r Resolver) workDir() (string, error) {
@@ -318,6 +342,93 @@ func materializePath(repoRoot, sessionID, rev, relPath string) (string, error) {
 		return "", fmt.Errorf("materialized path must be repository-relative: %q", relPath)
 	}
 	return filepath.Join(repoRoot, ".mreview-diff", sessionID, revComponent, cleanRel), nil
+}
+
+func writeMaterializedFile(root, target string, data []byte) error {
+	root = filepath.Clean(root)
+	baseDir := filepath.Join(root, ".mreview-diff")
+	rel, err := filepath.Rel(baseDir, target)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return fmt.Errorf("materialized target escapes .mreview-diff: %q", target)
+	}
+	dir := filepath.Dir(target)
+	if err := ensureDirNoSymlinks(root, dir, 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(target); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("materialized target is a symlink: %q", target)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("materialized target is not a regular file: %q", target)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	tmp, err := os.CreateTemp(dir, ".mreview-materialized-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o400); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
+func ensureDirNoSymlinks(root, dir string, mode os.FileMode) error {
+	root = filepath.Clean(root)
+	dir = filepath.Clean(dir)
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return fmt.Errorf("materialization directory escapes root: %q", dir)
+	}
+	cur := root
+	if rel == "." {
+		return nil
+	}
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(cur, mode); err != nil && !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			info, err = os.Lstat(cur)
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("materialization directory is a symlink: %q", cur)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("materialization path is not a directory: %q", cur)
+		}
+		_ = os.Chmod(cur, mode)
+	}
+	return nil
 }
 
 func safePathComponent(s string) string {
