@@ -123,14 +123,16 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	finalSidecar := model.FinalSidecar()
+	finalReview := review
 	if fm, ok := final.(diffui.Model); ok {
 		finalSidecar = fm.FinalSidecar()
+		finalReview = fm.Review
 	}
 	if err := diffreview.SaveSidecar(sidecarPath, finalSidecar); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
 		return 1
 	}
-	if err := diffreview.Emit(stdout, finalSidecar, review, stdoutFmt); err != nil {
+	if err := diffreview.Emit(stdout, finalSidecar, finalReview, stdoutFmt); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: emit: %v\n", err)
 		return 1
 	}

@@ -2,9 +2,11 @@ package diffui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
@@ -84,6 +86,10 @@ type Model struct {
 
 	Cursor int
 	Filter Filter
+	// SourceLineCursor is 1-based within the selected new block. The current
+	// diff skeleton does not expose source-line navigation yet, so it defaults
+	// to the first line and is kept here for edit anchoring.
+	SourceLineCursor int
 
 	Width, Height int
 	Status        string
@@ -107,8 +113,13 @@ type Model struct {
 	pendingG bool
 	quitting bool
 
-	Popup   *AnnotationPopup
-	Pending *PendingDelete
+	Popup    *AnnotationPopup
+	LineEdit *LineEditPopup
+	Pending  *PendingDelete
+
+	EditUndo []EditSnapshot
+	EditRedo []EditSnapshot
+	OpSeq    int
 }
 
 // AnnotationPopup is the block-level diff annotation editor.
@@ -156,6 +167,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		SidecarPath:        opts.SidecarPath,
 		StdoutFormat:       opts.StdoutFormat,
 		OpenZed:            opts.OpenZed,
+		SourceLineCursor:   1,
 	}
 	if side.CursorPairID != "" {
 		if idx := pairIndexByID(review, side.CursorPairID); idx >= 0 {
@@ -164,6 +176,47 @@ func New(review *diffreview.Review, opts Options) Model {
 	}
 	m.snapCursor()
 	return m
+}
+
+// EditSnapshot captures a complete pre-edit copy of the new endpoint so
+// diff-mode undo/redo can restore only that file.
+type EditSnapshot struct {
+	Path     string
+	Bytes    []byte
+	Label    string
+	Sequence int
+}
+
+// LineEditPopup hosts the one-line inline editor for diff mode.
+type LineEditPopup struct {
+	TI           textinput.Model
+	AbsoluteLine int
+	Original     string
+	Indent       string
+}
+
+const maxEditUndo = 100
+
+func (m *Model) pushEditSnapshot(label string) error {
+	if m.Review == nil || m.Review.New.Path == "" {
+		return fmt.Errorf("no new source file")
+	}
+	data, err := os.ReadFile(m.Review.New.Path)
+	if err != nil {
+		return err
+	}
+	m.OpSeq++
+	m.EditUndo = append(m.EditUndo, EditSnapshot{
+		Path:     m.Review.New.Path,
+		Bytes:    data,
+		Label:    label,
+		Sequence: m.OpSeq,
+	})
+	if len(m.EditUndo) > maxEditUndo {
+		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
+	}
+	m.EditRedo = nil
+	return nil
 }
 
 // Init implements tea.Model.

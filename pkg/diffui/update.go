@@ -16,7 +16,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Width = msg.Width
 		m.Height = msg.Height
 		return m, nil
+	case diffEditFinishedMsg:
+		return m.applyEditFinished(msg)
 	case tea.KeyMsg:
+		if m.LineEdit != nil {
+			return m.updateLineEditPopup(msg)
+		}
 		if m.Popup != nil {
 			return m.updateAnnotationPopup(msg)
 		}
@@ -69,6 +74,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startAnnotation(true)
 	case "d":
 		return m.beginDelete(), nil
+	case "E":
+		return m.editInExternalEditor()
+	case "e":
+		return m.startLineEdit()
+	case "u":
+		return m.undoEdit()
+	case "ctrl+r":
+		return m.redoEdit()
 	case "j", "down":
 		m.moveVisible(1)
 	case "k", "up":

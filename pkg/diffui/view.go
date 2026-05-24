@@ -28,6 +28,9 @@ func (m Model) View() string {
 	if m.ShowHelp {
 		sourceTitle = "Help"
 		sourceBody = RenderHelpBody(sourceW-2, m.AllowModifications)
+	} else if m.LineEdit != nil {
+		sourceTitle = "Line Edit"
+		sourceBody = m.LineEdit.TI.View()
 	} else if m.Popup != nil {
 		sourceTitle = "Annotation"
 		sourceBody = m.Popup.TA.View()

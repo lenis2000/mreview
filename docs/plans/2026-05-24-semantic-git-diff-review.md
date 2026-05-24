@@ -350,25 +350,25 @@ Requirements:
 
 Critical behavior:
 
-- [ ] `E` opens only `Review.New.Path` if `AllowModifications` is true and `Review.New.Editable` is true.
-- [ ] `e` inline-edits only the selected line in `Review.New.Path` if `AllowModifications` is true and current pair has a new block.
-- [ ] Without `--allow-modifications`, both edit actions are disabled with status: `edit disabled; rerun with --allow-modifications`.
-- [ ] If current pair is deleted-only, both edit actions are disabled with status: `deleted block has no new source to edit`.
-- [ ] If new endpoint is read-only (`REV:path`), edit actions are disabled with status: `new endpoint is read-only; use --base REV path.tex from the branch you want to edit`.
-- [ ] Old endpoint is never opened by `E` and never written by `e`.
-- [ ] Undo/redo snapshots apply only to the new file.
-- [ ] After edit returns/submits, re-read new file, reparse new doc, realign against the unchanged old doc/source, reload sidecar mappings, and keep cursor anchored to the same pair when possible.
-- [ ] Existing normal-review editor behavior must not regress. If helper extraction from `pkg/ui/editor.go` is needed, do it minimally and keep existing tests passing.
+- [x] `E` opens only `Review.New.Path` if `AllowModifications` is true and `Review.New.Editable` is true.
+- [x] `e` inline-edits only the selected line in `Review.New.Path` if `AllowModifications` is true and current pair has a new block.
+- [x] Without `--allow-modifications`, both edit actions are disabled with status: `edit disabled; rerun with --allow-modifications`.
+- [x] If current pair is deleted-only, both edit actions are disabled with status: `deleted block has no new source to edit`.
+- [x] If new endpoint is read-only (`REV:path`), edit actions are disabled with status: `new endpoint is read-only; use --base REV path.tex from the branch you want to edit`.
+- [x] Old endpoint is never opened by `E` and never written by `e`.
+- [x] Undo/redo snapshots apply only to the new file.
+- [x] After edit returns/submits, re-read new file, reparse new doc, realign against the unchanged old doc/source, reload sidecar mappings, and keep cursor anchored to the same pair when possible.
+- [x] Existing normal-review editor behavior must not regress. If helper extraction from `pkg/ui/editor.go` is needed, do it minimally and keep existing tests passing.
 
 Tests:
 
-- [ ] Full edit command argv points at new path, never old path.
-- [ ] Inline edit rewrites new file only.
-- [ ] Without `--allow-modifications`, edit keys refuse without writing either file.
-- [ ] Deleted-only row refuses edit.
-- [ ] Read-only new endpoint refuses edit.
-- [ ] Reload after edit recomputes pair status and preserves reviewed/annotation state.
-- [ ] Run `go test ./pkg/diffui ./pkg/ui ./cmd/mreview`.
+- [x] Full edit command argv points at new path, never old path.
+- [x] Inline edit rewrites new file only.
+- [x] Without `--allow-modifications`, edit keys refuse without writing either file.
+- [x] Deleted-only row refuses edit.
+- [x] Read-only new endpoint refuses edit.
+- [x] Reload after edit recomputes pair status and preserves reviewed/annotation state.
+- [x] Run `go test ./pkg/diffui ./pkg/ui ./cmd/mreview`.
 
 ### Task 7: Zed comparison action
 
