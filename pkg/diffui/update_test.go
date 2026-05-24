@@ -64,6 +64,9 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"Z opens old+new in Zed",
+		"u undo last diff-mode edit",
+		"ctrl+r redo undone diff-mode edit",
+		"[/] select previous/next new source line",
 	} {
 		if !strings.Contains(help, needle) {
 			t.Fatalf("help missing %q in:\n%s", needle, help)
@@ -101,13 +104,12 @@ func TestToggleReviewedAutoAdvancesChangedAndUnreviewedFilters(t *testing.T) {
 func TestAnnotationAddEditAndDelete(t *testing.T) {
 	m := New(fixtureReview(), Options{})
 
-	next, _ := m.startAnnotation(false)
-	m = next.(Model)
+	m = pressKey(t, m, "a")
 	if m.Popup == nil || m.Popup.PairID != "changed" {
 		t.Fatalf("expected annotation popup for changed pair")
 	}
-	m.Popup.TA.SetValue("first note")
-	m = m.submitAnnotation()
+	m = pressRunes(t, m, "first note")
+	m = pressSpecial(t, m, tea.KeyEnter)
 	if got := m.Annotations["changed"]; got != "first note" {
 		t.Fatalf("annotation note = %q, want first note", got)
 	}
@@ -115,19 +117,18 @@ func TestAnnotationAddEditAndDelete(t *testing.T) {
 		t.Fatalf("sidecar annotation was not updated: %#v", notes)
 	}
 
-	next, _ = m.startAnnotation(true)
-	m = next.(Model)
+	m = pressSpecial(t, m, tea.KeyCtrlA)
 	m.Popup.TA.SetValue("updated note")
-	m = m.submitAnnotation()
+	m = pressSpecial(t, m, tea.KeyEnter)
 	if got := m.Annotations["changed"]; got != "updated note" {
 		t.Fatalf("annotation note = %q, want updated note", got)
 	}
 
-	m = m.beginDelete()
+	m = pressKey(t, m, "d")
 	if m.Pending == nil {
 		t.Fatalf("expected pending delete confirmation")
 	}
-	m = m.confirmDelete(true)
+	m = pressKey(t, m, "y")
 	if _, ok := m.Annotations["changed"]; ok {
 		t.Fatalf("annotation was not removed from map")
 	}
@@ -136,10 +137,52 @@ func TestAnnotationAddEditAndDelete(t *testing.T) {
 	}
 }
 
+func TestSourceLineSelectionDrivesInlineEditLine(t *testing.T) {
+	m := New(fixtureReview(), Options{AllowModifications: true, RequestedAllowMods: true})
+	m.Cursor = pairIndexByID(m.Review, "changed")
+	if got := m.currentNewLine(); got != 3 {
+		t.Fatalf("initial selected line = %d, want 3", got)
+	}
+	m = pressKey(t, m, "]")
+	if got := m.currentNewLine(); got != 4 {
+		t.Fatalf("after ] selected line = %d, want 4", got)
+	}
+	if !strings.Contains(m.Status, "4") {
+		t.Fatalf("source-line status = %q, want line 4", m.Status)
+	}
+	m = pressKey(t, m, "j")
+	if got := m.SourceLineCursor; got != 1 {
+		t.Fatalf("pair navigation should reset source cursor to 1, got %d", got)
+	}
+}
+
 func pressKey(t *testing.T, m Model, key string) Model {
 	t.Helper()
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	if len([]rune(key)) == 1 && key[0] < 32 {
+		msg = tea.KeyMsg{Type: tea.KeyType(key[0])}
+	}
 	next, _ := m.Update(msg)
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	return nm
+}
+
+func pressRunes(t *testing.T, m Model, value string) Model {
+	t.Helper()
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(value)})
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	return nm
+}
+
+func pressSpecial(t *testing.T, m Model, typ tea.KeyType) Model {
+	t.Helper()
+	next, _ := m.Update(tea.KeyMsg{Type: typ})
 	nm, ok := next.(Model)
 	if !ok {
 		t.Fatalf("unexpected model type %T", next)

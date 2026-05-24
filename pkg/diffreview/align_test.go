@@ -56,6 +56,24 @@ This paragraph spans   several words.
 	assert.Equal(t, NormalizeSourceForMatch(pair.Old.Source), NormalizeSourceForMatch(pair.New.Source))
 }
 
+func TestAlignUnlabeledParagraphsMatchByFuzzyEdit(t *testing.T) {
+	oldSrc := `\section{Intro}
+
+This paragraph has enough shared words to match conservatively before the edit.
+`
+	newSrc := `\section{Intro}
+
+This paragraph has enough shared words to match conservatively after the edit.
+`
+	review := buildReviewForTest(t, oldSrc, newSrc)
+
+	pair := requireParagraphPairContaining(t, review, "This paragraph")
+	require.NotNil(t, pair.Old)
+	require.NotNil(t, pair.New)
+	assert.Equal(t, Changed, pair.Status)
+	assert.Equal(t, pair.Old.ID, pair.ID)
+}
+
 func TestAlignAddedAndDeletedParagraphsAppearNearNeighbors(t *testing.T) {
 	oldSrc := `\section{Intro}
 

@@ -191,13 +191,7 @@ func DefaultSidecarPath(review *Review) string {
 	if review == nil {
 		return "mreview-diff.md"
 	}
-	newPath := review.New.Path
-	if newPath == "" {
-		newPath = review.New.RelPath
-	}
-	if newPath == "" {
-		newPath = safePathComponent(review.New.Spec)
-	}
+	newPath := defaultSidecarNewPath(review.New)
 	if newPath == "" {
 		newPath = "mreview-diff"
 	}
@@ -212,6 +206,16 @@ func DefaultSidecarPath(review *Review) string {
 		base = "old"
 	}
 	return newPath + ".mreview-diff." + base + ".md"
+}
+
+func defaultSidecarNewPath(endpoint Endpoint) string {
+	if endpoint.Kind == WorkingFile && !endpoint.Materialized && endpoint.Path != "" {
+		return endpoint.Path
+	}
+	if endpoint.RelPath != "" {
+		return endpoint.RelPath
+	}
+	return safePathComponent(endpoint.Spec)
 }
 
 // AnnotationForPair builds a block-level annotation record for pair.

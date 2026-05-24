@@ -335,15 +335,14 @@ func stripLaTeXCommands(s string) string {
 	runes := []rune(s)
 	i := 0
 	for i < len(runes) {
-		r := runes[i]
-		switch {
-		case r == '\\':
+		switch r := runes[i]; r {
+		case '\\':
 			// Skip \command (letters after backslash).
 			i++
 			for i < len(runes) && unicode.IsLetter(runes[i]) {
 				i++
 			}
-		case r == '{' || r == '}' || r == '$' || r == '~' || r == '%':
+		case '{', '}', '$', '~', '%':
 			i++
 		default:
 			b.WriteRune(r)

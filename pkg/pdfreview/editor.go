@@ -48,7 +48,7 @@ func (m Model) startEditText() (tea.Model, tea.Cmd) {
 	id := c.ID
 	return m, tea.ExecProcess(cmd.process, func(rerr error) tea.Msg {
 		if cmd.tty != nil {
-			cmd.tty.Close()
+			_ = cmd.tty.Close()
 		}
 		return editFinishedMsg{mode: editText, id: id, path: tmp, err: rerr}
 	})
@@ -75,7 +75,7 @@ func (m Model) startEditYAML() (tea.Model, tea.Cmd) {
 	id := c.ID
 	return m, tea.ExecProcess(cmd.process, func(rerr error) tea.Msg {
 		if cmd.tty != nil {
-			cmd.tty.Close()
+			_ = cmd.tty.Close()
 		}
 		return editFinishedMsg{mode: editYAML, id: id, path: tmp, err: rerr}
 	})
@@ -83,7 +83,7 @@ func (m Model) startEditYAML() (tea.Model, tea.Cmd) {
 
 // applyEditFinished is called by Update on editFinishedMsg.
 func (m Model) applyEditFinished(msg editFinishedMsg) (tea.Model, tea.Cmd) {
-	defer os.Remove(msg.path)
+	defer func() { _ = os.Remove(msg.path) }()
 	if msg.err != nil {
 		m.Status = "edit: editor exited with error: " + msg.err.Error()
 		return m, clearStatusAfter(4 * time.Second)
@@ -215,12 +215,12 @@ func writeTmp(pattern string, data []byte) (string, error) {
 		return "", err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil

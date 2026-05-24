@@ -389,7 +389,7 @@ func TestBuildOutline_Depth_SectionShallowerThanChildren(t *testing.T) {
 	doc := outlineDoc(t)
 	rows := BuildOutline(doc, nil, FilterAll)
 
-	var sectionDepth, theoremDepth int = -1, -1
+	sectionDepth, theoremDepth := -1, -1
 	for _, r := range rows {
 		b := doc.ByID[r.BlockID]
 		switch b.Kind {
@@ -717,8 +717,8 @@ func TestLoadExternalIssues_MapsDiagsToBlocks(t *testing.T) {
 	dir := t.TempDir()
 	reportPath := filepath.Join(dir, "paper.tex.fmt-report.md")
 	rpt := format.Report{
-		File: "paper.tex",
-		Tier: "safe",
+		File:   "paper.tex",
+		Tier:   "safe",
 		Verify: "skipped",
 		Diags: []format.ReportDiag{
 			{RuleID: "lint.thm-unlabeled", Line: thm.StartLine, Message: fmt.Sprintf("unlabeled theorem at L%d", thm.StartLine)},
@@ -771,4 +771,3 @@ func TestFindOwningBlock(t *testing.T) {
 	bid := findOwningBlock(thm.StartLine, doc)
 	assert.Equal(t, thm.ID, bid)
 }
-

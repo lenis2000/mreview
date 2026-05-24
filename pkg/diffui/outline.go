@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"mreview/pkg/diffreview"
-	"mreview/pkg/parser"
 )
 
 // OutlineRow is one visible semantic pair in the diff outline.
@@ -208,16 +207,6 @@ func firstNonBlankLine(source string) string {
 		}
 	}
 	return ""
-}
-
-func blockKindName(block *parser.Block) string {
-	if block == nil {
-		return ""
-	}
-	if block.EnvName != "" {
-		return block.EnvName
-	}
-	return block.Kind.String()
 }
 
 type stats struct {

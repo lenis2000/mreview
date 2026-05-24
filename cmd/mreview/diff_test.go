@@ -17,10 +17,20 @@ import (
 
 func withStubDiffTUI(t *testing.T) *tea.Model {
 	t.Helper()
+	return withStubDiffTUIFinal(t, nil)
+}
+
+func withStubDiffTUIFinal(t *testing.T, mutate func(diffui.Model) diffui.Model) *tea.Model {
+	t.Helper()
 	saved := runDiffTUI
 	var captured tea.Model
 	runDiffTUI = func(model tea.Model, _, _ io.Writer) (tea.Model, error) {
 		captured = model
+		if mutate != nil {
+			if m, ok := model.(diffui.Model); ok {
+				return mutate(m), nil
+			}
+		}
 		return model, nil
 	}
 	t.Cleanup(func() { runDiffTUI = saved })
@@ -182,14 +192,27 @@ func TestRunDiffSavesSidecarAndEmitsMarkdown(t *testing.T) {
 		t.Fatalf("write new: %v", err)
 	}
 
-	_ = withStubDiffTUI(t)
+	var finalPairID string
+	_ = withStubDiffTUIFinal(t, func(m diffui.Model) diffui.Model {
+		pair := m.CurrentPair()
+		if pair == nil {
+			return m
+		}
+		finalPairID = pair.ID
+		m.Reviewed[pair.ID] = true
+		m.Sidecar.SetReviewed(pair.ID, true)
+		m.Annotations[pair.ID] = "final note"
+		m.Sidecar.UpsertAnnotation(diffreview.AnnotationForPair(m.Review, pair, "final note"))
+		return m
+	})
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"diff", "--no-build", "--noconfig", "--sidecar", sidecarPath, "--stdout=md", oldPath, newPath}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "Old: "+oldPath) || !strings.Contains(out, "New: "+newPath) || !strings.Contains(out, "- changed") {
+	if !strings.Contains(out, "Old: "+oldPath) || !strings.Contains(out, "New: "+newPath) ||
+		!strings.Contains(out, "- changed") || !strings.Contains(out, "final note") {
 		t.Fatalf("stdout markdown missing diff summary:\n%s", out)
 	}
 	saved, err := diffreview.LoadSidecar(sidecarPath)
@@ -198,6 +221,12 @@ func TestRunDiffSavesSidecarAndEmitsMarkdown(t *testing.T) {
 	}
 	if saved.OldSpec != oldPath || saved.NewSpec != newPath {
 		t.Fatalf("saved sidecar specs = old %q new %q", saved.OldSpec, saved.NewSpec)
+	}
+	if finalPairID == "" || !saved.ReviewedSet()[finalPairID] {
+		t.Fatalf("saved sidecar did not include final reviewed state: %#v", saved.Reviewed)
+	}
+	if notes := saved.AnnotationNotes(); notes[finalPairID] != "final note" {
+		t.Fatalf("saved sidecar did not include final annotation state: %#v", notes)
 	}
 }
 

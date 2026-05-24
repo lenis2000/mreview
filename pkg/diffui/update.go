@@ -1,6 +1,7 @@
 package diffui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -98,6 +99,12 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.undoEdit()
 	case "ctrl+r":
 		return m.redoEdit()
+	case "[":
+		m.moveSourceLine(-1)
+		return m.withPDFRender()
+	case "]":
+		m.moveSourceLine(1)
+		return m.withPDFRender()
 	case "j", "down":
 		m.moveVisible(1)
 		return m.withPDFRender()
@@ -155,6 +162,7 @@ func (m *Model) advanceAfterReviewed(visibleBefore []int, posBefore int) {
 	case FilterChanged:
 		if posBefore+1 < len(visibleBefore) {
 			m.Cursor = visibleBefore[posBefore+1]
+			m.resetSourceLine()
 		}
 	case FilterUnreviewed:
 		visibleAfter := m.visibleIndices()
@@ -166,6 +174,7 @@ func (m *Model) advanceAfterReviewed(visibleBefore []int, posBefore int) {
 			posBefore = len(visibleAfter) - 1
 		}
 		m.Cursor = visibleAfter[posBefore]
+		m.resetSourceLine()
 	}
 }
 
@@ -311,6 +320,7 @@ func (m *Model) moveVisible(delta int) {
 		pos = len(visible) - 1
 	}
 	m.Cursor = visible[pos]
+	m.resetSourceLine()
 	m.Status = ""
 }
 
@@ -321,6 +331,7 @@ func (m *Model) moveToFirst() {
 		return
 	}
 	m.Cursor = visible[0]
+	m.resetSourceLine()
 	m.Status = ""
 }
 
@@ -331,6 +342,7 @@ func (m *Model) moveToLast() {
 		return
 	}
 	m.Cursor = visible[len(visible)-1]
+	m.resetSourceLine()
 	m.Status = ""
 }
 
@@ -370,11 +382,67 @@ func (m *Model) moveSection(direction int) {
 		next := sectionKey(m.Review.Pairs[visible[i]])
 		if next != "" && next != current {
 			m.Cursor = visible[i]
+			m.resetSourceLine()
 			m.Status = ""
 			return
 		}
 	}
 	m.Status = "no more sections"
+}
+
+func (m *Model) moveSourceLine(delta int) {
+	pair := m.CurrentPair()
+	if pair == nil || pair.New == nil {
+		m.Status = "no new source line for current pair"
+		return
+	}
+	count := len(blockSourceLines(pair.New))
+	if count == 0 {
+		m.Status = "no new source line for current pair"
+		return
+	}
+	if m.SourceLineCursor < 1 {
+		m.SourceLineCursor = 1
+	}
+	m.SourceLineCursor += delta
+	if m.SourceLineCursor < 1 {
+		m.SourceLineCursor = 1
+	}
+	if m.SourceLineCursor > count {
+		m.SourceLineCursor = count
+	}
+	m.Status = fmtSourceLineStatus(pair.New.StartLine + m.SourceLineCursor - 1)
+}
+
+func (m *Model) snapSourceLine() {
+	pair := m.CurrentPair()
+	if pair == nil || pair.New == nil {
+		m.SourceLineCursor = 1
+		return
+	}
+	count := len(blockSourceLines(pair.New))
+	if count < 1 {
+		m.SourceLineCursor = 1
+		return
+	}
+	if m.SourceLineCursor < 1 {
+		m.SourceLineCursor = 1
+	}
+	if m.SourceLineCursor > count {
+		m.SourceLineCursor = count
+	}
+}
+
+func (m *Model) resetSourceLine() {
+	m.SourceLineCursor = 1
+	m.snapSourceLine()
+}
+
+func fmtSourceLineStatus(line int) string {
+	if line < 1 {
+		return "selected new source line"
+	}
+	return "selected new source line " + strconv.Itoa(line)
 }
 
 func sectionKey(pair diffreview.Pair) string {

@@ -146,7 +146,7 @@ func terminalPixelSize() (int, int) {
 	if err != nil {
 		return 0, 0
 	}
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
 		uintptr(tty.Fd()),
 		uintptr(syscall.TIOCGWINSZ),
@@ -170,7 +170,7 @@ func terminalCellSize() (int, int) {
 	if err != nil {
 		return 0, 0
 	}
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
 		uintptr(tty.Fd()),
 		uintptr(syscall.TIOCGWINSZ),

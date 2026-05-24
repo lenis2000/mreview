@@ -20,6 +20,23 @@ func TestDefaultSidecarPathUsesNewFileAndBaseRev(t *testing.T) {
 	assert.Equal(t, review.New.Path+".mreview-diff.master.md", got)
 }
 
+func TestDefaultSidecarPathForGitNewEndpointAvoidsMaterializedSnapshot(t *testing.T) {
+	review := &Review{
+		Old: Endpoint{Kind: GitBlob, Spec: "master:paper.tex", Label: "master:paper.tex"},
+		New: Endpoint{
+			Kind:         GitBlob,
+			Spec:         "branch:sections/paper.tex",
+			RelPath:      "sections/paper.tex",
+			Path:         filepath.Join(t.TempDir(), ".mreview-diff", "session", "branch", "sections", "paper.tex"),
+			Materialized: true,
+		},
+	}
+
+	got := DefaultSidecarPath(review)
+	assert.Equal(t, "sections/paper.tex.mreview-diff.master.md", filepath.ToSlash(got))
+	assert.NotContains(t, got, ".mreview-diff/session")
+}
+
 func TestDiffSidecarSaveLoadAndRemap(t *testing.T) {
 	oldSrc := `\section{Intro}
 
@@ -83,6 +100,57 @@ func TestDiffSidecarRemapPreservesDetachedAnnotations(t *testing.T) {
 	require.Len(t, remapped.Detached, 2)
 	assert.Equal(t, "missing-pair", remapped.Detached[0].PairID)
 	assert.Equal(t, "already-detached", remapped.Detached[1].PairID)
+}
+
+func TestDiffSidecarRemapKeepsUnlabeledMatchedPairAcrossNewTextEdit(t *testing.T) {
+	oldSrc := "\\section{Intro}\n\nThis paragraph has enough shared words to match before the edit.\n"
+	firstNew := "\\section{Intro}\n\nThis paragraph has enough shared words to match after one edit.\n"
+	secondNew := "\\section{Intro}\n\nThis paragraph has enough shared words to match after another edit.\n"
+	firstReview := buildReviewForTest(t, oldSrc, firstNew)
+	firstPair := requireParagraphPairContaining(t, firstReview, "This paragraph")
+	require.NotNil(t, firstPair.Old)
+	require.NotNil(t, firstPair.New)
+
+	side := NewSidecar(firstReview)
+	side.CursorPairID = firstPair.ID
+	side.SetReviewed(firstPair.ID, true)
+	side.UpsertAnnotation(AnnotationForPair(firstReview, &firstPair, "keep note"))
+
+	secondReview := buildReviewForTest(t, oldSrc, secondNew)
+	secondPair := requireParagraphPairContaining(t, secondReview, "This paragraph")
+	assert.Equal(t, firstPair.ID, secondPair.ID)
+
+	remapped := RemapSidecar(side, secondReview)
+	assert.Equal(t, secondPair.ID, remapped.CursorPairID)
+	assert.Equal(t, []string{secondPair.ID}, remapped.Reviewed)
+	require.Len(t, remapped.Annotations, 1)
+	assert.Equal(t, "keep note", remapped.Annotations[0].Note)
+	assert.Empty(t, remapped.Detached)
+}
+
+func TestParseSidecarMalformedInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+	}{
+		{name: "empty", data: ""},
+		{name: "no frontmatter", data: "# notes\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			side, err := ParseSidecar([]byte(tc.data))
+			require.NoError(t, err)
+			assert.Empty(t, side.Reviewed)
+			assert.Empty(t, side.Annotations)
+		})
+	}
+
+	_, err := ParseSidecar([]byte("---\nreviewed:\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unterminated")
+
+	_, err = ParseSidecar([]byte("---\nannotations: [\n---\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sidecar yaml")
 }
 
 func TestDiffPairIDsPreferLabelAndNewBlockID(t *testing.T) {

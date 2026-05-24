@@ -299,15 +299,18 @@ func (m *Model) snapCursor() {
 		return
 	}
 	if containsIndex(visible, m.Cursor) {
+		m.snapSourceLine()
 		return
 	}
 	for _, idx := range visible {
 		if idx >= m.Cursor {
 			m.Cursor = idx
+			m.snapSourceLine()
 			return
 		}
 	}
 	m.Cursor = visible[len(visible)-1]
+	m.snapSourceLine()
 }
 
 func (m Model) statusText() string {
@@ -374,28 +377,6 @@ func containsIndex(values []int, needle int) bool {
 		}
 	}
 	return false
-}
-
-func copyBoolMap(in map[string]bool) map[string]bool {
-	if len(in) == 0 {
-		return map[string]bool{}
-	}
-	out := make(map[string]bool, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
-func copyStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return map[string]string{}
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func copyIssueMap(in map[string][]string) map[string][]string {

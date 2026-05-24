@@ -1,6 +1,7 @@
 package diffui
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,19 +15,25 @@ import (
 
 func TestDiffExternalEditOpensNewPathOnly(t *testing.T) {
 	m, oldPath, newPath := editableDiffModel(t, paragraphDoc("Old sentence."), paragraphDoc("New sentence."))
+	m.NoBuild = true
 	t.Setenv("EDITOR", "/bin/true --wait")
 
 	var captured []string
 	saved := runDiffEditorProcess
 	runDiffEditorProcess = func(cmd *exec.Cmd, done func(error) tea.Msg) tea.Cmd {
 		captured = append([]string(nil), cmd.Args...)
-		return nil
+		return func() tea.Msg {
+			if err := os.WriteFile(newPath, []byte(paragraphDoc("Edited externally.")), 0o600); err != nil {
+				return done(err)
+			}
+			return done(nil)
+		}
 	}
 	t.Cleanup(func() { runDiffEditorProcess = saved })
 
 	next, cmd := m.editInExternalEditor()
-	if cmd != nil {
-		t.Fatalf("stubbed editor runner should return nil cmd")
+	if cmd == nil {
+		t.Fatalf("expected editor runner to return completion command")
 	}
 	m = next.(Model)
 	if len(captured) == 0 {
@@ -40,6 +47,39 @@ func TestDiffExternalEditOpensNewPathOnly(t *testing.T) {
 	}
 	if len(m.EditUndo) != 1 || m.EditUndo[0].Path != newPath {
 		t.Fatalf("undo snapshot = %#v, want one snapshot for new path", m.EditUndo)
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(string(m.Review.New.Source), "Edited externally.") {
+		t.Fatalf("external edit completion did not reload new source")
+	}
+	if !strings.Contains(m.Status, "external edit reloaded") {
+		t.Fatalf("external edit status = %q", m.Status)
+	}
+}
+
+func TestDiffExternalEditErrorDoesNotReload(t *testing.T) {
+	m, _, _ := editableDiffModel(t, paragraphDoc("Old sentence."), paragraphDoc("New sentence."))
+	t.Setenv("EDITOR", "/bin/true")
+
+	saved := runDiffEditorProcess
+	runDiffEditorProcess = func(_ *exec.Cmd, done func(error) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return done(errors.New("boom")) }
+	}
+	t.Cleanup(func() { runDiffEditorProcess = saved })
+
+	next, cmd := m.editInExternalEditor()
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatalf("expected editor command")
+	}
+	next, _ = m.Update(cmd())
+	m = next.(Model)
+	if !strings.Contains(m.Status, "editor exited with error: boom") {
+		t.Fatalf("external edit error status = %q", m.Status)
+	}
+	if !strings.Contains(string(m.Review.New.Source), "New sentence.") {
+		t.Fatalf("new source should not reload to unrelated content")
 	}
 }
 

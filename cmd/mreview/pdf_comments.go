@@ -53,21 +53,21 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 	if _, err := parser.ParseArgs(args); err != nil {
 		var fe *flags.Error
 		if errors.As(err, &fe) && fe.Type == flags.ErrHelp {
-			fmt.Fprintln(stdout, err.Error())
+			_, _ = fmt.Fprintln(stdout, err.Error())
 			return 0
 		}
-		fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
 		return 2
 	}
 
 	mdPath, pdfPath, err := classifyMDPDFArgs(o.Args.First, o.Args.Second)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
 		return 2
 	}
 
 	logf := func(format string, args ...any) {
-		fmt.Fprintf(stderr, "mreview pdf-comments: "+format+"\n", args...)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-comments: "+format+"\n", args...)
 	}
 
 	mdBytes, err := os.ReadFile(mdPath)
@@ -118,7 +118,7 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 	comments, err := parseCommentsArray(rawResult)
 	if err != nil {
 		logf("parse claude output: %v", err)
-		fmt.Fprintf(stderr, "----- raw claude result -----\n%s\n----- end -----\n", rawResult)
+		_, _ = fmt.Fprintf(stderr, "----- raw claude result -----\n%s\n----- end -----\n", rawResult)
 		return 1
 	}
 	logf("parsed %d item(s); anchoring against %d page(s)…", len(comments), len(pages))
@@ -135,7 +135,7 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 			c.Kind = pdfreview.KindComment
 		}
 		if !pdfreview.ValidKind(c.Kind) {
-			fmt.Fprintf(stderr, "mreview pdf-comments: warn: unknown kind %q on item %d, defaulting to %q\n", c.Kind, c.ID, pdfreview.KindComment)
+			_, _ = fmt.Fprintf(stderr, "mreview pdf-comments: warn: unknown kind %q on item %d, defaulting to %q\n", c.Kind, c.ID, pdfreview.KindComment)
 			c.Kind = pdfreview.KindComment
 		}
 		c.Status = pdfreview.StatusPending
@@ -198,10 +198,10 @@ func runPdfComments(args []string, stdout, stderr io.Writer) int {
 		outPath = pdfreview.ReportPath(pdfPath)
 	}
 	if err := pdfreview.SaveReport(outPath, &report); err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-comments: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s: %d comments (%d anchored, %d unanchored)\n",
+	_, _ = fmt.Fprintf(stdout, "%s: %d comments (%d anchored, %d unanchored)\n",
 		outPath, len(comments), anchored, unanchored)
 	return 0
 }
@@ -443,13 +443,6 @@ func buildAnchoringPrompt(md, pagedPDFText string) string {
 	return b.String()
 }
 
-// invokeClaude shells out to `claude -p --model <m> --output-format json` with
-// the prompt on stdin. Returns the assistant's `result` field (which itself
-// must be a JSON array per the prompt's instructions).
-func invokeClaude(prompt, model string) (string, error) {
-	return invokeClaudeVerbose(prompt, model, io.Discard)
-}
-
 // invokeClaudeVerbose is invokeClaude with a periodic "still waiting" heartbeat
 // written to progress so the user sees signs of life during the long call.
 func invokeClaudeVerbose(prompt, model string, progress io.Writer) (string, error) {
@@ -473,7 +466,7 @@ func invokeClaudeVerbose(prompt, model string, progress io.Writer) (string, erro
 			case <-done:
 				return
 			case <-ticker.C:
-				fmt.Fprintf(progress, "mreview pdf-comments:   …still waiting on claude (%s elapsed)\n",
+				_, _ = fmt.Fprintf(progress, "mreview pdf-comments:   …still waiting on claude (%s elapsed)\n",
 					time.Since(start).Round(time.Second))
 			}
 		}
@@ -495,7 +488,7 @@ func invokeClaudeVerbose(prompt, model string, progress io.Writer) (string, erro
 //
 //   - older CLI:   {"result": "..."}
 //   - newer CLI:   [ {"type":"system",...}, {"type":"assistant",...},
-//                    ..., {"type":"result", "result":"...", ...} ]
+//     ..., {"type":"result", "result":"...", ...} ]
 //
 // When the event-array form is present, also reports a one-line summary of
 // duration / cost / token usage to progress so the user gets a feel for what
@@ -530,7 +523,7 @@ func extractClaudeResult(raw []byte, progress io.Writer) (string, error) {
 			if ev.IsError {
 				return "", fmt.Errorf("claude reported error in result event (stop_reason=%q)", ev.StopReason)
 			}
-			fmt.Fprintf(progress,
+			_, _ = fmt.Fprintf(progress,
 				"mreview pdf-comments:   claude usage: turns=%d, in=%d, out=%d, cache_read=%d, cache_create=%d, cost=$%.4f, api_duration=%s, stop=%s\n",
 				ev.NumTurns,
 				ev.Usage.InputTokens, ev.Usage.OutputTokens,

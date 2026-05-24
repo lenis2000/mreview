@@ -133,7 +133,7 @@ func TestLoadLayoutFracs_BadValuesClamped(t *testing.T) {
 			PDF:        0.01, // out-of-range low
 			StackedTop: 0.50,
 		}))
-		f.Close()
+		_ = f.Close()
 
 		LoadLayoutFracs()
 		assert.LessOrEqual(t, outlineFrac, maxOutline)

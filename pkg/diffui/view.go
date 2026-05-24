@@ -21,23 +21,39 @@ func (m Model) View() string {
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
-	outlineW, sourceW, pdfW := paneWidths(m.Width)
+	outlineW, oldW, newW, sourceW, pdfW, combined := paneWidths(m.Width)
 	outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight)
-	sourceTitle := "Source"
-	sourceBody := RenderPairSource(m.CurrentPair(), sourceW-2, bodyHeight-2)
 	if m.ShowHelp {
-		sourceTitle = "Help"
-		sourceBody = RenderHelpBody(sourceW-2, m.AllowModifications)
-	} else if m.LineEdit != nil {
-		sourceTitle = "Line Edit"
-		sourceBody = m.LineEdit.TI.View()
-	} else if m.Popup != nil {
-		sourceTitle = "Annotation"
-		sourceBody = m.Popup.TA.View()
+		source := m.renderPane("Help", RenderHelpBody(sourceW-2, m.AllowModifications), sourceW, bodyHeight)
+		pdf := m.renderPDFPane(pdfW, bodyHeight)
+		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+		status := clipLine(m.statusText(), m.Width)
+		return lipgloss.JoinVertical(lipgloss.Left, main, status)
 	}
-	source := m.renderPane(sourceTitle, sourceBody, sourceW, bodyHeight)
-	pdf := m.renderPane("PDF", m.pdfPaneBody(), pdfW, bodyHeight)
-	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+	if m.LineEdit != nil {
+		source := m.renderPane("Line Edit", m.LineEdit.TI.View(), sourceW, bodyHeight)
+		pdf := m.renderPDFPane(pdfW, bodyHeight)
+		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+		status := clipLine(m.statusText(), m.Width)
+		return lipgloss.JoinVertical(lipgloss.Left, main, status)
+	}
+	if m.Popup != nil {
+		source := m.renderPane("Annotation", m.Popup.TA.View(), sourceW, bodyHeight)
+		pdf := m.renderPDFPane(pdfW, bodyHeight)
+		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
+		status := clipLine(m.statusText(), m.Width)
+		return lipgloss.JoinVertical(lipgloss.Left, main, status)
+	}
+	var middle string
+	if combined {
+		middle = m.renderPane("Source", RenderPairSource(m.CurrentPair(), sourceW-2, bodyHeight-2), sourceW, bodyHeight)
+	} else {
+		oldSource := m.renderPane("Old source", RenderPairSourceSide(m.CurrentPair(), true, oldW-2, bodyHeight-2), oldW, bodyHeight)
+		newSource := m.renderPane("New source", RenderPairSourceSide(m.CurrentPair(), false, newW-2, bodyHeight-2), newW, bodyHeight)
+		middle = lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
+	}
+	pdf := m.renderPDFPane(pdfW, bodyHeight)
+	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, middle, pdf)
 	status := clipLine(m.statusText(), m.Width)
 	return lipgloss.JoinVertical(lipgloss.Left, main, status)
 }
@@ -65,13 +81,41 @@ func (m Model) renderPane(title, body string, width, height int) string {
 	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
 }
 
-func paneWidths(width int) (outline, source, pdf int) {
+func (m Model) renderPDFPane(width, height int) string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	innerW := width - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	content := "PDF"
+	if body := m.pdfPaneBody(); body != "" {
+		content += "\n" + body
+	}
+	style := m.Styles.Pane
+	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
+}
+
+func paneWidths(width int) (outline, oldSource, newSource, source, pdf int, combined bool) {
 	if width < 3 {
-		return 1, 1, 1
+		return 1, 0, 0, 1, 1, true
 	}
 	outline = width / 4
 	pdf = width / 4
 	source = width - outline - pdf
+	combined = width < 120
+	if !combined {
+		oldSource = source / 2
+		newSource = source - oldSource
+	}
 	if outline < 1 {
 		outline = 1
 	}
@@ -81,7 +125,13 @@ func paneWidths(width int) (outline, source, pdf int) {
 	if pdf < 1 {
 		pdf = 1
 	}
-	return outline, source, pdf
+	if oldSource < 0 {
+		oldSource = 0
+	}
+	if newSource < 0 {
+		newSource = 0
+	}
+	return outline, oldSource, newSource, source, pdf, combined
 }
 
 // RenderHelpBody returns the diff-specific help text.
@@ -97,6 +147,9 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"e/E edit new file only when --allow-modifications is supplied",
+		"[/] select previous/next new source line",
+		"u undo last diff-mode edit",
+		"ctrl+r redo undone diff-mode edit",
 		"B rebuild/reload new PDF; use after Zed edits",
 		"Z opens old+new in Zed",
 		"? close help",

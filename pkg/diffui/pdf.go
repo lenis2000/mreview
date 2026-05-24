@@ -16,6 +16,7 @@ import (
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
 	"mreview/pkg/synctex"
+	"mreview/pkg/ui"
 )
 
 const (
@@ -80,7 +81,8 @@ func PrepareNewPDF(review *diffreview.Review, opts PDFOptions) (*PDFArtifacts, e
 	res := build.ResolveBuildOutputsOnDisk(path)
 	status := ""
 	buildStale := false
-	if !opts.NoBuild {
+	lmkfActive := ui.LmkfWatching(path)
+	if !opts.NoBuild && !lmkfActive {
 		buildCmd := opts.BuildCmd
 		runRes, err := build.RunWith(build.Options{
 			TexPath:  path,
@@ -99,6 +101,11 @@ func PrepareNewPDF(review *diffreview.Review, opts PDFOptions) (*PDFArtifacts, e
 			if diffStartupArtifactsStale(path, res.PDFPath, res.SyncTeXPath) {
 				buildStale = true
 			}
+		}
+	} else if lmkfActive {
+		status = "lmkf is building this paper — skipped own latexmk"
+		if diffStartupArtifactsStale(path, res.PDFPath, res.SyncTeXPath) {
+			buildStale = true
 		}
 	}
 	applyBuildMetadata(review, res)
@@ -149,18 +156,25 @@ func performDiffPDFReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string
 	status := ""
 	buildStale := false
 	if runBuild {
-		runRes, err := build.RunWith(build.Options{
-			TexPath:  path,
-			BuildCmd: buildCmd,
-		})
-		if runRes != nil {
-			res = runRes
-		}
-		if err != nil {
-			status = "rebuild failed — " + shortDiffBuildWarning(err)
-			buildStale = true
+		if ui.LmkfWatching(path) {
+			status = "lmkf is building this paper — skipped own latexmk"
+			if diffStartupArtifactsStale(path, res.PDFPath, res.SyncTeXPath) {
+				buildStale = true
+			}
 		} else {
-			status = "rebuilt new PDF"
+			runRes, err := build.RunWith(build.Options{
+				TexPath:  path,
+				BuildCmd: buildCmd,
+			})
+			if runRes != nil {
+				res = runRes
+			}
+			if err != nil {
+				status = "rebuild failed — " + shortDiffBuildWarning(err)
+				buildStale = true
+			} else {
+				status = "rebuilt new PDF"
+			}
 		}
 	}
 	aux, _ := parser.LoadAux(res.AuxPath)
@@ -341,7 +355,7 @@ func diffPDFPaneCells(termW, termH int) (int, int) {
 	if paneH < 1 {
 		paneH = 1
 	}
-	_, _, paneW := paneWidths(termW)
+	_, _, _, _, paneW, _ := paneWidths(termW)
 	innerW := paneW - 2
 	if innerW < 1 {
 		innerW = 1

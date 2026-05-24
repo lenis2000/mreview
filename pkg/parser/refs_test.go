@@ -12,14 +12,6 @@ func findBlockByLabel(doc *Document, label string) *Block {
 	return doc.ByLabel[label]
 }
 
-// refsForBlock returns a copy of the block's outgoing refs, or nil.
-func refsForBlock(b *Block) []Ref {
-	if b == nil {
-		return nil
-	}
-	return b.RefsOut
-}
-
 func TestResolveRefs_SampleFixture_AbstractRefResolved(t *testing.T) {
 	src := readFixture(t, "sample.tex")
 	doc, err := Parse(src)

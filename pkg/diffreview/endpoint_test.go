@@ -41,7 +41,11 @@ func TestResolveBaseMaterializesOldAndReadsDirtyWorkingTree(t *testing.T) {
 	assert.Equal(t, []byte("base\n"), gotOld)
 	info, err := os.Stat(oldEndpoint.Path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o444), info.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o400), info.Mode().Perm())
+	sessionDir := filepath.Join(repo, ".mreview-diff", "test-session")
+	sessionInfo, err := os.Stat(sessionDir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), sessionInfo.Mode().Perm())
 
 	assert.Equal(t, WorkingFile, newEndpoint.Kind)
 	assert.Equal(t, "working tree", newEndpoint.Label)
@@ -121,6 +125,19 @@ func TestResolveEndpointRejectsMissingFilesystemSpec(t *testing.T) {
 	_, err := Resolver{WorkDir: dir}.ResolveEndpoint(context.Background(), "missing.tex", false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file does not exist")
+}
+
+func TestResolveEndpointRejectsUnsafeGitBlobPaths(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "paper.tex", "committed\n")
+	git(t, repo, "add", "paper.tex")
+	git(t, repo, "commit", "-m", "base")
+
+	for _, spec := range []string{"HEAD:../secret.tex", "HEAD:/tmp/file.tex"} {
+		endpoint, err := Resolver{WorkDir: repo, SessionID: "../unsafe session"}.ResolveEndpoint(context.Background(), spec, false)
+		require.Error(t, err, spec)
+		assert.Empty(t, endpoint.Path)
+	}
 }
 
 func initRepo(t *testing.T) string {

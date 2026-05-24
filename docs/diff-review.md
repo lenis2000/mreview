@@ -33,6 +33,21 @@ Use `--draft` to open the TUI with a warning when the new PDF build fails. The
 diff source panes and annotations still work; the PDF pane may be unavailable
 until a successful rebuild.
 
+## Flags
+
+```text
+--base REV          old endpoint is REV:<repo-relative path>, new is path
+--no-build          skip latexmk for the new endpoint
+--draft             open the TUI even when the new build fails
+--build-cmd CMD     override latexmk invocation for the new endpoint
+--sidecar PATH      diff sidecar path
+--stdout FMT        md | json | none (default: md)
+--config PATH       config file
+--noconfig          ignore config files
+--open-zed          open old+new comparison once after startup
+--allow-modifications  enable e/E edits to the new endpoint only
+```
+
 ## Endpoint syntax
 
 There are two command forms.
@@ -138,6 +153,33 @@ annotations keyed by stable pair IDs, and source quotes from the old or new
 side as appropriate. If an annotation no longer maps after later source edits,
 it is preserved as detached instead of being discarded.
 
+Sidecar frontmatter and JSON output use these top-level fields:
+
+```text
+old_spec
+old_label
+new_spec
+new_path
+cursor_pair_id
+reviewed
+pairs [{ id, status }]
+annotations
+detached
+```
+
+Each annotation entry uses:
+
+```text
+pair_id
+status
+side
+file
+start_line
+end_line
+source_quote
+note
+```
+
 On quit, mreview saves the sidecar and emits according to `--stdout`:
 
 ```text
@@ -182,12 +224,16 @@ Common diff-mode keys:
 
 ```text
 j/k, J/K, gg/G    navigate semantic pairs
+{/}               previous/next section
+[/]               select previous/next new source line
 space             toggle reviewed and auto-advance in changed/unreviewed filters
 a                 annotate current pair
 ctrl+a            edit current annotation
 d                 delete annotation with confirmation
 e                 inline edit new file only, when allowed
 E                 open new file only, when allowed
+u                 undo last diff-mode edit to the new file
+ctrl+r            redo undone diff-mode edit
 B                 rebuild/reload the new endpoint
 Z                 open old snapshot and new file in Zed
 ?                 help

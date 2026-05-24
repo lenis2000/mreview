@@ -77,13 +77,6 @@ type reloadResultMsg struct {
 	oldPDF *pdf.Doc
 }
 
-// requestReload returns a tea.Cmd that posts a reloadMsg. Used by edit
-// paths that don't go through tea.ExecProcess — they still want the same
-// post-edit pipeline (reparse + rebuild + remap + cursor restore).
-func requestReload(err error) tea.Cmd {
-	return func() tea.Msg { return reloadMsg{err: err} }
-}
-
 // startReload sets a "rebuilding…" status and returns a tea.Cmd that
 // performs the heavy work (parse, latexmk, PDF+SyncTeX reopen) off the
 // Update goroutine. The result message also carries the reload
@@ -251,7 +244,7 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		// handle, close it so it doesn't leak; oldPDF stays live for
 		// the winning reload or the model.
 		if r.newPDF != nil {
-			r.newPDF.Close()
+			_ = r.newPDF.Close()
 		}
 		return m, nil
 	}
@@ -263,7 +256,7 @@ func (m Model) applyReloadResult(r reloadResultMsg) (Model, tea.Cmd) {
 		// one onto the model. Safe: no other goroutine still references
 		// oldPDF because startReload captured it by value.
 		if r.oldPDF != nil && r.oldPDF != r.newPDF {
-			r.oldPDF.Close()
+			_ = r.oldPDF.Close()
 		}
 		m.PDF = r.newPDF
 	}
@@ -469,7 +462,7 @@ func performBuildAndReopen(path string, gen int, oldPDF *pdf.Doc, buildCmd strin
 			// closed handle until the newer result arrives.
 		} else {
 			if pdfDoc != nil {
-				pdfDoc.Close()
+				_ = pdfDoc.Close()
 			}
 			// synctex.Index has no Close — it's an in-memory parsed
 			// struct that the GC will reclaim once the local goes out

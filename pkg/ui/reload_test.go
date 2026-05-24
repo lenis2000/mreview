@@ -318,7 +318,7 @@ func TestApplyReloadResult_FreshBuildClearsStaleFlag(t *testing.T) {
 func TestSchedulePDFRender_SuppressedWhenBuildStale(t *testing.T) {
 	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer pdfDoc.Close()
+	defer func() { _ = pdfDoc.Close() }()
 
 	idx, err := synctex.Open(pdfFixturePath(t, "sample.synctex.gz"))
 	require.NoError(t, err)
@@ -534,7 +534,7 @@ func TestApplyReloadResult_StaleGenClosesNewPDFNotOld(t *testing.T) {
 	doc := parsedSample(t)
 	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer pdfDoc.Close()
+	defer func() { _ = pdfDoc.Close() }()
 
 	m := New(doc, &persist.Sidecar{})
 	m.reloadGen = 5
@@ -611,8 +611,8 @@ func TestUpdate_MouseIgnoredWhilePopupOpen(t *testing.T) {
 	// Now simulate a mouse click somewhere in the source pane that
 	// would normally move the cursor.
 	out, _ := m.Update(tea.MouseMsg{
-		Type:   tea.MouseLeft,
 		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
 		X:      80,
 		Y:      10,
 	})

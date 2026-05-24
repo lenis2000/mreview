@@ -521,12 +521,17 @@ func statusFor(oldBlock, newBlock *parser.Block, oldMeta, newMeta blockMeta, str
 }
 
 func matchedPairID(oldBlock, newBlock *parser.Block) string {
-	id := pairIDForNew(newBlock)
-	if id != "" {
-		return id
+	if newBlock != nil && newBlock.Label != "" {
+		return newBlock.Label
+	}
+	if oldBlock != nil && oldBlock.Label != "" {
+		return oldBlock.Label
 	}
 	if oldBlock != nil && oldBlock.ID != "" {
 		return oldBlock.ID
+	}
+	if newBlock != nil && newBlock.ID != "" {
+		return newBlock.ID
 	}
 	oldLine, newLine := 0, 0
 	if oldBlock != nil {

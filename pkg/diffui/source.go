@@ -52,6 +52,33 @@ func RenderPairSource(pair *diffreview.Pair, width, height int) string {
 	return strings.Join(rendered, "\n")
 }
 
+// RenderPairSourceSide renders one side of a semantic pair for the wide
+// four-pane layout.
+func RenderPairSourceSide(pair *diffreview.Pair, oldSide bool, width, height int) string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	rows := sourceRows(pair)
+	if len(rows) == 0 {
+		return "(no source)"
+	}
+	if len(rows) > height {
+		rows = rows[:height]
+	}
+	rendered := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if oldSide {
+			rendered = append(rendered, clipLine(formatSourceCell(row.oldMark, row.oldLine, row.oldText), width))
+		} else {
+			rendered = append(rendered, clipLine(formatSourceCell(row.newMark, row.newLine, row.newText), width))
+		}
+	}
+	return strings.Join(rendered, "\n")
+}
+
 func sourceRows(pair *diffreview.Pair) []sourceRow {
 	if pair == nil {
 		return []sourceRow{{oldText: "(no pair selected)", newText: "(no pair selected)"}}

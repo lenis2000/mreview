@@ -111,12 +111,12 @@ func Tokenize(src []byte) []Token {
 }
 
 type scanner struct {
-	src           []byte
-	pos           int
-	line          int
-	tokens        []Token
-	skipEnv       string
-	inDollarMath  bool // currently inside $$...$$ (may span lines)
+	src          []byte
+	pos          int
+	line         int
+	tokens       []Token
+	skipEnv      string
+	inDollarMath bool // currently inside $$...$$ (may span lines)
 }
 
 func (s *scanner) run() {
@@ -174,13 +174,12 @@ func (s *scanner) scanLine(line []byte) {
 			// A BeginEnv on this line switched us into skip mode; abandon the rest.
 			return
 		}
-		c := line[i]
-		switch {
-		case c == '%':
+		switch c := line[i]; c {
+		case '%':
 			return
-		case c == '\\':
+		case '\\':
 			i = s.scanBackslash(line, i)
-		case c == '$':
+		case '$':
 			i = s.scanDollar(line, i)
 		default:
 			i++

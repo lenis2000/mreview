@@ -300,34 +300,11 @@ func renderLineEditBody(p *LineEditPopup, innerW, innerH int, styles Styles) str
 	return body + "\n\n" + styles.OutlineMuted.Render(hint)
 }
 
-// renderAnnotationBody lays out the textarea and a help hint within the
-// source pane's inner area.
-func renderAnnotationBody(p *AnnotationPopup, innerW, innerH int) string {
-	hint := "[Enter submit · Esc/Ctrl-C cancel]"
-	taH := innerH - 1
-	if taH < 1 {
-		taH = 1
-	}
-	if p.TA.Height() != taH {
-		p.TA.SetHeight(taH)
-	}
-	w := innerW
-	if w > 2 {
-		w -= 2
-	}
-	if p.TA.Width() != w {
-		p.TA.SetWidth(w)
-	}
-	return p.TA.View() + "\n" + hint
-}
-
 // renderSearchBody lays out the vim-style search prompt inside the source
 // pane: a slash sigil, the text input, and a one-line hint. There is no
 // result list — submitting jumps directly; n / N repeat afterwards.
 func renderSearchBody(p *SearchPopup, innerW, bodyH int, styles Styles) string {
-	if bodyH < 1 {
-		bodyH = 1
-	}
+	_ = bodyH
 	hint := "[Enter jump · Esc cancel · n / N repeat after]"
 	w := innerW
 	if w > 4 {

@@ -96,7 +96,7 @@ func TestUpdate_CursorMoveSchedulesRender(t *testing.T) {
 
 	pdfDoc, err := pdf.Open(pdfPath)
 	require.NoError(t, err)
-	defer pdfDoc.Close()
+	defer func() { _ = pdfDoc.Close() }()
 
 	idx, err := synctex.Open(synctexPath)
 	require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestRenderPDFForBlock_CachesResult(t *testing.T) {
 
 	pdfDoc, err := pdf.Open(pdfFixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer pdfDoc.Close()
+	defer func() { _ = pdfDoc.Close() }()
 
 	idx, err := synctex.Open(pdfFixturePath(t, "sample.synctex.gz"))
 	require.NoError(t, err)

@@ -478,6 +478,10 @@ Document:
 - [x] Edit rule: `e/E` edit new file only, and only when `--allow-modifications` is supplied.
 - [x] Zed key: `Z` opens old snapshot + new file; `--open-zed` does this once at startup.
 - [x] Sidecar path convention.
+- [x] Complete diff flag table in README and `docs/diff-review.md`.
+- [x] `MREVIEW_COMPARE_EDITOR` comparison override and `$EDITOR` edit distinction.
+- [x] Undo/redo, source-line selection, and section-navigation keys.
+- [x] JSON/stdout fields and sidecar annotation schema.
 - [x] Limitations: no git checkout, old PDF not built in first version, new endpoint must be a real file for editing.
 - [x] Troubleshooting: if new endpoint is read-only, run from the branch to edit and use `--base`.
 - [x] Move this plan to `docs/plans/completed/` after implementation is done.

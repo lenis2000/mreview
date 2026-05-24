@@ -221,9 +221,26 @@ Endpoint specs are either filesystem paths or `REV:path` git objects. A
 use `--base REV paper.tex` if you need `e`/`E`.
 
 In the diff TUI, `Z` opens the materialized old snapshot and the new file in
-Zed. `--open-zed` runs the same comparison action once after startup. Diff
-sidecars default to `<new-file>.mreview-diff.<base>.md`, for example
+Zed. `--open-zed` runs the same comparison action once after startup.
+Comparison uses `MREVIEW_COMPARE_EDITOR` when set, then `zed`; this is separate
+from `$EDITOR`, which `E` uses to edit the new file only. Diff sidecars default
+to `<new-file>.mreview-diff.<base>.md`, for example
 `paper.tex.mreview-diff.master.md`.
+
+Diff flags:
+
+```
+--base REV          old endpoint is REV:<repo-relative path>, new is path
+--no-build          skip latexmk for the new endpoint
+--draft             open the TUI even when the new build fails
+--build-cmd CMD     override latexmk invocation for the new endpoint
+--sidecar PATH      diff sidecar path
+--stdout FMT        md | json | none (default: md)
+--config PATH       config file
+--noconfig          ignore config files
+--open-zed          open old+new comparison once after startup
+--allow-modifications  enable e/E edits to the new endpoint only
+```
 
 More detail: [docs/diff-review.md](docs/diff-review.md).
 

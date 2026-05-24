@@ -188,18 +188,22 @@ func (r Resolver) resolveGitBlobInRepo(ctx context.Context, repoRoot, spec, rev,
 	if err != nil {
 		return Endpoint{}, err
 	}
-	matPath, err := materializePath(repoRoot, r.sessionID(), rev, relPath)
+	sessionID := r.sessionID()
+	matPath, err := materializePath(repoRoot, sessionID, rev, relPath)
 	if err != nil {
 		return Endpoint{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(matPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(matPath), 0o700); err != nil {
 		return Endpoint{}, fmt.Errorf("create materialization directory: %w", err)
 	}
-	_ = os.Chmod(matPath, 0o644)
-	if err := os.WriteFile(matPath, source, 0o644); err != nil {
+	_ = os.Chmod(filepath.Join(repoRoot, ".mreview-diff"), 0o700)
+	_ = os.Chmod(filepath.Join(repoRoot, ".mreview-diff", sessionID), 0o700)
+	_ = os.Chmod(filepath.Dir(matPath), 0o700)
+	_ = os.Chmod(matPath, 0o600)
+	if err := os.WriteFile(matPath, source, 0o600); err != nil {
 		return Endpoint{}, fmt.Errorf("materialize %q: %w", spec, err)
 	}
-	_ = os.Chmod(matPath, 0o444)
+	_ = os.Chmod(matPath, 0o400)
 
 	return Endpoint{
 		Kind:         GitBlob,

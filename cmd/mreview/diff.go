@@ -101,9 +101,12 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 	if pdfArtifacts == nil {
 		pdfArtifacts = &diffui.PDFArtifacts{}
 	}
-	if pdfArtifacts != nil && pdfArtifacts.PDF != nil {
-		defer func() { _ = pdfArtifacts.PDF.Close() }()
-	}
+	finalPDF := pdfArtifacts.PDF
+	defer func() {
+		if finalPDF != nil {
+			_ = finalPDF.Close()
+		}
+	}()
 
 	stdoutFmt, fmtErr := diffreview.ParseStdoutFormat(o.Stdout)
 	if fmtErr != nil {
@@ -153,6 +156,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 	if fm, ok := final.(diffui.Model); ok {
 		finalSidecar = fm.FinalSidecar()
 		finalReview = fm.Review
+		finalPDF = fm.PDF
 	}
 	if err := diffreview.SaveSidecar(sidecarPath, finalSidecar); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
