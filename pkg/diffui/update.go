@@ -18,6 +18,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case diffEditFinishedMsg:
 		return m.applyEditFinished(msg)
+	case diffCompareFinishedMsg:
+		return m.applyCompareFinished(msg)
 	case tea.KeyMsg:
 		if m.LineEdit != nil {
 			return m.updateLineEditPopup(msg)
@@ -78,6 +80,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.editInExternalEditor()
 	case "e":
 		return m.startLineEdit()
+	case "Z":
+		return m.openCompareEditor()
 	case "u":
 		return m.undoEdit()
 	case "ctrl+r":

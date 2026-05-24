@@ -381,22 +381,22 @@ Tests:
 
 Requirements:
 
-- [ ] Add key `Z`: open old+new in Zed for current pair.
-- [ ] Add `--open-zed`: do the same once after startup.
-- [ ] Resolve compare editor in this order: `MREVIEW_COMPARE_EDITOR`, `zed`, then status error if unavailable. Do not fall back to vim for comparison; this action is specifically for side-by-side GUI comparison.
-- [ ] Build argv as `zed old new` by default.
-- [ ] If line suffix is enabled for Zed, use `path:line` for both sides. Keep this helper isolated so it can be adjusted if Zed's CLI differs.
-- [ ] For added/deleted rows, use nearest useful line on the missing side, but always open both files.
-- [ ] Use the materialized old snapshot path, not `git show` pipes or temp files.
-- [ ] Do not block the TUI waiting for Zed unless the configured command itself blocks.
-- [ ] If Zed edits the new file, source watch/reload or manual `B` should pick it up; do not make Zed the edit mechanism for `E`.
+- [x] Add key `Z`: open old+new in Zed for current pair.
+- [x] Add `--open-zed`: do the same once after startup.
+- [x] Resolve compare editor in this order: `MREVIEW_COMPARE_EDITOR`, `zed`, then status error if unavailable. Do not fall back to vim for comparison; this action is specifically for side-by-side GUI comparison.
+- [x] Build argv as `zed old new` by default.
+- [x] If line suffix is enabled for Zed, use `path:line` for both sides. Keep this helper isolated so it can be adjusted if Zed's CLI differs.
+- [x] For added/deleted rows, use nearest useful line on the missing side, but always open both files.
+- [x] Use the materialized old snapshot path, not `git show` pipes or temp files.
+- [x] Do not block the TUI waiting for Zed unless the configured command itself blocks.
+- [x] If Zed edits the new file, source watch/reload or manual `B` should pick it up; do not make Zed the edit mechanism for `E`.
 
 Tests:
 
-- [ ] argv builder for matched pair, added pair, deleted pair.
-- [ ] missing Zed gives status, not crash.
-- [ ] `--open-zed` schedules exactly one open command.
-- [ ] Run `go test ./pkg/diffui ./cmd/mreview`.
+- [x] argv builder for matched pair, added pair, deleted pair.
+- [x] missing Zed gives status, not crash.
+- [x] `--open-zed` schedules exactly one open command.
+- [x] Run `go test ./pkg/diffui ./cmd/mreview`.
 
 ### Task 8: New-PDF build and cursor-following PDF pane
 

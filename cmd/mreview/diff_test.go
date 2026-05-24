@@ -257,6 +257,30 @@ func TestRunDiffReadOnlyNewEndpointDisablesEditPermission(t *testing.T) {
 	}
 }
 
+func TestRunDiffOpenZedFlagIsCaptured(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Old open zed endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("New open zed endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--open-zed", "--no-build", "--noconfig", "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if !m.OpenZed {
+		t.Fatalf("expected --open-zed to be captured in the diff model")
+	}
+}
+
 func diffFixture(paragraph string) string {
 	return "\\documentclass{amsart}\n" +
 		"\\begin{document}\n" +

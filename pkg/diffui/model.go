@@ -220,7 +220,12 @@ func (m *Model) pushEditSnapshot(label string) error {
 }
 
 // Init implements tea.Model.
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.OpenZed {
+		return m.compareEditorCmd()
+	}
+	return nil
+}
 
 // CurrentPair returns the selected semantic pair.
 func (m Model) CurrentPair() *diffreview.Pair {
