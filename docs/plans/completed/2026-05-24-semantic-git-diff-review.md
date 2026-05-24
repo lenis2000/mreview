@@ -473,14 +473,14 @@ Final repository checks:
 
 Document:
 
-- [ ] Primary workflow: `mreview diff --base master --open-zed --allow-modifications paper.tex`.
-- [ ] Endpoint syntax (`REV:path`, filesystem path).
-- [ ] Edit rule: `e/E` edit new file only, and only when `--allow-modifications` is supplied.
-- [ ] Zed key: `Z` opens old snapshot + new file; `--open-zed` does this once at startup.
-- [ ] Sidecar path convention.
-- [ ] Limitations: no git checkout, old PDF not built in first version, new endpoint must be a real file for editing.
-- [ ] Troubleshooting: if new endpoint is read-only, run from the branch to edit and use `--base`.
-- [ ] Move this plan to `docs/plans/completed/` after implementation is done.
+- [x] Primary workflow: `mreview diff --base master --open-zed --allow-modifications paper.tex`.
+- [x] Endpoint syntax (`REV:path`, filesystem path).
+- [x] Edit rule: `e/E` edit new file only, and only when `--allow-modifications` is supplied.
+- [x] Zed key: `Z` opens old snapshot + new file; `--open-zed` does this once at startup.
+- [x] Sidecar path convention.
+- [x] Limitations: no git checkout, old PDF not built in first version, new endpoint must be a real file for editing.
+- [x] Troubleshooting: if new endpoint is read-only, run from the branch to edit and use `--base`.
+- [x] Move this plan to `docs/plans/completed/` after implementation is done.
 
 ## Implementation notes and cautions
 

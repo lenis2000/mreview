@@ -194,6 +194,39 @@ On startup mreview:
 -v, --version       print version and exit
 ```
 
+### Semantic diff review
+
+Compare a base revision against the current working tree with:
+
+```
+mreview diff --base master --open-zed --allow-modifications paper.tex
+```
+
+This resolves the old endpoint as `master:<repo-relative paper.tex>` and the
+new endpoint as the working-tree `paper.tex`. The old source is materialized as
+a read-only snapshot under `.mreview-diff/`; the new source is the only editable
+file. Without `--allow-modifications`, diff review is read-only apart from
+annotations. With it, `e` and `E` edit the new file only, and only when the new
+endpoint is a real filesystem path.
+
+Explicit endpoints are also supported:
+
+```
+mreview diff master:paper.tex paper.tex
+mreview diff master:paper.tex other-branch:paper.tex
+```
+
+Endpoint specs are either filesystem paths or `REV:path` git objects. A
+`REV:path` new endpoint is read-only; run from the branch you want to edit and
+use `--base REV paper.tex` if you need `e`/`E`.
+
+In the diff TUI, `Z` opens the materialized old snapshot and the new file in
+Zed. `--open-zed` runs the same comparison action once after startup. Diff
+sidecars default to `<new-file>.mreview-diff.<base>.md`, for example
+`paper.tex.mreview-diff.master.md`.
+
+More detail: [docs/diff-review.md](docs/diff-review.md).
+
 ### Piping to an LLM
 
 ```
@@ -388,6 +421,8 @@ Module layout:
 ```
 cmd/mreview/       entry + CLI flags (including fmt subcommand)
 pkg/parser/        LaTeX tokenizer, block model, label/ref index, .aux/.bbl
+pkg/diffreview/    semantic before/after endpoint resolution, alignment, sidecars
+pkg/diffui/        diff-specific bubbletea model/update/view/editor/PDF panes
 pkg/format/        fmt pipeline: rules, verifier, report writer
 pkg/build/         latexmk runner
 pkg/synctex/       .synctex.gz parser: (file, line) -> (page, bbox)
