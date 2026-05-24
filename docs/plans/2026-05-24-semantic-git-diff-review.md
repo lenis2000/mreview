@@ -287,18 +287,18 @@ Prefer a new `pkg/diffui` package over invasive changes to `pkg/ui`. Import reus
 
 Requirements:
 
-- [ ] Render outline rows from `diffreview.Pair` with status markers and stats.
-- [ ] Cursor moves over pairs, not blocks.
-- [ ] Basic navigation: `j/k`, `J/K`, `gg/G`, `{`/`}` if section info is available.
-- [ ] Render old/new source side-by-side for the selected pair.
-- [ ] Highlight deleted old lines, added new lines, and changed intra-block lines using `github.com/pmezard/go-difflib/difflib` or equivalent.
-- [ ] For added rows, old pane says `(added in new)`.
-- [ ] For deleted rows, new pane says `(deleted from new)`.
-- [ ] Keep a PDF pane placeholder for now: `(new PDF not loaded)`.
-- [ ] Implement filters: all/changed/unreviewed/annotated/issues. `changed` should be the default.
-- [ ] `?` help includes diff-specific keys and explicitly says `e/E edit new file only when --allow-modifications is supplied`; `Z` opens old+new in Zed.
-- [ ] Tests: outline markers, filter behavior, source rendering for added/deleted/changed/format-only, cursor movement.
-- [ ] Run `go test ./pkg/diffui`.
+- [x] Render outline rows from `diffreview.Pair` with status markers and stats.
+- [x] Cursor moves over pairs, not blocks.
+- [x] Basic navigation: `j/k`, `J/K`, `gg/G`, `{`/`}` if section info is available.
+- [x] Render old/new source side-by-side for the selected pair.
+- [x] Highlight deleted old lines, added new lines, and changed intra-block lines using `github.com/pmezard/go-difflib/difflib` or equivalent.
+- [x] For added rows, old pane says `(added in new)`.
+- [x] For deleted rows, new pane says `(deleted from new)`.
+- [x] Keep a PDF pane placeholder for now: `(new PDF not loaded)`.
+- [x] Implement filters: all/changed/unreviewed/annotated/issues. `changed` should be the default.
+- [x] `?` help includes diff-specific keys and explicitly says `e/E edit new file only when --allow-modifications is supplied`; `Z` opens old+new in Zed.
+- [x] Tests: outline markers, filter behavior, source rendering for added/deleted/changed/format-only, cursor movement.
+- [x] Run `go test ./pkg/diffui`.
 
 ### Task 5: Diff sidecar persistence and stdout emit
 
