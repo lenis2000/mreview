@@ -267,6 +267,7 @@ func (m Model) FinalSidecar() *diffreview.Sidecar {
 		side.CursorPairID = pair.ID
 	}
 	side.Reviewed = reviewedList(m.Reviewed)
+	side.Pairs = diffreview.PairSummaries(m.Review)
 	return side
 }
 

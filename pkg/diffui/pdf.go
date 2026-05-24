@@ -193,6 +193,10 @@ func performDiffPDFReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string
 		if openStale {
 			buildStale = true
 		}
+		if runBuild && !buildStale && pdfDoc == nil && idx == nil {
+			status = "(new PDF not loaded)"
+			buildStale = true
+		}
 		if !buildStale {
 			aux, _ = parser.LoadAux(res.AuxPath)
 			bbl, _ = parser.LoadBBL(res.BBLPath)
@@ -225,15 +229,29 @@ func (m Model) applyPDFReload(msg diffPDFReloadMsg) (Model, tea.Cmd) {
 			parser.ApplyBBL(m.Review.NewDoc, msg.BBL)
 		}
 	}
-	if msg.NewPDF != nil {
+	completePDFPair := msg.NewPDF != nil && msg.NewSyncTeX != nil
+	if completePDFPair {
 		if msg.OldPDF != nil && msg.OldPDF != msg.NewPDF {
 			_ = msg.OldPDF.Close()
 		}
 		m.PDF = msg.NewPDF
-	}
-	if msg.NewSyncTeX != nil {
 		m.Synctex = msg.NewSyncTeX
 		populateNewPDFRegions(m.Review, msg.NewSyncTeX)
+	} else {
+		if msg.NewPDF != nil {
+			_ = msg.NewPDF.Close()
+		}
+		if !msg.BuildStale {
+			oldPDF := msg.OldPDF
+			if oldPDF == nil {
+				oldPDF = m.PDF
+			}
+			if oldPDF != nil {
+				_ = oldPDF.Close()
+			}
+			m.PDF = nil
+			m.Synctex = nil
+		}
 	}
 	m.BuildStale = msg.BuildStale
 	m.PDFImage = ""

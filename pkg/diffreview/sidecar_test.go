@@ -67,6 +67,8 @@ New statement.
 
 	loaded, err := LoadSidecar(path)
 	require.NoError(t, err)
+	require.NotEmpty(t, loaded.Pairs)
+	assertPairSummary(t, loaded.Pairs, "thm:main", "changed")
 	remapped := RemapSidecar(loaded, review)
 
 	assert.Equal(t, review.Old.Spec, remapped.OldSpec)
@@ -77,6 +79,8 @@ New statement.
 	assert.Equal(t, pair.ID, remapped.Annotations[0].PairID)
 	assert.Equal(t, "check the changed statement", remapped.Annotations[0].Note)
 	assert.Contains(t, remapped.Annotations[0].SourceQuote, "New statement")
+	require.NotEmpty(t, remapped.Pairs)
+	assertPairSummary(t, remapped.Pairs, "thm:main", "changed")
 }
 
 func TestDiffSidecarRemapPreservesDetachedAnnotations(t *testing.T) {
@@ -202,6 +206,17 @@ func TestDiffStdoutJSONContainsPairs(t *testing.T) {
 
 	assert.Contains(t, out.String(), `"old_spec": "old.tex"`)
 	assert.Contains(t, out.String(), `"status": "changed"`)
+}
+
+func assertPairSummary(t *testing.T, pairs []PairSummary, id, status string) {
+	t.Helper()
+	for _, pair := range pairs {
+		if pair.ID == id {
+			assert.Equal(t, status, pair.Status)
+			return
+		}
+	}
+	require.FailNow(t, "missing pair summary", "id=%s pairs=%#v", id, pairs)
 }
 
 func TestMergeSidecarsPreservesConcurrentDiskAndMemoryChanges(t *testing.T) {

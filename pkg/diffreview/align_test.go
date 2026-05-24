@@ -245,6 +245,49 @@ Move me, with an edit.
 	assert.Equal(t, []string{"B"}, pair.SectionPathNew)
 }
 
+func TestAlignPairIDsStayUniqueForDuplicateLabels(t *testing.T) {
+	oldSrc := `\section{Intro}
+
+\begin{theorem}
+\label{thm:dup}
+First duplicate theorem has enough shared words before the edit.
+\end{theorem}
+
+\begin{theorem}
+\label{thm:dup}
+Second duplicate theorem has enough shared words before the edit.
+\end{theorem}
+`
+	newSrc := `\section{Intro}
+
+\begin{theorem}
+\label{thm:dup}
+First duplicate theorem has enough shared words after the edit.
+\end{theorem}
+
+\begin{theorem}
+\label{thm:dup}
+Second duplicate theorem has enough shared words after the edit.
+\end{theorem}
+`
+	review := buildReviewForTest(t, oldSrc, newSrc)
+
+	seen := map[string]bool{}
+	var duplicateLabelPairs int
+	for _, pair := range review.Pairs {
+		if seen[pair.ID] {
+			t.Fatalf("duplicate pair ID %q in %#v", pair.ID, review.Pairs)
+		}
+		seen[pair.ID] = true
+		if pair.New != nil && pair.New.Label == "thm:dup" {
+			duplicateLabelPairs++
+		}
+	}
+	assert.Equal(t, 2, duplicateLabelPairs)
+	assert.True(t, seen["thm:dup"], "first duplicate-label pair missing")
+	assert.True(t, seen["thm:dup~2"], "second duplicate-label pair missing")
+}
+
 func buildReviewForTest(t *testing.T, oldSrc, newSrc string) *Review {
 	t.Helper()
 	review, err := BuildReview(

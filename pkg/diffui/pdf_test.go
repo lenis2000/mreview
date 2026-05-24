@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/pdf"
+	"mreview/pkg/synctex"
 )
 
 func TestPrepareNewPDFUsesNewFilesystemEndpoint(t *testing.T) {
@@ -131,6 +133,58 @@ func TestDiffPDFReloadDoesNotLoadAuxWhenArtifactsAreStale(t *testing.T) {
 	}
 	if msg.Aux != nil || msg.BBL != nil {
 		t.Fatalf("stale reload loaded build metadata: aux=%#v bbl=%#v", msg.Aux, msg.BBL)
+	}
+}
+
+func TestDiffPDFReloadSuccessfulBuildWithoutArtifactsIsStale(t *testing.T) {
+	_, _, newPath := pdfReviewFixture(t)
+
+	msg := performDiffPDFReload(newPath, 1, nil, "true", true)
+	if !msg.BuildStale {
+		t.Fatalf("successful build without PDF artifacts should be stale: %#v", msg)
+	}
+	if msg.NewPDF != nil || msg.NewSyncTeX != nil {
+		t.Fatalf("missing artifact reload unexpectedly opened handles: %#v", msg)
+	}
+	if !strings.Contains(msg.Status, "new PDF not loaded") {
+		t.Fatalf("expected missing PDF status, got %q", msg.Status)
+	}
+}
+
+func TestApplyPDFReloadClearsOldArtifactsWhenReloadHasNoPair(t *testing.T) {
+	samplePDF, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.pdf"))
+	if err != nil {
+		t.Fatalf("sample pdf path: %v", err)
+	}
+	sampleSyncTeX, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.synctex.gz"))
+	if err != nil {
+		t.Fatalf("sample synctex path: %v", err)
+	}
+	oldPDF, err := pdf.Open(samplePDF)
+	if err != nil {
+		t.Fatalf("open sample pdf: %v", err)
+	}
+	oldSyncTeX, err := synctex.Open(sampleSyncTeX)
+	if err != nil {
+		_ = oldPDF.Close()
+		t.Fatalf("open sample synctex: %v", err)
+	}
+
+	m := New(fixtureReview(), Options{PDF: oldPDF, Synctex: oldSyncTeX, KittyAvailable: true})
+	m.pdfReloadGen = 3
+	out, _ := m.applyPDFReload(diffPDFReloadMsg{
+		Generation: 3,
+		OldPDF:     oldPDF,
+	})
+	if out.PDF != nil {
+		_ = out.PDF.Close()
+		t.Fatalf("expected stale PDF handle to be cleared")
+	}
+	if out.Synctex != nil {
+		t.Fatalf("expected stale SyncTeX handle to be cleared")
+	}
+	if out.PDFStatus != "(new PDF not loaded)" {
+		t.Fatalf("expected missing PDF status, got %q", out.PDFStatus)
 	}
 }
 

@@ -126,6 +126,7 @@ func AlignDocuments(oldEndpoint, newEndpoint Endpoint, oldDoc, newDoc *parser.Do
 	matchByFuzzyScore(oldBlocks, newBlocks, oldMeta, newMeta, oldMatched, newMatched, addMatch)
 
 	pairs := orderPairs(oldBlocks, newBlocks, oldMeta, newMeta, oldMatched, newMatched, matches)
+	ensureUniquePairIDs(pairs)
 	review := &Review{
 		Old:    oldEndpoint,
 		New:    newEndpoint,
@@ -522,9 +523,15 @@ func statusFor(oldBlock, newBlock *parser.Block, oldMeta, newMeta blockMeta, str
 
 func matchedPairID(oldBlock, newBlock *parser.Block) string {
 	if newBlock != nil && newBlock.Label != "" {
+		if newBlock.ID != "" {
+			return newBlock.ID
+		}
 		return newBlock.Label
 	}
 	if oldBlock != nil && oldBlock.Label != "" {
+		if oldBlock.ID != "" {
+			return oldBlock.ID
+		}
 		return oldBlock.Label
 	}
 	if oldBlock != nil && oldBlock.ID != "" {
@@ -547,13 +554,37 @@ func pairIDForNew(block *parser.Block) string {
 	if block == nil {
 		return ""
 	}
-	if block.Label != "" {
-		return block.Label
-	}
 	if block.ID != "" {
 		return block.ID
 	}
+	if block.Label != "" {
+		return block.Label
+	}
 	return fmt.Sprintf("new:%d", block.StartLine)
+}
+
+func ensureUniquePairIDs(pairs []Pair) {
+	seen := map[string]int{}
+	for i := range pairs {
+		id := pairs[i].ID
+		if id == "" {
+			id = fmt.Sprintf("pair:%d", i+1)
+		}
+		seen[id]++
+		if seen[id] == 1 {
+			pairs[i].ID = id
+			continue
+		}
+		for n := seen[id]; ; n++ {
+			cand := fmt.Sprintf("%s~%d", id, n)
+			if seen[cand] == 0 {
+				seen[id] = n
+				seen[cand] = 1
+				pairs[i].ID = cand
+				break
+			}
+		}
+	}
 }
 
 func pairIDForDeleted(block *parser.Block) string {

@@ -28,16 +28,23 @@ type Annotation struct {
 	Note        string `json:"note" yaml:"note,omitempty"`
 }
 
+// PairSummary records the stable ID and status for one semantic pair.
+type PairSummary struct {
+	ID     string `json:"id" yaml:"id"`
+	Status string `json:"status" yaml:"status"`
+}
+
 // Sidecar is the persisted state for one semantic diff-review session.
 type Sidecar struct {
-	OldSpec      string       `json:"old_spec" yaml:"old_spec,omitempty"`
-	OldLabel     string       `json:"old_label" yaml:"old_label,omitempty"`
-	NewSpec      string       `json:"new_spec" yaml:"new_spec,omitempty"`
-	NewPath      string       `json:"new_path" yaml:"new_path,omitempty"`
-	CursorPairID string       `json:"cursor_pair_id" yaml:"cursor_pair_id,omitempty"`
-	Reviewed     []string     `json:"reviewed" yaml:"reviewed,omitempty"`
-	Annotations  []Annotation `json:"annotations" yaml:"annotations,omitempty"`
-	Detached     []Annotation `json:"detached" yaml:"detached,omitempty"`
+	OldSpec      string        `json:"old_spec" yaml:"old_spec,omitempty"`
+	OldLabel     string        `json:"old_label" yaml:"old_label,omitempty"`
+	NewSpec      string        `json:"new_spec" yaml:"new_spec,omitempty"`
+	NewPath      string        `json:"new_path" yaml:"new_path,omitempty"`
+	CursorPairID string        `json:"cursor_pair_id" yaml:"cursor_pair_id,omitempty"`
+	Reviewed     []string      `json:"reviewed" yaml:"reviewed,omitempty"`
+	Pairs        []PairSummary `json:"pairs" yaml:"pairs,omitempty"`
+	Annotations  []Annotation  `json:"annotations" yaml:"annotations,omitempty"`
+	Detached     []Annotation  `json:"detached" yaml:"detached,omitempty"`
 }
 
 // StdoutFormat selects the quit-time diff summary emission shape.
@@ -152,6 +159,9 @@ func MarshalSidecar(side *Sidecar) ([]byte, error) {
 	}
 	copySide := *side
 	copySide.Reviewed = append([]string(nil), side.Reviewed...)
+	copySide.Pairs = append([]PairSummary(nil), side.Pairs...)
+	copySide.Annotations = append([]Annotation(nil), side.Annotations...)
+	copySide.Detached = append([]Annotation(nil), side.Detached...)
 	sort.Strings(copySide.Reviewed)
 	yml, err := yaml.Marshal(&copySide)
 	if err != nil {
@@ -175,6 +185,7 @@ func NewSidecar(review *Review) *Sidecar {
 		OldLabel: review.Old.Label,
 		NewSpec:  review.New.Spec,
 		NewPath:  endpointDisplayPath(review.New),
+		Pairs:    PairSummaries(review),
 	}
 }
 
@@ -188,6 +199,7 @@ func RemapSidecar(loaded *Sidecar, review *Review) *Sidecar {
 	out := NewSidecar(review)
 	if review == nil {
 		out.Reviewed = append([]string(nil), loaded.Reviewed...)
+		out.Pairs = append([]PairSummary(nil), loaded.Pairs...)
 		out.Annotations = append([]Annotation(nil), loaded.Annotations...)
 		out.Detached = append([]Annotation(nil), loaded.Detached...)
 		out.CursorPairID = loaded.CursorPairID
@@ -379,9 +391,16 @@ func cloneSidecar(s *Sidecar) *Sidecar {
 	}
 	out := *s
 	out.Reviewed = append([]string(nil), s.Reviewed...)
+	out.Pairs = append([]PairSummary(nil), s.Pairs...)
 	out.Annotations = append([]Annotation(nil), s.Annotations...)
 	out.Detached = append([]Annotation(nil), s.Detached...)
 	return &out
+}
+
+// CloneSidecar returns a detached copy of the sidecar suitable for use as a
+// later merge base.
+func CloneSidecar(s *Sidecar) *Sidecar {
+	return cloneSidecar(s)
 }
 
 func mergeReviewedIDs(base, disk, mem []string) []string {
@@ -532,15 +551,15 @@ func EmitJSON(w io.Writer, side *Sidecar, review *Review) error {
 		side = NewSidecar(review)
 	}
 	payload := struct {
-		OldSpec      string       `json:"old_spec"`
-		OldLabel     string       `json:"old_label,omitempty"`
-		NewSpec      string       `json:"new_spec"`
-		NewPath      string       `json:"new_path,omitempty"`
-		CursorPairID string       `json:"cursor_pair_id,omitempty"`
-		Reviewed     []string     `json:"reviewed,omitempty"`
-		Pairs        []stdoutPair `json:"pairs,omitempty"`
-		Annotations  []Annotation `json:"annotations,omitempty"`
-		Detached     []Annotation `json:"detached,omitempty"`
+		OldSpec      string        `json:"old_spec"`
+		OldLabel     string        `json:"old_label,omitempty"`
+		NewSpec      string        `json:"new_spec"`
+		NewPath      string        `json:"new_path,omitempty"`
+		CursorPairID string        `json:"cursor_pair_id,omitempty"`
+		Reviewed     []string      `json:"reviewed,omitempty"`
+		Pairs        []PairSummary `json:"pairs,omitempty"`
+		Annotations  []Annotation  `json:"annotations,omitempty"`
+		Detached     []Annotation  `json:"detached,omitempty"`
 	}{
 		OldSpec:      side.OldSpec,
 		OldLabel:     side.OldLabel,
@@ -548,18 +567,13 @@ func EmitJSON(w io.Writer, side *Sidecar, review *Review) error {
 		NewPath:      side.NewPath,
 		CursorPairID: side.CursorPairID,
 		Reviewed:     append([]string(nil), side.Reviewed...),
-		Pairs:        stdoutPairs(review),
+		Pairs:        pairSummariesForEmit(side, review),
 		Annotations:  append([]Annotation(nil), side.Annotations...),
 		Detached:     append([]Annotation(nil), side.Detached...),
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(payload)
-}
-
-type stdoutPair struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
 }
 
 func writeSidecarMarkdown(b *strings.Builder, side *Sidecar, review *Review, includeAll bool) {
@@ -577,7 +591,7 @@ func writeSidecarMarkdown(b *strings.Builder, side *Sidecar, review *Review, inc
 
 	if includeAll || review != nil {
 		b.WriteString("## Pair statuses\n\n")
-		pairs := stdoutPairs(review)
+		pairs := pairSummariesForEmit(side, review)
 		if len(pairs) == 0 {
 			b.WriteString("(none)\n\n")
 		} else {
@@ -662,13 +676,22 @@ func truncateQuoteLines(src string, maxLines int) []string {
 	return out
 }
 
-func stdoutPairs(review *Review) []stdoutPair {
+func pairSummariesForEmit(side *Sidecar, review *Review) []PairSummary {
+	pairs := PairSummaries(review)
+	if len(pairs) != 0 || review != nil || side == nil {
+		return pairs
+	}
+	return append([]PairSummary(nil), side.Pairs...)
+}
+
+// PairSummaries returns the persisted pair summary list for a review.
+func PairSummaries(review *Review) []PairSummary {
 	if review == nil {
 		return nil
 	}
-	out := make([]stdoutPair, 0, len(review.Pairs))
+	out := make([]PairSummary, 0, len(review.Pairs))
 	for _, pair := range review.Pairs {
-		out = append(out, stdoutPair{ID: pair.ID, Status: pair.Status.String()})
+		out = append(out, PairSummary{ID: pair.ID, Status: pair.Status.String()})
 	}
 	return out
 }

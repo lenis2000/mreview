@@ -127,6 +127,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 	}
 	loadedSidecarMTime := sidecarModTime(sidecarPath)
 	sidecar := diffreview.RemapSidecar(loadedSidecar, review)
+	sidecarBase := diffreview.CloneSidecar(sidecar)
 	issues, issuesErr := diffIssuesForReview(review)
 	if issuesErr != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: warning: load fmt-report: %v\n", issuesErr)
@@ -166,7 +167,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		finalReview = fm.Review
 		finalPDF = fm.PDF
 	}
-	if err := diffreview.SaveSidecarMerging(sidecarPath, sidecar, loadedSidecarMTime, finalSidecar); err != nil {
+	if err := diffreview.SaveSidecarMerging(sidecarPath, sidecarBase, loadedSidecarMTime, finalSidecar); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
 		return 1
 	}

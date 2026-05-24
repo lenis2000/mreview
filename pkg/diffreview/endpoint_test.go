@@ -41,7 +41,7 @@ func TestResolveBaseMaterializesOldAndReadsDirtyWorkingTree(t *testing.T) {
 	assert.Equal(t, []byte("base\n"), gotOld)
 	info, err := os.Stat(oldEndpoint.Path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o400), info.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o444), info.Mode().Perm())
 	sessionDir := filepath.Join(repo, ".mreview-diff", "test-session")
 	sessionInfo, err := os.Stat(sessionDir)
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestResolveEndpointsMarksOnlyNewFilesystemEndpointEditable(t *testing.T) {
 	assert.Equal(t, []byte("old"), gotOld)
 	info, err := os.Stat(oldEndpoint.Path)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o400), info.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o444), info.Mode().Perm())
 
 	assert.Equal(t, WorkingFile, newEndpoint.Kind)
 	assert.True(t, newEndpoint.Editable)
@@ -169,6 +169,18 @@ func TestResolveEndpointRejectsUnsafeGitBlobPaths(t *testing.T) {
 		require.Error(t, err, spec)
 		assert.Empty(t, endpoint.Path)
 	}
+}
+
+func TestResolveEndpointRejectsOptionLikeGitRevision(t *testing.T) {
+	repo := initRepo(t)
+	writeFile(t, repo, "paper.tex", "committed\n")
+	git(t, repo, "add", "paper.tex")
+	git(t, repo, "commit", "-m", "base")
+
+	endpoint, err := Resolver{WorkDir: repo}.ResolveEndpoint(context.Background(), "--output=/tmp/poc:paper.tex", false)
+	require.Error(t, err)
+	assert.Empty(t, endpoint.Path)
+	assert.Contains(t, err.Error(), "git revision must not start")
 }
 
 func initRepo(t *testing.T) string {

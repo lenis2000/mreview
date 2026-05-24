@@ -64,6 +64,7 @@ type Resolver struct {
 // The old endpoint is REV:<repo-relative path>; the new endpoint is the
 // working-tree file.
 func (r Resolver) ResolveBase(ctx context.Context, baseRev, path string) (Endpoint, Endpoint, error) {
+	baseRev = strings.TrimSpace(baseRev)
 	if strings.TrimSpace(baseRev) == "" {
 		return Endpoint{}, Endpoint{}, errors.New("base revision is required")
 	}
@@ -186,6 +187,13 @@ func (r Resolver) resolveGitBlob(ctx context.Context, spec, rev, relPath string)
 }
 
 func (r Resolver) resolveGitBlobInRepo(ctx context.Context, repoRoot, spec, rev, relPath string) (Endpoint, error) {
+	rev = strings.TrimSpace(rev)
+	if rev == "" {
+		return Endpoint{}, errors.New("git revision is required")
+	}
+	if strings.HasPrefix(rev, "-") {
+		return Endpoint{}, fmt.Errorf("git revision must not start with '-': %q", rev)
+	}
 	relPath = filepath.ToSlash(filepath.Clean(relPath))
 	if strings.HasPrefix(relPath, "../") || relPath == ".." || filepath.IsAbs(relPath) {
 		return Endpoint{}, fmt.Errorf("git blob path must be repository-relative: %q", relPath)
@@ -297,7 +305,7 @@ func gitRoot(ctx context.Context, dir string) (string, error) {
 
 func gitShow(ctx context.Context, repoRoot, rev, relPath string) ([]byte, error) {
 	spec := rev + ":" + filepath.ToSlash(relPath)
-	cmd := exec.CommandContext(ctx, "git", "show", spec)
+	cmd := exec.CommandContext(ctx, "git", "show", "--end-of-options", spec)
 	cmd.Dir = repoRoot
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -384,9 +392,7 @@ func writeMaterializedFile(root, target string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmpName, 0o400); err != nil {
-		return err
-	}
+	_ = os.Chmod(tmpName, 0o444)
 	if err := os.Rename(tmpName, target); err != nil {
 		return err
 	}

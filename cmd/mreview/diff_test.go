@@ -232,6 +232,55 @@ func TestRunDiffSavesSidecarAndEmitsMarkdown(t *testing.T) {
 	if notes := saved.AnnotationNotes(); notes[finalPairID] != "final note" {
 		t.Fatalf("saved sidecar did not include final annotation state: %#v", notes)
 	}
+	if len(saved.Pairs) == 0 {
+		t.Fatalf("saved sidecar did not include pair summaries")
+	}
+}
+
+func TestRunDiffMergesConcurrentSidecarWithLiveChanges(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	sidecarPath := filepath.Join(dir, "review.md")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Original paragraph with enough shared words for merging.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("Updated paragraph with enough shared words for merging.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	var finalPairID string
+	_ = withStubDiffTUIFinal(t, func(m diffui.Model) diffui.Model {
+		pair := m.CurrentPair()
+		if pair == nil {
+			return m
+		}
+		finalPairID = pair.ID
+		m.Sidecar.UpsertAnnotation(diffreview.AnnotationForPair(m.Review, pair, "memory note"))
+		if err := diffreview.SaveSidecar(sidecarPath, &diffreview.Sidecar{
+			Annotations: []diffreview.Annotation{{PairID: "external-only", Note: "external note"}},
+		}); err != nil {
+			t.Fatalf("save concurrent sidecar: %v", err)
+		}
+		return m
+	})
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--no-build", "--noconfig", "--sidecar", sidecarPath, "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	saved, err := diffreview.LoadSidecar(sidecarPath)
+	if err != nil {
+		t.Fatalf("load sidecar: %v", err)
+	}
+	notes := saved.AnnotationNotes()
+	if notes["external-only"] != "external note" {
+		t.Fatalf("concurrent disk annotation was not preserved: %#v", notes)
+	}
+	if finalPairID == "" || notes[finalPairID] != "memory note" {
+		t.Fatalf("in-session annotation was not preserved: pair=%q notes=%#v", finalPairID, notes)
+	}
 }
 
 func TestRunDiffLoadsFmtReportIssuesForNewPairs(t *testing.T) {
