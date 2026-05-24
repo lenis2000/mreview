@@ -13,6 +13,7 @@ import (
 	"github.com/jessevdk/go-flags"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/diffui"
 	"mreview/pkg/ui"
 )
 
@@ -30,44 +31,6 @@ type diffOpts struct {
 
 	OpenZed            bool `long:"open-zed" description:"open old and new sources in Zed after startup"`
 	AllowModifications bool `long:"allow-modifications" description:"allow e/E edits to the new endpoint when it is a real file"`
-}
-
-// diffModel is the temporary diff-mode Bubble Tea model used until pkg/diffui
-// lands. Keep the CLI-owned state explicit so tests and the future UI package
-// can agree on the contract.
-type diffModel struct {
-	Review *diffreview.Review
-	Config *ui.Config
-	Styles ui.Styles
-
-	AllowModifications          bool
-	RequestedAllowModifications bool
-	NoBuild                     bool
-	Draft                       bool
-	BuildCmd                    string
-	SidecarPath                 string
-	StdoutFormat                string
-	OpenZed                     bool
-	Status                      string
-}
-
-func (m diffModel) Init() tea.Cmd { return nil }
-
-func (m diffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		}
-	}
-	return m, nil
-}
-
-func (m diffModel) View() string {
-	if m.Review == nil {
-		return "mreview diff\n"
-	}
-	return fmt.Sprintf("mreview diff: %d semantic pairs\n", m.Review.Stats.Total)
 }
 
 var runDiffTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) {
@@ -121,24 +84,54 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	allowEdits := o.AllowModifications && review.New.Editable
-	model := diffModel{
-		Review:                      review,
-		Config:                      cfg,
-		Styles:                      ui.StylesForTheme(cfg.Theme),
-		AllowModifications:          allowEdits,
-		RequestedAllowModifications: o.AllowModifications,
-		NoBuild:                     o.NoBuild,
-		Draft:                       o.Draft,
-		BuildCmd:                    o.BuildCmd,
-		SidecarPath:                 o.Sidecar,
-		StdoutFormat:                o.Stdout,
-		OpenZed:                     o.OpenZed,
-		Status:                      initialDiffStatus(o, review),
+	stdoutFmt, fmtErr := diffreview.ParseStdoutFormat(o.Stdout)
+	if fmtErr != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: %v\n", fmtErr)
+		return 2
 	}
 
-	if _, err := runDiffTUI(model, stdout, stderr); err != nil {
+	sidecarPath := o.Sidecar
+	if sidecarPath == "" {
+		sidecarPath = diffreview.DefaultSidecarPath(review)
+	}
+	loadedSidecar, sideErr := diffreview.LoadSidecar(sidecarPath)
+	if sideErr != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: load sidecar %q: %v\n", sidecarPath, sideErr)
+		return 1
+	}
+	sidecar := diffreview.RemapSidecar(loadedSidecar, review)
+
+	allowEdits := o.AllowModifications && review.New.Editable
+	model := diffui.New(review, diffui.Options{
+		Config:             cfg,
+		Styles:             ui.StylesForTheme(cfg.Theme),
+		Sidecar:            sidecar,
+		AllowModifications: allowEdits,
+		RequestedAllowMods: o.AllowModifications,
+		NoBuild:            o.NoBuild,
+		Draft:              o.Draft,
+		BuildCmd:           o.BuildCmd,
+		SidecarPath:        sidecarPath,
+		StdoutFormat:       o.Stdout,
+		OpenZed:            o.OpenZed,
+		Status:             initialDiffStatus(o, review),
+	})
+
+	final, err := runDiffTUI(model, stdout, stderr)
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: tui: %v\n", err)
+		return 1
+	}
+	finalSidecar := model.FinalSidecar()
+	if fm, ok := final.(diffui.Model); ok {
+		finalSidecar = fm.FinalSidecar()
+	}
+	if err := diffreview.SaveSidecar(sidecarPath, finalSidecar); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
+		return 1
+	}
+	if err := diffreview.Emit(stdout, finalSidecar, review, stdoutFmt); err != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: emit: %v\n", err)
 		return 1
 	}
 	return 0

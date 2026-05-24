@@ -28,6 +28,9 @@ func (m Model) View() string {
 	if m.ShowHelp {
 		sourceTitle = "Help"
 		sourceBody = RenderHelpBody(sourceW-2, m.AllowModifications)
+	} else if m.Popup != nil {
+		sourceTitle = "Annotation"
+		sourceBody = m.Popup.TA.View()
 	}
 	source := m.renderPane(sourceTitle, sourceBody, sourceW, bodyHeight)
 	pdf := m.renderPane("PDF", "(new PDF not loaded)", pdfW, bodyHeight)
@@ -88,6 +91,8 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"f cycle filter",
 		"space mark reviewed",
 		"a annotate pair",
+		"ctrl+a edit annotation",
+		"d delete annotation",
 		"e/E edit new file only when --allow-modifications is supplied",
 		"Z opens old+new in Zed",
 		"? close help",

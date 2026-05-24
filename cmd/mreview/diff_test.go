@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/diffui"
 )
 
 func withStubDiffTUI(t *testing.T) *tea.Model {
@@ -26,12 +27,12 @@ func withStubDiffTUI(t *testing.T) *tea.Model {
 	return &captured
 }
 
-func capturedDiffModel(t *testing.T, captured *tea.Model) diffModel {
+func capturedDiffModel(t *testing.T, captured *tea.Model) diffui.Model {
 	t.Helper()
 	if captured == nil || *captured == nil {
 		t.Fatalf("expected runDiffTUI to be invoked")
 	}
-	m, ok := (*captured).(diffModel)
+	m, ok := (*captured).(diffui.Model)
 	if !ok {
 		t.Fatalf("unexpected diff model type %T", *captured)
 	}
@@ -119,7 +120,7 @@ func TestRunDiffPrimaryBaseBuildsReview(t *testing.T) {
 	if !m.Review.New.Editable {
 		t.Fatalf("expected working-tree new endpoint to be editable")
 	}
-	if m.AllowModifications || m.RequestedAllowModifications {
+	if m.AllowModifications || m.RequestedAllowMods {
 		t.Fatalf("expected edit permission to be disabled without --allow-modifications")
 	}
 	if !m.NoBuild {
@@ -169,6 +170,37 @@ func TestRunDiffExplicitOldNewBuildsReview(t *testing.T) {
 	}
 }
 
+func TestRunDiffSavesSidecarAndEmitsMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	sidecarPath := filepath.Join(dir, "review.md")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Original paragraph with enough shared words for matching.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("Updated paragraph with enough shared words for matching.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	_ = withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--no-build", "--noconfig", "--sidecar", sidecarPath, "--stdout=md", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Old: "+oldPath) || !strings.Contains(out, "New: "+newPath) || !strings.Contains(out, "- changed") {
+		t.Fatalf("stdout markdown missing diff summary:\n%s", out)
+	}
+	saved, err := diffreview.LoadSidecar(sidecarPath)
+	if err != nil {
+		t.Fatalf("load sidecar: %v", err)
+	}
+	if saved.OldSpec != oldPath || saved.NewSpec != newPath {
+		t.Fatalf("saved sidecar specs = old %q new %q", saved.OldSpec, saved.NewSpec)
+	}
+}
+
 func TestRunDiffAllowModificationsTogglesEditPermission(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old.tex")
@@ -188,7 +220,7 @@ func TestRunDiffAllowModificationsTogglesEditPermission(t *testing.T) {
 	}
 
 	m := capturedDiffModel(t, captured)
-	if !m.RequestedAllowModifications {
+	if !m.RequestedAllowMods {
 		t.Fatalf("expected requested allow-modifications flag to be captured")
 	}
 	if !m.AllowModifications {
@@ -214,7 +246,7 @@ func TestRunDiffReadOnlyNewEndpointDisablesEditPermission(t *testing.T) {
 	if m.Review.New.Editable {
 		t.Fatalf("expected git-blob new endpoint to be read-only")
 	}
-	if !m.RequestedAllowModifications {
+	if !m.RequestedAllowMods {
 		t.Fatalf("expected requested allow-modifications flag to be captured")
 	}
 	if m.AllowModifications {

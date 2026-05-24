@@ -332,14 +332,14 @@ Sidecar contents should record:
 
 Requirements:
 
-- [ ] Preserve detached annotations when pair IDs no longer map after reload.
-- [ ] Pair IDs must be stable across small edits: prefer label/new block ID; for deleted rows use old block ID.
-- [ ] `space` toggles reviewed and auto-advances under `changed/unreviewed` filters.
-- [ ] `a` annotates current pair; for now block-level annotation is enough. If line annotations are easy, line annotations should refer to the new side when present, old side for deleted-only rows.
-- [ ] `ctrl+a` edits annotation, `d` deletes with confirmation, matching normal review semantics where feasible.
-- [ ] On quit, save sidecar and emit markdown/json/none according to `--stdout`.
-- [ ] Tests: save/load/remap, detached preservation, stdout markdown contains old/new specs and pair statuses.
-- [ ] Run `go test ./pkg/diffreview ./pkg/diffui ./cmd/mreview`.
+- [x] Preserve detached annotations when pair IDs no longer map after reload.
+- [x] Pair IDs must be stable across small edits: prefer label/new block ID; for deleted rows use old block ID.
+- [x] `space` toggles reviewed and auto-advances under `changed/unreviewed` filters.
+- [x] `a` annotates current pair; for now block-level annotation is enough. If line annotations are easy, line annotations should refer to the new side when present, old side for deleted-only rows.
+- [x] `ctrl+a` edits annotation, `d` deletes with confirmation, matching normal review semantics where feasible.
+- [x] On quit, save sidecar and emit markdown/json/none according to `--stdout`.
+- [x] Tests: save/load/remap, detached preservation, stdout markdown contains old/new specs and pair statuses.
+- [x] Run `go test ./pkg/diffreview ./pkg/diffui ./cmd/mreview`.
 
 ### Task 6: New-only edit semantics (`e` and `E`)
 

@@ -484,7 +484,7 @@ func makeMatchedPair(oldBlocks, newBlocks []*parser.Block, oldMeta, newMeta []bl
 func makeAddedPair(newBlocks []*parser.Block, newMeta []blockMeta, newIndex int) Pair {
 	newBlock := newBlocks[newIndex]
 	return Pair{
-		ID:             "new:" + newBlock.ID,
+		ID:             pairIDForNew(newBlock),
 		Status:         Added,
 		New:            newBlock,
 		Score:          0,
@@ -497,7 +497,7 @@ func makeAddedPair(newBlocks []*parser.Block, newMeta []blockMeta, newIndex int)
 func makeDeletedPair(oldBlocks []*parser.Block, oldMeta []blockMeta, oldIndex int) Pair {
 	oldBlock := oldBlocks[oldIndex]
 	return Pair{
-		ID:             "old:" + oldBlock.ID,
+		ID:             pairIDForDeleted(oldBlock),
 		Status:         Deleted,
 		Old:            oldBlock,
 		Score:          0,
@@ -521,13 +521,44 @@ func statusFor(oldBlock, newBlock *parser.Block, oldMeta, newMeta blockMeta, str
 }
 
 func matchedPairID(oldBlock, newBlock *parser.Block) string {
-	if newBlock.ID != "" {
-		return newBlock.ID
+	id := pairIDForNew(newBlock)
+	if id != "" {
+		return id
 	}
-	if oldBlock.ID != "" {
+	if oldBlock != nil && oldBlock.ID != "" {
 		return oldBlock.ID
 	}
-	return fmt.Sprintf("old:%d-new:%d", oldBlock.StartLine, newBlock.StartLine)
+	oldLine, newLine := 0, 0
+	if oldBlock != nil {
+		oldLine = oldBlock.StartLine
+	}
+	if newBlock != nil {
+		newLine = newBlock.StartLine
+	}
+	return fmt.Sprintf("old:%d-new:%d", oldLine, newLine)
+}
+
+func pairIDForNew(block *parser.Block) string {
+	if block == nil {
+		return ""
+	}
+	if block.Label != "" {
+		return block.Label
+	}
+	if block.ID != "" {
+		return block.ID
+	}
+	return fmt.Sprintf("new:%d", block.StartLine)
+}
+
+func pairIDForDeleted(block *parser.Block) string {
+	if block == nil {
+		return ""
+	}
+	if block.ID != "" {
+		return "old:" + block.ID
+	}
+	return fmt.Sprintf("old:%d", block.StartLine)
 }
 
 func (s *DiffStats) add(status PairStatus) {

@@ -2,7 +2,9 @@ package diffui
 
 import (
 	"fmt"
+	"sort"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
@@ -55,21 +57,30 @@ func CycleFilter(f Filter) Filter {
 	}
 }
 
-// Options configures a new diff TUI model. Reviewed, Annotations, and Issues
-// are intentionally simple maps until Task 5 wires in the diff sidecar.
+// Options configures a new diff TUI model.
 type Options struct {
+	Config             *ui.Config
 	Styles             ui.Styles
 	Filter             Filter
+	Sidecar            *diffreview.Sidecar
 	Reviewed           map[string]bool
 	Annotations        map[string]string
 	Issues             map[string][]string
 	AllowModifications bool
+	RequestedAllowMods bool
 	Status             string
+	NoBuild            bool
+	Draft              bool
+	BuildCmd           string
+	SidecarPath        string
+	StdoutFormat       string
+	OpenZed            bool
 }
 
 // Model is the Bubble Tea state for the semantic diff-review skeleton.
 type Model struct {
 	Review *diffreview.Review
+	Config *ui.Config
 
 	Cursor int
 	Filter Filter
@@ -78,28 +89,78 @@ type Model struct {
 	Status        string
 	Styles        ui.Styles
 
+	Sidecar            *diffreview.Sidecar
 	Reviewed           map[string]bool
 	Annotations        map[string]string
 	Issues             map[string][]string
 	AllowModifications bool
+	RequestedAllowMods bool
+
+	NoBuild      bool
+	Draft        bool
+	BuildCmd     string
+	SidecarPath  string
+	StdoutFormat string
+	OpenZed      bool
 
 	ShowHelp bool
 	pendingG bool
 	quitting bool
+
+	Popup   *AnnotationPopup
+	Pending *PendingDelete
+}
+
+// AnnotationPopup is the block-level diff annotation editor.
+type AnnotationPopup struct {
+	TA      textarea.Model
+	PairID  string
+	Editing bool
+}
+
+// PendingDelete records a pending annotation delete confirmation.
+type PendingDelete struct {
+	PairID string
 }
 
 // New constructs a diff TUI model with the changed filter selected by
 // default and the cursor snapped to the first visible semantic pair.
 func New(review *diffreview.Review, opts Options) Model {
+	side := opts.Sidecar
+	if side == nil {
+		side = diffreview.NewSidecar(review)
+	}
+	reviewed := side.ReviewedSet()
+	for id, v := range opts.Reviewed {
+		reviewed[id] = v
+	}
+	annotations := side.AnnotationNotes()
+	for id, note := range opts.Annotations {
+		annotations[id] = note
+	}
 	m := Model{
 		Review:             review,
+		Config:             opts.Config,
 		Filter:             opts.Filter,
 		Status:             opts.Status,
 		Styles:             opts.Styles,
-		Reviewed:           copyBoolMap(opts.Reviewed),
-		Annotations:        copyStringMap(opts.Annotations),
+		Sidecar:            side,
+		Reviewed:           reviewed,
+		Annotations:        annotations,
 		Issues:             copyIssueMap(opts.Issues),
 		AllowModifications: opts.AllowModifications,
+		RequestedAllowMods: opts.RequestedAllowMods,
+		NoBuild:            opts.NoBuild,
+		Draft:              opts.Draft,
+		BuildCmd:           opts.BuildCmd,
+		SidecarPath:        opts.SidecarPath,
+		StdoutFormat:       opts.StdoutFormat,
+		OpenZed:            opts.OpenZed,
+	}
+	if side.CursorPairID != "" {
+		if idx := pairIndexByID(review, side.CursorPairID); idx >= 0 {
+			m.Cursor = idx
+		}
 	}
 	m.snapCursor()
 	return m
@@ -114,6 +175,21 @@ func (m Model) CurrentPair() *diffreview.Pair {
 		return nil
 	}
 	return &m.Review.Pairs[m.Cursor]
+}
+
+// FinalSidecar returns the sidecar with cursor/reviewed/annotation state synced
+// from the current model.
+func (m Model) FinalSidecar() *diffreview.Sidecar {
+	side := m.Sidecar
+	if side == nil {
+		side = diffreview.NewSidecar(m.Review)
+	}
+	pair := m.CurrentPair()
+	if pair != nil {
+		side.CursorPairID = pair.ID
+	}
+	side.Reviewed = reviewedList(m.Reviewed)
+	return side
 }
 
 func (m Model) visibleIndices() []int {
@@ -253,4 +329,27 @@ func copyIssueMap(in map[string][]string) map[string][]string {
 		out[k] = append([]string(nil), v...)
 	}
 	return out
+}
+
+func reviewedList(reviewed map[string]bool) []string {
+	out := make([]string, 0, len(reviewed))
+	for id, ok := range reviewed {
+		if ok && id != "" {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func pairIndexByID(review *diffreview.Review, pairID string) int {
+	if review == nil || pairID == "" {
+		return -1
+	}
+	for i := range review.Pairs {
+		if review.Pairs[i].ID == pairID {
+			return i
+		}
+	}
+	return -1
 }
