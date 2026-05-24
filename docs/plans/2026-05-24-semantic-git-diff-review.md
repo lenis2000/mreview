@@ -162,16 +162,16 @@ type Endpoint struct {
 
 Requirements:
 
-- [ ] Detect git root with `git rev-parse --show-toplevel` when needed.
-- [ ] Resolve `--base REV path.tex` to old `REV:<repo-relative-path>` and new working file.
-- [ ] Resolve explicit `REV:path` endpoints using `git show REV:path`.
-- [ ] Resolve filesystem endpoints by reading from disk.
-- [ ] Materialize git blobs under `.mreview-diff/<safe-session-id>/...`, not `/tmp`.
-- [ ] Add `.mreview-diff/` to `.gitignore`.
-- [ ] Materialized old files should be read-only best-effort (`0444`) but failure to chmod is not fatal.
-- [ ] Never write to or mutate git refs.
-- [ ] Tests: temp git repo, `--base` resolution, `REV:path` reading, dirty working tree still allowed, materialized path exists and contains exact bytes.
-- [ ] Run `go test ./pkg/diffreview`.
+- [x] Detect git root with `git rev-parse --show-toplevel` when needed.
+- [x] Resolve `--base REV path.tex` to old `REV:<repo-relative-path>` and new working file.
+- [x] Resolve explicit `REV:path` endpoints using `git show REV:path`.
+- [x] Resolve filesystem endpoints by reading from disk.
+- [x] Materialize git blobs under `.mreview-diff/<safe-session-id>/...`, not `/tmp`.
+- [x] Add `.mreview-diff/` to `.gitignore`.
+- [x] Materialized old files should be read-only best-effort (`0444`) but failure to chmod is not fatal.
+- [x] Never write to or mutate git refs.
+- [x] Tests: temp git repo, `--base` resolution, `REV:path` reading, dirty working tree still allowed, materialized path exists and contains exact bytes.
+- [x] Run `go test ./pkg/diffreview`.
 
 ### Task 2: Semantic block alignment engine
 
