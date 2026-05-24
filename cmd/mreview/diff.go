@@ -83,6 +83,27 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: %v\n", reviewErr)
 		return 1
 	}
+	buildCmd := o.BuildCmd
+	if buildCmd == "" {
+		buildCmd = cfg.BuildCmd
+	}
+	pdfArtifacts, pdfErr := diffui.PrepareNewPDF(review, diffui.PDFOptions{
+		NoBuild:  o.NoBuild,
+		Draft:    o.Draft,
+		BuildCmd: buildCmd,
+		Stderr:   stderr,
+		Ctx:      ctx,
+	})
+	if pdfErr != nil {
+		_, _ = fmt.Fprintf(stderr, "mreview diff: %v\n", pdfErr)
+		return 1
+	}
+	if pdfArtifacts == nil {
+		pdfArtifacts = &diffui.PDFArtifacts{}
+	}
+	if pdfArtifacts != nil && pdfArtifacts.PDF != nil {
+		defer func() { _ = pdfArtifacts.PDF.Close() }()
+	}
 
 	stdoutFmt, fmtErr := diffreview.ParseStdoutFormat(o.Stdout)
 	if fmtErr != nil {
@@ -110,11 +131,16 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		RequestedAllowMods: o.AllowModifications,
 		NoBuild:            o.NoBuild,
 		Draft:              o.Draft,
-		BuildCmd:           o.BuildCmd,
+		BuildCmd:           buildCmd,
 		SidecarPath:        sidecarPath,
 		StdoutFormat:       o.Stdout,
 		OpenZed:            o.OpenZed,
-		Status:             initialDiffStatus(o, review),
+		PDF:                pdfArtifacts.PDF,
+		Synctex:            pdfArtifacts.Synctex,
+		BuildStale:         pdfArtifacts.BuildStale,
+		PDFStatus:          pdfArtifactPDFStatus(pdfArtifacts),
+		KittyAvailable:     ui.KittyGraphicsAvailable(),
+		Status:             joinStatus(initialDiffStatus(o, review), pdfArtifacts.Status),
 	})
 
 	final, err := runDiffTUI(model, stdout, stderr)
@@ -137,6 +163,31 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func pdfArtifactPDFStatus(a *diffui.PDFArtifacts) string {
+	if a == nil || (a.PDF != nil && a.Synctex != nil) {
+		return ""
+	}
+	if a.BuildStale {
+		return "(new PDF needs rebuild)"
+	}
+	return ""
+}
+
+func joinStatus(parts ...string) string {
+	out := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if out == "" {
+			out = part
+		} else {
+			out += " | " + part
+		}
+	}
+	return out
 }
 
 func validateDiffArgs(o diffOpts, rest []string) string {

@@ -36,7 +36,7 @@ func (m Model) View() string {
 		sourceBody = m.Popup.TA.View()
 	}
 	source := m.renderPane(sourceTitle, sourceBody, sourceW, bodyHeight)
-	pdf := m.renderPane("PDF", "(new PDF not loaded)", pdfW, bodyHeight)
+	pdf := m.renderPane("PDF", m.pdfPaneBody(), pdfW, bodyHeight)
 	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
 	status := clipLine(m.statusText(), m.Width)
 	return lipgloss.JoinVertical(lipgloss.Left, main, status)
@@ -97,6 +97,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"e/E edit new file only when --allow-modifications is supplied",
+		"B rebuild/reload new PDF; use after Zed edits",
 		"Z opens old+new in Zed",
 		"? close help",
 		"q quit",

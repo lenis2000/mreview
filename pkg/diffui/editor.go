@@ -170,7 +170,8 @@ func (m Model) submitLineEdit() (tea.Model, tea.Cmd) {
 		m.Status = "line edit: " + err.Error()
 		return m, nil
 	}
-	return m.reloadAfterEdit(fmt.Sprintf("line %d updated", p.AbsoluteLine)), nil
+	m = m.reloadAfterEdit(fmt.Sprintf("line %d updated", p.AbsoluteLine))
+	return m.afterSourceReload()
 }
 
 func (m Model) applyEditFinished(msg diffEditFinishedMsg) (tea.Model, tea.Cmd) {
@@ -178,7 +179,8 @@ func (m Model) applyEditFinished(msg diffEditFinishedMsg) (tea.Model, tea.Cmd) {
 		m.Status = "E: editor exited with error: " + msg.err.Error()
 		return m, nil
 	}
-	return m.reloadAfterEdit("external edit reloaded"), nil
+	m = m.reloadAfterEdit("external edit reloaded")
+	return m.afterSourceReload()
 }
 
 func (m Model) undoEdit() (tea.Model, tea.Cmd) {
@@ -210,7 +212,8 @@ func (m Model) undoEdit() (tea.Model, tea.Cmd) {
 	if len(m.EditRedo) > maxEditUndo {
 		m.EditRedo = m.EditRedo[len(m.EditRedo)-maxEditUndo:]
 	}
-	return m.reloadAfterEdit("undid " + snap.Label), nil
+	m = m.reloadAfterEdit("undid " + snap.Label)
+	return m.afterSourceReload()
 }
 
 func (m Model) redoEdit() (tea.Model, tea.Cmd) {
@@ -242,7 +245,8 @@ func (m Model) redoEdit() (tea.Model, tea.Cmd) {
 	if len(m.EditUndo) > maxEditUndo {
 		m.EditUndo = m.EditUndo[len(m.EditUndo)-maxEditUndo:]
 	}
-	return m.reloadAfterEdit("redid " + snap.Label), nil
+	m = m.reloadAfterEdit("redid " + snap.Label)
+	return m.afterSourceReload()
 }
 
 func (m Model) reloadAfterEdit(status string) Model {
@@ -277,6 +281,19 @@ func (m Model) reloadAfterEdit(status string) Model {
 	m.snapCursor()
 	m.Status = status
 	return m
+}
+
+func (m Model) afterSourceReload() (tea.Model, tea.Cmd) {
+	if strings.HasPrefix(m.Status, "reload:") {
+		return m, nil
+	}
+	if m.NoBuild {
+		m.BuildStale = true
+		m.PDFImage = ""
+		m.PDFStatus = "PDF build skipped by --no-build; press B to rebuild"
+		return m, nil
+	}
+	return m.startPDFReload(true)
 }
 
 func (m Model) editDisabledStatus(requireNewBlock bool) string {

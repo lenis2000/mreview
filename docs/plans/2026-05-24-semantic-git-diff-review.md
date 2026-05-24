@@ -410,16 +410,16 @@ Scope for first implementation: build/render the **new** endpoint only. Old PDF 
 
 Requirements:
 
-- [ ] For editable/filesystem new endpoint, reuse existing build pipeline (`build.ResolveBuildOutputsOnDisk`, `build.RunWith`, `parser.LoadAux`, `parser.LoadBBL`, `synctex.Open`, `populatePDFRegions` equivalent).
-- [ ] `--no-build` skips build and uses existing artifacts.
-- [ ] `--draft` opens with warning on build failure as normal review does.
-- [ ] PDF crop follows `Pair.New` when present.
-- [ ] Deleted-only pair shows `(deleted block — no new PDF location)`.
-- [ ] `B` rebuilds/reloads new endpoint.
-- [ ] Source/PDF watchers should watch the new file/artifacts only. Old endpoint is immutable for the session.
-- [ ] If implementing watchers is too invasive, at minimum reload after `e`/`E` and support manual `B`; document that Zed edits may require `B` in first cut.
-- [ ] Tests for path selection and deleted-row placeholder. Manual PDF rendering test in kitty.
-- [ ] Run `go test ./...`.
+- [x] For editable/filesystem new endpoint, reuse existing build pipeline (`build.ResolveBuildOutputsOnDisk`, `build.RunWith`, `parser.LoadAux`, `parser.LoadBBL`, `synctex.Open`, `populatePDFRegions` equivalent).
+- [x] `--no-build` skips build and uses existing artifacts.
+- [x] `--draft` opens with warning on build failure as normal review does.
+- [x] PDF crop follows `Pair.New` when present.
+- [x] Deleted-only pair shows `(deleted block — no new PDF location)`.
+- [x] `B` rebuilds/reloads new endpoint.
+- [x] Source/PDF watchers should watch the new file/artifacts only. Old endpoint is immutable for the session. (first cut does not add watchers; reload/build paths are new-endpoint only)
+- [x] If implementing watchers is too invasive, at minimum reload after `e`/`E` and support manual `B`; document that Zed edits may require `B` in first cut.
+- [x] Tests for path selection and deleted-row placeholder. Manual PDF rendering test in kitty (skipped - not automatable here).
+- [x] Run `go test ./...`.
 
 ### Task 9: Real-paper acceptance test on Random_edge_Aztec_2025
 

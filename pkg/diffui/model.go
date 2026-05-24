@@ -10,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/pdf"
+	"mreview/pkg/synctex"
 	"mreview/pkg/ui"
 )
 
@@ -77,6 +79,11 @@ type Options struct {
 	SidecarPath        string
 	StdoutFormat       string
 	OpenZed            bool
+	PDF                *pdf.Doc
+	Synctex            *synctex.Index
+	KittyAvailable     bool
+	BuildStale         bool
+	PDFStatus          string
 }
 
 // Model is the Bubble Tea state for the semantic diff-review skeleton.
@@ -102,12 +109,20 @@ type Model struct {
 	AllowModifications bool
 	RequestedAllowMods bool
 
-	NoBuild      bool
-	Draft        bool
-	BuildCmd     string
-	SidecarPath  string
-	StdoutFormat string
-	OpenZed      bool
+	NoBuild        bool
+	Draft          bool
+	BuildCmd       string
+	SidecarPath    string
+	StdoutFormat   string
+	OpenZed        bool
+	PDF            *pdf.Doc
+	Synctex        *synctex.Index
+	BuildStale     bool
+	PDFImage       string
+	PDFStatus      string
+	pdfGen         int
+	pdfReloadGen   int
+	KittyAvailable bool
 
 	ShowHelp bool
 	pendingG bool
@@ -167,6 +182,11 @@ func New(review *diffreview.Review, opts Options) Model {
 		SidecarPath:        opts.SidecarPath,
 		StdoutFormat:       opts.StdoutFormat,
 		OpenZed:            opts.OpenZed,
+		PDF:                opts.PDF,
+		Synctex:            opts.Synctex,
+		BuildStale:         opts.BuildStale,
+		PDFStatus:          opts.PDFStatus,
+		KittyAvailable:     opts.KittyAvailable,
 		SourceLineCursor:   1,
 	}
 	if side.CursorPairID != "" {

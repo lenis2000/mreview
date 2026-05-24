@@ -15,11 +15,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
-		return m, nil
+		return m.withPDFRender()
 	case diffEditFinishedMsg:
 		return m.applyEditFinished(msg)
 	case diffCompareFinishedMsg:
 		return m.applyCompareFinished(msg)
+	case diffPDFRenderMsg:
+		return m.applyPDFRender(msg)
+	case diffPDFReloadMsg:
+		return m.applyPDFReload(msg)
 	case tea.KeyMsg:
 		if m.LineEdit != nil {
 			return m.updateLineEditPopup(msg)
@@ -60,7 +64,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingG = false
 		if key == "g" {
 			m.moveToFirst()
-			return m, nil
+			return m.withPDFRender()
 		}
 	}
 
@@ -68,8 +72,10 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.Filter = CycleFilter(m.Filter)
 		m.snapCursor()
+		return m.withPDFRender()
 	case " ", "space":
-		return m.toggleReviewed(), nil
+		m = m.toggleReviewed()
+		return m.withPDFRender()
 	case "a":
 		return m.startAnnotation(false)
 	case "ctrl+a":
@@ -82,28 +88,42 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startLineEdit()
 	case "Z":
 		return m.openCompareEditor()
+	case "B":
+		m = m.reloadAfterEdit("source reloaded")
+		if strings.HasPrefix(m.Status, "reload:") {
+			return m, nil
+		}
+		return m.startPDFReload(true)
 	case "u":
 		return m.undoEdit()
 	case "ctrl+r":
 		return m.redoEdit()
 	case "j", "down":
 		m.moveVisible(1)
+		return m.withPDFRender()
 	case "k", "up":
 		m.moveVisible(-1)
+		return m.withPDFRender()
 	case "J", "pgdown":
 		m.moveVisible(5)
+		return m.withPDFRender()
 	case "K", "pgup":
 		m.moveVisible(-5)
+		return m.withPDFRender()
 	case "g":
 		m.pendingG = true
 	case "home":
 		m.moveToFirst()
+		return m.withPDFRender()
 	case "G", "end":
 		m.moveToLast()
+		return m.withPDFRender()
 	case "}":
 		m.moveSection(1)
+		return m.withPDFRender()
 	case "{":
 		m.moveSection(-1)
+		return m.withPDFRender()
 	}
 	return m, nil
 }
