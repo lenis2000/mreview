@@ -268,8 +268,10 @@ func (m Model) reloadAfterEdit(status string) Model {
 		return m
 	}
 	side := diffreview.RemapSidecar(m.FinalSidecar(), review)
+	sidecarBase := diffreview.RemapSidecar(m.SidecarBase, review)
 	m.Review = review
 	m.Sidecar = side
+	m.SidecarBase = sidecarBase
 	m.Reviewed = side.ReviewedSet()
 	m.Annotations = side.AnnotationNotes()
 	if idx := pairIndexByID(review, anchorID); idx >= 0 {

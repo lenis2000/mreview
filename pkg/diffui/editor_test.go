@@ -216,6 +216,39 @@ func TestDiffReloadAfterEditRecomputesPairsAndPreservesSidecarState(t *testing.T
 	}
 }
 
+func TestDiffReloadAfterEditRemapsSidecarBaseWithoutAbsorbingUnsavedNotes(t *testing.T) {
+	oldSrc := theoremDoc("Old theorem body.")
+	newSrc := theoremDoc("New theorem body.")
+	m, _, newPath := editableDiffModel(t, oldSrc, newSrc)
+	pair := m.CurrentPair()
+	if pair == nil || pair.ID != "thm:a" {
+		t.Fatalf("current pair id = %v, want thm:a", pair)
+	}
+	base := diffreview.NewSidecar(m.Review)
+	base.UpsertAnnotation(diffreview.AnnotationForPair(m.Review, pair, "base note"))
+	m.Sidecar = diffreview.CloneSidecar(base)
+	m.SidecarBase = diffreview.CloneSidecar(base)
+	m.Annotations = m.Sidecar.AnnotationNotes()
+
+	m.Sidecar.UpsertAnnotation(diffreview.AnnotationForPair(m.Review, pair, "user note"))
+	m.Annotations[pair.ID] = "user note"
+	if err := os.WriteFile(newPath, []byte(theoremDoc("Edited theorem body.")), 0o600); err != nil {
+		t.Fatalf("write edited new source: %v", err)
+	}
+
+	m = m.reloadAfterEdit("source reloaded")
+
+	if got := m.Sidecar.AnnotationNotes()["thm:a"]; got != "user note" {
+		t.Fatalf("live annotation = %q, want unsaved user note", got)
+	}
+	if got := m.SidecarBase.AnnotationNotes()["thm:a"]; got != "base note" {
+		t.Fatalf("base annotation = %q, want original base note", got)
+	}
+	if len(m.SidecarBase.Annotations) != 1 || !strings.Contains(m.SidecarBase.Annotations[0].SourceQuote, "Edited theorem body.") {
+		t.Fatalf("base annotation was not remapped to edited source: %#v", m.SidecarBase.Annotations)
+	}
+}
+
 func TestDiffUndoRedoApplyOnlyNewFile(t *testing.T) {
 	oldSrc := paragraphDoc("Old sentence.")
 	newSrc := paragraphDoc("New sentence.")

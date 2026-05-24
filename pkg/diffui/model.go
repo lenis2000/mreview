@@ -67,6 +67,7 @@ type Options struct {
 	Styles             ui.Styles
 	Filter             Filter
 	Sidecar            *diffreview.Sidecar
+	SidecarBase        *diffreview.Sidecar
 	Reviewed           map[string]bool
 	Annotations        map[string]string
 	Issues             map[string][]string
@@ -103,6 +104,7 @@ type Model struct {
 	Styles        ui.Styles
 
 	Sidecar            *diffreview.Sidecar
+	SidecarBase        *diffreview.Sidecar
 	Reviewed           map[string]bool
 	Annotations        map[string]string
 	Issues             map[string][]string
@@ -156,6 +158,10 @@ func New(review *diffreview.Review, opts Options) Model {
 	if side == nil {
 		side = diffreview.NewSidecar(review)
 	}
+	sidecarBase := opts.SidecarBase
+	if sidecarBase == nil {
+		sidecarBase = side
+	}
 	reviewed := side.ReviewedSet()
 	for id, v := range opts.Reviewed {
 		reviewed[id] = v
@@ -171,6 +177,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		Status:             opts.Status,
 		Styles:             opts.Styles,
 		Sidecar:            side,
+		SidecarBase:        diffreview.CloneSidecar(sidecarBase),
 		Reviewed:           reviewed,
 		Annotations:        annotations,
 		Issues:             copyIssueMap(opts.Issues),

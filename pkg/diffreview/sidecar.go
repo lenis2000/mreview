@@ -269,10 +269,13 @@ func defaultSidecarNewPath(endpoint Endpoint) string {
 	if endpoint.Kind == WorkingFile && !endpoint.Materialized && endpoint.Path != "" {
 		return endpoint.Path
 	}
-	if endpoint.RelPath != "" {
-		return endpoint.RelPath
+	if endpoint.Spec != "" {
+		return safePathComponent(endpoint.Spec)
 	}
-	return safePathComponent(endpoint.Spec)
+	if endpoint.RelPath != "" {
+		return safePathComponent(filepath.Base(endpoint.RelPath))
+	}
+	return ""
 }
 
 // AnnotationForPair builds a block-level annotation record for pair.

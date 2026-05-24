@@ -138,6 +138,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		Config:             cfg,
 		Styles:             ui.StylesForTheme(cfg.Theme),
 		Sidecar:            sidecar,
+		SidecarBase:        sidecarBase,
 		AllowModifications: allowEdits,
 		RequestedAllowMods: o.AllowModifications,
 		NoBuild:            o.NoBuild,
@@ -161,13 +162,15 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	finalSidecar := model.FinalSidecar()
+	finalSidecarBase := sidecarBase
 	finalReview := review
 	if fm, ok := final.(diffui.Model); ok {
 		finalSidecar = fm.FinalSidecar()
+		finalSidecarBase = fm.SidecarBase
 		finalReview = fm.Review
 		finalPDF = fm.PDF
 	}
-	if err := diffreview.SaveSidecarMerging(sidecarPath, sidecarBase, loadedSidecarMTime, finalSidecar); err != nil {
+	if err := diffreview.SaveSidecarMerging(sidecarPath, finalSidecarBase, loadedSidecarMTime, finalSidecar); err != nil {
 		_, _ = fmt.Fprintf(stderr, "mreview diff: save sidecar %q: %v\n", sidecarPath, err)
 		return 1
 	}

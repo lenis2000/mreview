@@ -34,7 +34,8 @@ func TestDefaultSidecarPathForGitNewEndpointAvoidsMaterializedSnapshot(t *testin
 	}
 
 	got := DefaultSidecarPath(review)
-	assert.Equal(t, "sections/paper.tex.mreview-diff.master.md", filepath.ToSlash(got))
+	assert.Equal(t, "branch-sections-paper.tex.mreview-diff.master.md", filepath.ToSlash(got))
+	assert.Equal(t, ".", filepath.Dir(got))
 	assert.NotContains(t, got, ".mreview-diff/session")
 }
 

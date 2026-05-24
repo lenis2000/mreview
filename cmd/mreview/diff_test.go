@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -280,6 +281,69 @@ func TestRunDiffMergesConcurrentSidecarWithLiveChanges(t *testing.T) {
 	}
 	if finalPairID == "" || notes[finalPairID] != "memory note" {
 		t.Fatalf("in-session annotation was not preserved: pair=%q notes=%#v", finalPairID, notes)
+	}
+}
+
+func TestRunDiffUsesRemappedSidecarBaseForConcurrentDeletes(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	sidecarPath := filepath.Join(dir, "review.md")
+	oldSrc := diffFixture("Original paragraph with enough shared words for remap merging.")
+	newSrc := diffFixture("Updated paragraph with enough shared words for remap merging.")
+	if err := os.WriteFile(oldPath, []byte(oldSrc), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(newSrc), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+	review, err := diffreview.BuildReview(
+		diffreview.Endpoint{Kind: diffreview.WorkingFile, Spec: oldPath, Path: oldPath, Source: []byte(oldSrc)},
+		diffreview.Endpoint{Kind: diffreview.WorkingFile, Spec: newPath, Path: newPath, Source: []byte(newSrc)},
+	)
+	if err != nil {
+		t.Fatalf("build review: %v", err)
+	}
+	var pairID string
+	for _, pair := range review.Pairs {
+		if pair.Status == diffreview.Changed && pair.New != nil {
+			pairID = pair.ID
+			break
+		}
+	}
+	if pairID == "" {
+		t.Fatalf("missing changed pair in fixture review")
+	}
+	if err := diffreview.SaveSidecar(sidecarPath, &diffreview.Sidecar{
+		Annotations: []diffreview.Annotation{{PairID: pairID, Status: "changed", Side: "new", SourceQuote: "initial quote", Note: "delete me"}},
+	}); err != nil {
+		t.Fatalf("save initial sidecar: %v", err)
+	}
+
+	_ = withStubDiffTUIFinal(t, func(m diffui.Model) diffui.Model {
+		m.Sidecar.UpsertAnnotation(diffreview.Annotation{PairID: pairID, Status: "changed", Side: "new", SourceQuote: "remapped quote", Note: "delete me"})
+		m.SidecarBase = diffreview.CloneSidecar(m.Sidecar)
+		if err := diffreview.SaveSidecar(sidecarPath, &diffreview.Sidecar{}); err != nil {
+			t.Fatalf("save concurrent sidecar: %v", err)
+		}
+		future := time.Now().Add(2 * time.Second)
+		if err := os.Chtimes(sidecarPath, future, future); err != nil {
+			t.Fatalf("touch concurrent sidecar: %v", err)
+		}
+		return m
+	})
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--no-build", "--noconfig", "--sidecar", sidecarPath, "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	saved, err := diffreview.LoadSidecar(sidecarPath)
+	if err != nil {
+		t.Fatalf("load sidecar: %v", err)
+	}
+	if notes := saved.AnnotationNotes(); notes[pairID] != "" {
+		t.Fatalf("concurrent delete was resurrected: %#v", notes)
 	}
 }
 

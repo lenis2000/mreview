@@ -37,6 +37,30 @@ Let $x=2$.
 	assert.Equal(t, 1.0, pair.Score)
 }
 
+func TestAlignLabelOnlyChangeIsSemantic(t *testing.T) {
+	oldSrc := `\section{Intro}
+
+\begin{theorem}
+\label{thm:old}
+This theorem has enough shared words to match after a label rename.
+\end{theorem}
+`
+	newSrc := `\section{Intro}
+
+\begin{theorem}
+\label{thm:new}
+This theorem has enough shared words to match after a label rename.
+\end{theorem}
+`
+	review := buildReviewForTest(t, oldSrc, newSrc)
+
+	pair := requirePairByNewLabel(t, review, "thm:new")
+	require.NotNil(t, pair.Old)
+	assert.Equal(t, "thm:old", pair.Old.Label)
+	assert.Equal(t, Changed, pair.Status)
+	assert.Equal(t, NormalizeSourceForMatch(pair.Old.Source), NormalizeSourceForMatch(pair.New.Source))
+}
+
 func TestAlignUnlabeledParagraphsMatchByNormalizedText(t *testing.T) {
 	oldSrc := `\section{Intro}
 

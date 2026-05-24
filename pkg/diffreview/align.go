@@ -515,6 +515,9 @@ func statusFor(oldBlock, newBlock *parser.Block, oldMeta, newMeta blockMeta, str
 	if oldBlock.Source == newBlock.Source {
 		return Unchanged
 	}
+	if oldBlock.Label != newBlock.Label {
+		return Changed
+	}
 	if oldMeta.Normalized == newMeta.Normalized {
 		return FormatOnly
 	}
