@@ -137,20 +137,21 @@ func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) st
 		if row.PairIndex == cursorPairIndex {
 			cursor = ">"
 		}
-		flags := ""
-		if row.Reviewed {
-			flags += "✓"
+		flags := "   "
+		if row.Reviewed || row.Annotated || row.Issues {
+			marks := []rune{' ', ' ', ' '}
+			if row.Reviewed {
+				marks[0] = '✓'
+			}
+			if row.Annotated {
+				marks[1] = '*'
+			}
+			if row.Issues {
+				marks[2] = '!'
+			}
+			flags = string(marks)
 		}
-		if row.Annotated {
-			flags += "*"
-		}
-		if row.Issues {
-			flags += "!"
-		}
-		if flags != "" {
-			flags = " " + flags
-		}
-		line := fmt.Sprintf("%s %-3s %s%s", cursor, row.Marker, row.Title, flags)
+		line := fmt.Sprintf("%s %s %-3s %s", cursor, flags, row.Marker, row.Title)
 		if row.Section != "" {
 			line += " [" + row.Section + "]"
 		}
