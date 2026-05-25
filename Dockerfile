@@ -1,4 +1,5 @@
-FROM ghcr.io/umputun/ralphex-go:latest
+ARG RALPHEX_GO_IMAGE=ghcr.io/umputun/ralphex-go:latest
+FROM ${RALPHEX_GO_IMAGE}
 
 LABEL org.opencontainers.image.description="ralphex image with TeX Live for mreview development"
 
@@ -14,4 +15,6 @@ RUN apk add --no-cache \
     texmf-dist-fontsrecommended \
     texmf-dist-formatsextra \
     biber
-USER app
+
+# Leave the image user as root so the ralphex baseimage entrypoint can run
+# /srv/init.sh setup, then drop privileges to app for the main command.
