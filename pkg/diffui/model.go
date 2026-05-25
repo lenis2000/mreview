@@ -327,17 +327,83 @@ func (m Model) FinalSidecar() *diffreview.Sidecar {
 	return side
 }
 
-func (m Model) visibleIndices() []int {
+type outlineTarget struct {
+	PairIndex  int
+	AnchorLine int
+}
+
+func (m Model) visibleTargets() []outlineTarget {
 	if m.Review == nil {
 		return nil
 	}
-	visible := make([]int, 0, len(m.Review.Pairs))
-	for i := range m.Review.Pairs {
-		if pairMatchesFilter(m.Review.Pairs[i], m.Filter, m.Reviewed, m.Annotations, m.Issues) {
-			visible = append(visible, i)
+	rows := BuildOutline(m.Review, m.Filter, m.Reviewed, m.Annotations, m.Issues)
+	targets := make([]outlineTarget, 0, len(rows))
+	for _, row := range rows {
+		if row.Group || row.PairIndex < 0 {
+			continue
 		}
+		anchor := row.AnchorLine
+		if anchor < 1 {
+			anchor = 1
+		}
+		targets = append(targets, outlineTarget{PairIndex: row.PairIndex, AnchorLine: anchor})
+	}
+	return targets
+}
+
+func (m Model) visibleIndices() []int {
+	targets := m.visibleTargets()
+	visible := make([]int, 0, len(targets))
+	seen := make(map[int]bool, len(targets))
+	for _, target := range targets {
+		if seen[target.PairIndex] {
+			continue
+		}
+		seen[target.PairIndex] = true
+		visible = append(visible, target.PairIndex)
 	}
 	return visible
+}
+
+func (m Model) visibleTargetPosition(targets []outlineTarget) int {
+	if len(targets) == 0 {
+		return 0
+	}
+	curLine := m.SourceLineCursor
+	if curLine < 1 {
+		curLine = 1
+	}
+	fallback := -1
+	best := -1
+	bestAnchor := -1
+	for i, target := range targets {
+		if target.PairIndex != m.Cursor {
+			continue
+		}
+		if fallback < 0 {
+			fallback = i
+		}
+		anchor := target.AnchorLine
+		if anchor < 1 {
+			anchor = 1
+		}
+		if anchor <= curLine && anchor >= bestAnchor {
+			best = i
+			bestAnchor = anchor
+		}
+	}
+	if best >= 0 {
+		return best
+	}
+	if fallback >= 0 {
+		return fallback
+	}
+	for i, target := range targets {
+		if target.PairIndex >= m.Cursor {
+			return i
+		}
+	}
+	return len(targets) - 1
 }
 
 func (m *Model) snapCursor() {
@@ -345,8 +411,8 @@ func (m *Model) snapCursor() {
 		m.Cursor = 0
 		return
 	}
-	visible := m.visibleIndices()
-	if len(visible) == 0 {
+	targets := m.visibleTargets()
+	if len(targets) == 0 {
 		if m.Cursor < 0 {
 			m.Cursor = 0
 		}
@@ -355,18 +421,9 @@ func (m *Model) snapCursor() {
 		}
 		return
 	}
-	if containsIndex(visible, m.Cursor) {
-		m.snapSourceLine()
-		return
-	}
-	for _, idx := range visible {
-		if idx >= m.Cursor {
-			m.Cursor = idx
-			m.snapSourceLine()
-			return
-		}
-	}
-	m.Cursor = visible[len(visible)-1]
+	target := targets[m.visibleTargetPosition(targets)]
+	m.Cursor = target.PairIndex
+	m.SourceLineCursor = target.AnchorLine
 	m.snapSourceLine()
 }
 

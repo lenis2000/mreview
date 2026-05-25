@@ -8,6 +8,18 @@ import (
 	"mreview/pkg/parser"
 )
 
+func TestRenderPairSourceSeparatesMultipleChangeHunks(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-hunks", 1, "first old\nunchanged middle\nsecond old"),
+		New:    fixtureBlock("new-hunks", 1, "first new\nunchanged middle\nsecond new"),
+	}
+	view := RenderPairSourceSide(pair, false, 60, 8)
+	if !strings.Contains(view, "next change") {
+		t.Fatalf("multiple changed groups should be visually separated:\n%s", view)
+	}
+}
+
 func TestRenderPairSourceWholeBlockTokenDiffSurvivesRewrap(t *testing.T) {
 	pair := &diffreview.Pair{
 		Status: diffreview.Changed,

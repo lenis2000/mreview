@@ -28,14 +28,15 @@ type sourcePart struct {
 }
 
 type sourceRow struct {
-	oldMark  string
-	oldLine  int
-	oldText  string
-	oldParts []sourcePart
-	newMark  string
-	newLine  int
-	newText  string
-	newParts []sourcePart
+	oldMark   string
+	oldLine   int
+	oldText   string
+	oldParts  []sourcePart
+	newMark   string
+	newLine   int
+	newText   string
+	newParts  []sourcePart
+	separator bool
 }
 
 const intralinePairThreshold = 0.40
@@ -97,8 +98,14 @@ func renderPairSource(pair *diffreview.Pair, width, height, oldAnchorLine, newAn
 		if anchorRendered < 0 && sourceRowMatchesAnchor(row, rowIndex, oldAnchorLine, newAnchorLine) {
 			anchorRendered = rowStart
 		}
-		oldLines := renderSourceCell(row.oldMark, row.oldLine, row.oldText, row.oldParts, oldW, true, highlight)
-		newLines := renderSourceCell(row.newMark, row.newLine, row.newText, row.newParts, newW, false, highlight)
+		if row.separator {
+			rendered = append(rendered, hunkSeparatorLine(oldW, newW))
+			continue
+		}
+		oldCursor := oldAnchorLine > 0 && row.oldLine == oldAnchorLine
+		newCursor := newAnchorLine > 0 && row.newLine == newAnchorLine
+		oldLines := renderSourceCell(row.oldMark, row.oldLine, row.oldText, row.oldParts, oldW, true, highlight, oldCursor)
+		newLines := renderSourceCell(row.newMark, row.newLine, row.newText, row.newParts, newW, false, highlight, newCursor)
 		lineCount := max(len(oldLines), len(newLines))
 		for i := 0; i < lineCount; i++ {
 			oldCell := strings.Repeat(" ", oldW)
@@ -151,11 +158,17 @@ func renderPairSourceSide(pair *diffreview.Pair, oldSide bool, width, height, ol
 		if anchorRendered < 0 && sourceRowMatchesAnchor(row, rowIndex, oldAnchorLine, newAnchorLine) {
 			anchorRendered = rowStart
 		}
+		if row.separator {
+			rendered = append(rendered, hunkSeparatorSide(width))
+			continue
+		}
 		var lines []string
 		if oldSide {
-			lines = renderSourceCell(row.oldMark, row.oldLine, row.oldText, row.oldParts, width, true, highlight)
+			cursor := oldAnchorLine > 0 && row.oldLine == oldAnchorLine
+			lines = renderSourceCell(row.oldMark, row.oldLine, row.oldText, row.oldParts, width, true, highlight, cursor)
 		} else {
-			lines = renderSourceCell(row.newMark, row.newLine, row.newText, row.newParts, width, false, highlight)
+			cursor := newAnchorLine > 0 && row.newLine == newAnchorLine
+			lines = renderSourceCell(row.newMark, row.newLine, row.newText, row.newParts, width, false, highlight, cursor)
 		}
 		rendered = append(rendered, lines...)
 	}
@@ -478,7 +491,125 @@ func alignDisplayRows(
 			i++
 		}
 	}
-	return rows
+	return separateDiffHunks(rows)
+}
+
+func separateDiffHunks(rows []sourceRow) []sourceRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	out := make([]sourceRow, 0, len(rows)+4)
+	seenChangedGroup := false
+	inChangedGroup := false
+	for _, row := range rows {
+		changed := sourceRowChanged(row)
+		if changed && !inChangedGroup {
+			if seenChangedGroup {
+				out = append(out, sourceRow{separator: true})
+			}
+			seenChangedGroup = true
+			inChangedGroup = true
+		} else if !changed {
+			inChangedGroup = false
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func sourceRowChanged(row sourceRow) bool {
+	if row.separator {
+		return false
+	}
+	if row.oldMark == "+" || row.oldMark == "-" || row.oldMark == "~" || row.newMark == "+" || row.newMark == "-" || row.newMark == "~" {
+		return true
+	}
+	return sourcePartsChanged(row.oldParts) || sourcePartsChanged(row.newParts)
+}
+
+func sourcePartsChanged(parts []sourcePart) bool {
+	for _, part := range parts {
+		if strings.TrimSpace(part.Text) != "" && part.Kind != sourcePartEqual {
+			return true
+		}
+	}
+	return false
+}
+
+func hunkSeparatorLine(oldW, newW int) string {
+	return padToWidth(hunkSeparatorSide(oldW), oldW) + " │ " + hunkSeparatorSide(newW)
+}
+
+func hunkSeparatorSide(width int) string {
+	if width < 1 {
+		return ""
+	}
+	label := "⋯ next change ⋯"
+	if len([]rune(label)) >= width {
+		return clipLine(label, width)
+	}
+	pad := width - len([]rune(label))
+	left := pad / 2
+	right := pad - left
+	return strings.Repeat("─", left) + label + strings.Repeat("─", right)
+}
+
+type diffHunkInfo struct {
+	AnchorLine int
+	Title      string
+}
+
+func diffHunkInfos(pair *diffreview.Pair) []diffHunkInfo {
+	if pair == nil {
+		return nil
+	}
+	rows := sourceRows(pair)
+	infos := make([]diffHunkInfo, 0, 4)
+	inChangedGroup := false
+	for _, row := range rows {
+		changed := sourceRowChanged(row)
+		if changed && !inChangedGroup {
+			if off := sourceRowAnchorOffset(pair, row); off > 0 {
+				infos = append(infos, diffHunkInfo{AnchorLine: off, Title: sourceRowSummary(row)})
+			}
+			inChangedGroup = true
+		} else if !changed {
+			inChangedGroup = false
+		}
+	}
+	return infos
+}
+
+func diffHunkAnchorOffsets(pair *diffreview.Pair) []int {
+	infos := diffHunkInfos(pair)
+	anchors := make([]int, 0, len(infos))
+	for _, info := range infos {
+		anchors = append(anchors, info.AnchorLine)
+	}
+	return anchors
+}
+
+func sourceRowSummary(row sourceRow) string {
+	for _, text := range []string{row.newText, row.oldText} {
+		text = strings.TrimSpace(text)
+		if text != "" {
+			return text
+		}
+	}
+	return "change"
+}
+
+func sourceRowAnchorOffset(pair *diffreview.Pair, row sourceRow) int {
+	if pair == nil {
+		return 0
+	}
+	if pair.New != nil && pair.New.StartLine > 0 && row.newLine > 0 {
+		return row.newLine - pair.New.StartLine + 1
+	}
+	if pair.Old != nil && pair.Old.StartLine > 0 && row.oldLine > 0 {
+		return row.oldLine - pair.Old.StartLine + 1
+	}
+	return 0
 }
 
 func displayPairScore(oldLine, newLine, oldMark, newMark string, score float64) (float64, bool) {
@@ -726,22 +857,22 @@ func sourceLineNumber(block *parser.Block, offset int) int {
 }
 
 func formatSourceCell(mark string, line int, text string) string {
-	prefix := sourceCellPrefix(mark, line)
+	prefix := sourceCellPrefix(mark, line, false)
 	return prefix + text
 }
 
-func renderSourceCell(mark string, line int, text string, parts []sourcePart, width int, oldSide bool, highlight bool) []string {
+func renderSourceCell(mark string, line int, text string, parts []sourcePart, width int, oldSide bool, highlight bool, cursor bool) []string {
 	if !highlight {
-		return wrapSourceCell(mark, line, text, width)
+		return wrapSourceCell(mark, line, text, width, cursor)
 	}
-	return wrapSourceCellStyled(mark, line, text, parts, width, oldSide)
+	return wrapSourceCellStyled(mark, line, text, parts, width, oldSide, cursor)
 }
 
-func wrapSourceCell(mark string, line int, text string, width int) []string {
+func wrapSourceCell(mark string, line int, text string, width int, cursor bool) []string {
 	if width < 1 {
 		width = 1
 	}
-	prefix := sourceCellPrefix(mark, line)
+	prefix := sourceCellPrefix(mark, line, cursor)
 	prefixW := len([]rune(prefix))
 	if prefixW >= width {
 		return []string{clipLine(prefix+text, width)}
@@ -759,11 +890,11 @@ func wrapSourceCell(mark string, line int, text string, width int) []string {
 	return out
 }
 
-func wrapSourceCellStyled(mark string, line int, text string, parts []sourcePart, width int, oldSide bool) []string {
+func wrapSourceCellStyled(mark string, line int, text string, parts []sourcePart, width int, oldSide bool, cursor bool) []string {
 	if width < 1 {
 		width = 1
 	}
-	prefix := sourceCellPrefix(mark, line)
+	prefix := sourceCellPrefix(mark, line, cursor)
 	prefixW := len([]rune(prefix))
 	if prefixW >= width {
 		return []string{styleSourceParts([]sourcePart{{Text: clipLine(prefix+text, width)}}, mark, oldSide)}
@@ -791,14 +922,18 @@ func wrapSourceCellStyled(mark string, line int, text string, parts []sourcePart
 	return out
 }
 
-func sourceCellPrefix(mark string, line int) string {
+func sourceCellPrefix(mark string, line int, cursor bool) string {
 	if mark == "" {
 		mark = " "
 	}
-	if line > 0 {
-		return fmt.Sprintf("%s %4d ", mark, line)
+	cursorMark := " "
+	if cursor {
+		cursorMark = ">"
 	}
-	return fmt.Sprintf("%s      ", mark)
+	if line > 0 {
+		return fmt.Sprintf("%s%s%4d ", mark, cursorMark, line)
+	}
+	return fmt.Sprintf("%s%s     ", mark, cursorMark)
 }
 
 func continuationPrefix(width int) string {

@@ -1,0 +1,129 @@
+package diffui
+
+import tea "github.com/charmbracelet/bubbletea"
+
+// handleMouse maps mouse wheel events to the pane under the pointer. Outline
+// and PDF wheel move between semantic pairs; old/new source wheel scrolls
+// within the selected pair, crossing pair boundaries at the ends. Left clicks
+// only update focus for now.
+func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
+	if m.Width <= 0 || m.Height <= 0 {
+		return m, nil
+	}
+	isWheel := msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown
+	if msg.Action != tea.MouseActionPress && !isWheel {
+		return m, nil
+	}
+	pane, ok := m.paneAtPoint(msg.X, msg.Y)
+	if !ok {
+		return m, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonLeft:
+		m.Focus = pane
+		m.Status = "focus: " + m.Focus.String()
+		return m, nil
+	case tea.MouseButtonWheelUp:
+		m.Focus = pane
+		return m.applyMouseWheel(pane, -1)
+	case tea.MouseButtonWheelDown:
+		m.Focus = pane
+		return m.applyMouseWheel(pane, +1)
+	default:
+		return m, nil
+	}
+}
+
+func (m Model) applyMouseWheel(pane Pane, delta int) (Model, tea.Cmd) {
+	switch pane {
+	case PaneOldSource, PaneNewSource:
+		m = m.scrollFocusedSource(delta)
+	case PaneOutline, PanePDF:
+		m.moveDiffChunkOrPair(delta)
+	}
+	return m.withPDFRender()
+}
+
+func (m Model) scrollFocusedSource(delta int) Model {
+	if delta == 0 {
+		return m
+	}
+	count, startLine, side := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+	if count == 0 {
+		m.Status = "no source line for current pair"
+		return m
+	}
+	if m.SourceLineCursor < 1 {
+		m.SourceLineCursor = 1
+	}
+	if delta < 0 && m.SourceLineCursor <= 1 {
+		oldCursor := m.Cursor
+		m.moveDiffChunkOrPair(-1)
+		if m.Cursor != oldCursor {
+			count, startLine, side = sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+			if count > 0 {
+				m.SourceLineCursor = count
+				m.Status = fmtSourceLineStatus(side, startLine+m.SourceLineCursor-1)
+			}
+		}
+		return m
+	}
+	if delta > 0 && m.SourceLineCursor >= count {
+		m.moveDiffChunkOrPair(1)
+		return m
+	}
+	m.SourceLineCursor += delta
+	if m.SourceLineCursor < 1 {
+		m.SourceLineCursor = 1
+	}
+	if m.SourceLineCursor > count {
+		m.SourceLineCursor = count
+	}
+	m.Status = fmtSourceLineStatus(side, startLine+m.SourceLineCursor-1)
+	return m
+}
+
+func (m Model) paneAtPoint(x, y int) (Pane, bool) {
+	bodyH := m.Height - statusBarHeight
+	if x < 0 || y < 0 || y >= bodyH {
+		return PaneOutline, false
+	}
+	if m.Layout == LayoutStacked {
+		outlineW, rightW := m.stackedWidths(m.Width)
+		if x < outlineW {
+			return PaneOutline, true
+		}
+		relX := x - outlineW
+		if relX < 0 || relX >= rightW {
+			return PaneOutline, false
+		}
+		topH, _ := m.stackedHeights(bodyH)
+		if y >= topH {
+			return PanePDF, true
+		}
+		oldW, _ := m.sourcePaneWidths(rightW)
+		if relX < oldW {
+			return PaneOldSource, true
+		}
+		return PaneNewSource, true
+	}
+	outlineW, sourceW, _ := m.paneWidths(m.Width)
+	if x < outlineW {
+		return PaneOutline, true
+	}
+	if x < outlineW+sourceW {
+		relX := x - outlineW
+		if comparisonCombined(sourceW) {
+			if relX < sourceW/2 {
+				return PaneOldSource, true
+			}
+			return PaneNewSource, true
+		}
+		oldW, _ := m.sourcePaneWidths(sourceW)
+		if relX < oldW {
+			return PaneOldSource, true
+		}
+		return PaneNewSource, true
+	}
+	return PanePDF, true
+}

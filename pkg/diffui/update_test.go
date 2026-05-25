@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"mreview/pkg/diffreview"
 )
 
 func TestCursorMovementIsPairBased(t *testing.T) {
@@ -71,6 +73,38 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 		if !strings.Contains(help, needle) {
 			t.Fatalf("help missing %q in:\n%s", needle, help)
 		}
+	}
+}
+
+func TestPairNavigationStopsAtInternalDiffHunks(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{
+		{
+			ID:       "multi",
+			Status:   diffreview.Changed,
+			Old:      fixtureBlock("old-multi", 1, "first old\nunchanged middle\nsecond old"),
+			New:      fixtureBlock("new-multi", 1, "first new\nunchanged middle\nsecond new"),
+			OldIndex: 0,
+			NewIndex: 0,
+		},
+		{
+			ID:       "next",
+			Status:   diffreview.Added,
+			New:      fixtureBlock("new-next", 10, "next pair"),
+			OldIndex: -1,
+			NewIndex: 1,
+		},
+	}}
+	m := New(review, Options{})
+	if currentID(m) != "multi" {
+		t.Fatalf("initial cursor = %s", currentID(m))
+	}
+	m = pressKey(t, m, "j")
+	if currentID(m) != "multi" || m.SourceLineCursor != 3 {
+		t.Fatalf("first j should stop at second hunk, got pair=%s line=%d", currentID(m), m.SourceLineCursor)
+	}
+	m = pressKey(t, m, "j")
+	if currentID(m) != "next" {
+		t.Fatalf("second j should advance to next pair, got %s", currentID(m))
 	}
 }
 
@@ -214,6 +248,38 @@ func TestCopySelectedChunkUsesFocusedSide(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollsPanesUnderPointer(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m.Width = 140
+	m.Height = 30
+
+	m = mouseWheel(t, m, 1, 3, tea.MouseButtonWheelDown)
+	if currentID(m) != "added" {
+		t.Fatalf("outline wheel down moved to %s, want added", currentID(m))
+	}
+	if m.Focus != PaneOutline {
+		t.Fatalf("outline wheel focus = %s", m.Focus)
+	}
+
+	m.Cursor = pairIndexByID(m.Review, "changed")
+	m.SourceLineCursor = 1
+	m = mouseWheel(t, m, 45, 3, tea.MouseButtonWheelDown)
+	if currentID(m) != "changed" {
+		t.Fatalf("source wheel should stay on current pair, got %s", currentID(m))
+	}
+	if m.Focus != PaneOldSource {
+		t.Fatalf("source wheel focus = %s, want old source", m.Focus)
+	}
+	if m.SourceLineCursor != 2 {
+		t.Fatalf("source wheel should scroll source line to 2, got %d", m.SourceLineCursor)
+	}
+
+	m = mouseWheel(t, m, 120, 3, tea.MouseButtonWheelDown)
+	if currentID(m) != "added" {
+		t.Fatalf("PDF wheel should move pair, got %s", currentID(m))
+	}
+}
+
 func TestFocusedSourcePaneScrollsWithinChunk(t *testing.T) {
 	m := New(fixtureReview(), Options{})
 	m.Cursor = pairIndexByID(m.Review, "changed")
@@ -230,20 +296,33 @@ func TestFocusedSourcePaneScrollsWithinChunk(t *testing.T) {
 func TestSourceLineSelectionDrivesInlineEditLine(t *testing.T) {
 	m := New(fixtureReview(), Options{AllowModifications: true, RequestedAllowMods: true})
 	m.Cursor = pairIndexByID(m.Review, "changed")
-	if got := m.currentNewLine(); got != 3 {
-		t.Fatalf("initial selected line = %d, want 3", got)
-	}
-	m = pressKey(t, m, "]")
 	if got := m.currentNewLine(); got != 4 {
-		t.Fatalf("after ] selected line = %d, want 4", got)
+		t.Fatalf("initial selected diff line = %d, want 4", got)
 	}
-	if !strings.Contains(m.Status, "4") {
-		t.Fatalf("source-line status = %q, want line 4", m.Status)
+	m = pressKey(t, m, "[")
+	if got := m.currentNewLine(); got != 3 {
+		t.Fatalf("after [ selected line = %d, want 3", got)
+	}
+	if !strings.Contains(m.Status, "3") {
+		t.Fatalf("source-line status = %q, want line 3", m.Status)
 	}
 	m = pressKey(t, m, "j")
 	if got := m.SourceLineCursor; got != 1 {
-		t.Fatalf("pair navigation should reset source cursor to 1, got %d", got)
+		t.Fatalf("pair navigation should land on next chunk cursor 1, got %d", got)
 	}
+	if currentID(m) != "added" {
+		t.Fatalf("pair navigation should advance to added, got %s", currentID(m))
+	}
+}
+
+func mouseWheel(t *testing.T, m Model, x, y int, button tea.MouseButton) Model {
+	t.Helper()
+	next, _ := m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: button})
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	return nm
 }
 
 func pressKey(t *testing.T, m Model, key string) Model {

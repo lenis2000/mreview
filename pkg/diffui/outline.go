@@ -5,23 +5,31 @@ import (
 	"strings"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/parser"
 )
 
-// OutlineRow is one visible semantic pair in the diff outline.
+// OutlineRow is one visible row in the diff outline. Selectable rows point to
+// a semantic pair plus a source-line anchor; group rows are section headers.
 type OutlineRow struct {
-	PairID    string
-	PairIndex int
-	Marker    string
-	Status    diffreview.PairStatus
-	Title     string
-	Section   string
-	Reviewed  bool
-	Annotated bool
-	Issues    bool
+	PairID     string
+	PairIndex  int
+	AnchorLine int
+	HunkIndex  int
+	HunkCount  int
+	Marker     string
+	Status     diffreview.PairStatus
+	Title      string
+	Section    string
+	Reviewed   bool
+	Annotated  bool
+	Issues     bool
+	Group      bool
+	Depth      int
 }
 
-// BuildOutline returns rows for visible semantic pairs under the selected
-// filter.
+// BuildOutline returns visible section headers and diff chunks under the
+// selected filter. Container section pairs are rendered as folded-looking
+// group headers; selectable rows point at individual diff hunks.
 func BuildOutline(
 	review *diffreview.Review,
 	filter Filter,
@@ -33,21 +41,50 @@ func BuildOutline(
 		return nil
 	}
 	rows := make([]OutlineRow, 0, len(review.Pairs))
+	currentGroup := ""
 	for i, pair := range review.Pairs {
 		if !pairMatchesFilter(pair, filter, reviewed, annotations, issues) {
 			continue
 		}
-		rows = append(rows, OutlineRow{
-			PairID:    pair.ID,
-			PairIndex: i,
-			Marker:    StatusMarker(pair.Status),
-			Status:    pair.Status,
-			Title:     pairTitle(pair),
-			Section:   sectionLabel(pair),
-			Reviewed:  reviewed[pair.ID],
-			Annotated: annotations[pair.ID] != "",
-			Issues:    len(issues[pair.ID]) > 0,
-		})
+		if isSectionPair(pair) {
+			label := pairTitle(pair)
+			if label == "" {
+				label = outlineGroupLabel(pair)
+			}
+			if label != "" && label != currentGroup {
+				rows = append(rows, OutlineRow{PairIndex: -1, Marker: "▾", Title: label, Group: true})
+				currentGroup = label
+			}
+			continue
+		}
+		group := outlineGroupLabel(pair)
+		if group == "" {
+			currentGroup = ""
+		} else if group != currentGroup {
+			rows = append(rows, OutlineRow{PairIndex: -1, Marker: "▾", Title: group, Group: true})
+			currentGroup = group
+		}
+		infos := outlineHunkInfos(pair)
+		depth := 0
+		if currentGroup != "" {
+			depth = 1
+		}
+		for h, info := range infos {
+			rows = append(rows, OutlineRow{
+				PairID:     pair.ID,
+				PairIndex:  i,
+				AnchorLine: info.AnchorLine,
+				HunkIndex:  h + 1,
+				HunkCount:  len(infos),
+				Marker:     StatusMarker(pair.Status),
+				Status:     pair.Status,
+				Title:      outlineHunkTitle(pair, info, h+1, len(infos)),
+				Reviewed:   reviewed[pair.ID],
+				Annotated:  annotations[pair.ID] != "",
+				Issues:     len(issues[pair.ID]) > 0,
+				Depth:      depth,
+			})
+		}
 	}
 	return rows
 }
@@ -89,7 +126,7 @@ func (m Model) renderOutline(width, height int) string {
 	if height <= 1 {
 		return clipLine(header, width)
 	}
-	body := RenderOutline(rows, m.Cursor, width, height-1)
+	body := RenderOutlineAt(rows, m.Cursor, m.SourceLineCursor, width, height-1)
 	if body == "" {
 		body = "(no pairs)"
 	}
@@ -99,6 +136,13 @@ func (m Model) renderOutline(width, height int) string {
 // RenderOutline renders already-built outline rows. The cursor is the index
 // into Review.Pairs, not an index into the filtered row slice.
 func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) string {
+	return RenderOutlineAt(rows, cursorPairIndex, 1, width, height)
+}
+
+// RenderOutlineAt also receives the current source-line cursor so the outline
+// can show the active internal diff hunk when a semantic pair contains several
+// independent change groups.
+func RenderOutlineAt(rows []OutlineRow, cursorPairIndex, sourceLineCursor int, width, height int) string {
 	if height < 1 {
 		height = 1
 	}
@@ -109,13 +153,7 @@ func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) st
 		return clipLine("(no pairs)", width)
 	}
 
-	cursorRow := 0
-	for i, row := range rows {
-		if row.PairIndex == cursorPairIndex {
-			cursorRow = i
-			break
-		}
-	}
+	cursorRow := outlineCursorRow(rows, cursorPairIndex, sourceLineCursor)
 	start := cursorRow - height/2
 	if start < 0 {
 		start = 0
@@ -132,9 +170,15 @@ func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) st
 	}
 
 	rendered := make([]string, 0, end-start)
-	for _, row := range rows[start:end] {
+	for i, row := range rows[start:end] {
+		absoluteRow := start + i
+		if row.Group {
+			line := fmt.Sprintf("  %s %s", row.Marker, row.Title)
+			rendered = append(rendered, clipLine(line, width))
+			continue
+		}
 		cursor := " "
-		if row.PairIndex == cursorPairIndex {
+		if absoluteRow == cursorRow {
 			cursor = ">"
 		}
 		flags := "   "
@@ -151,13 +195,103 @@ func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) st
 			}
 			flags = string(marks)
 		}
-		line := fmt.Sprintf("%s %s %-3s %s", cursor, flags, row.Marker, row.Title)
+		indent := strings.Repeat("  ", row.Depth)
+		line := fmt.Sprintf("%s %s %-3s %s%s", cursor, flags, row.Marker, indent, row.Title)
 		if row.Section != "" {
 			line += " [" + row.Section + "]"
 		}
 		rendered = append(rendered, clipLine(line, width))
 	}
 	return strings.Join(rendered, "\n")
+}
+
+func outlineCursorRow(rows []OutlineRow, cursorPairIndex, sourceLineCursor int) int {
+	if len(rows) == 0 {
+		return 0
+	}
+	if sourceLineCursor < 1 {
+		sourceLineCursor = 1
+	}
+	fallback := -1
+	best := -1
+	bestAnchor := -1
+	for i, row := range rows {
+		if row.Group || row.PairIndex != cursorPairIndex {
+			continue
+		}
+		if fallback < 0 {
+			fallback = i
+		}
+		anchor := row.AnchorLine
+		if anchor < 1 {
+			anchor = 1
+		}
+		if anchor <= sourceLineCursor && anchor >= bestAnchor {
+			best = i
+			bestAnchor = anchor
+		}
+	}
+	if best >= 0 {
+		return best
+	}
+	if fallback >= 0 {
+		return fallback
+	}
+	for i, row := range rows {
+		if !row.Group {
+			return i
+		}
+	}
+	return 0
+}
+
+func outlineHunkInfos(pair diffreview.Pair) []diffHunkInfo {
+	infos := diffHunkInfos(&pair)
+	if len(infos) == 0 {
+		return []diffHunkInfo{{AnchorLine: 1, Title: pairTitle(pair)}}
+	}
+	for i := range infos {
+		if infos[i].AnchorLine < 1 {
+			infos[i].AnchorLine = 1
+		}
+		if strings.TrimSpace(infos[i].Title) == "" {
+			infos[i].Title = pairTitle(pair)
+		}
+	}
+	return infos
+}
+
+func outlineHunkTitle(pair diffreview.Pair, info diffHunkInfo, index, total int) string {
+	title := strings.TrimSpace(info.Title)
+	if title == "" {
+		title = pairTitle(pair)
+	}
+	if total > 1 {
+		return fmt.Sprintf("chunk %d/%d: %s", index, total, title)
+	}
+	return title
+}
+
+func outlineGroupLabel(pair diffreview.Pair) string {
+	path := pair.SectionPathNew
+	if len(path) == 0 {
+		path = pair.SectionPathOld
+	}
+	if len(path) > 0 {
+		return path[0]
+	}
+	if isSectionPair(pair) {
+		return pairTitle(pair)
+	}
+	return ""
+}
+
+func isSectionPair(pair diffreview.Pair) bool {
+	block := pair.New
+	if block == nil {
+		block = pair.Old
+	}
+	return block != nil && block.Kind == parser.KindSection
 }
 
 func pairTitle(pair diffreview.Pair) string {

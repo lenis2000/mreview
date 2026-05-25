@@ -27,6 +27,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyPDFReload(msg)
 	case diffPDFOpenFinishedMsg:
 		return m.applyPDFOpenFinished(msg)
+	case tea.MouseMsg:
+		if m.LineEdit != nil || m.Popup != nil {
+			return m, nil
+		}
+		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		if m.LineEdit != nil {
 			return m.updateLineEditPopup(msg)
@@ -145,14 +150,14 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
 			m.moveSourceLine(1)
 		} else {
-			m.moveVisible(1)
+			m.moveDiffChunkOrPair(1)
 		}
 		return m.withPDFRender()
 	case "k", "up":
 		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
 			m.moveSourceLine(-1)
 		} else {
-			m.moveVisible(-1)
+			m.moveDiffChunkOrPair(-1)
 		}
 		return m.withPDFRender()
 	case "J", "pgdown":
@@ -350,43 +355,100 @@ func (m Model) pairByID(pairID string) *diffreview.Pair {
 }
 
 func (m *Model) moveVisible(delta int) {
-	visible := m.visibleIndices()
-	if len(visible) == 0 {
+	targets := m.visibleTargets()
+	if len(targets) == 0 {
 		m.Status = "no pairs match filter"
 		return
 	}
-	pos := m.visiblePosition(visible)
+	pos := m.visibleTargetPosition(targets)
 	pos += delta
 	if pos < 0 {
 		pos = 0
 	}
-	if pos >= len(visible) {
-		pos = len(visible) - 1
+	if pos >= len(targets) {
+		pos = len(targets) - 1
 	}
-	m.Cursor = visible[pos]
-	m.resetSourceLine()
+	target := targets[pos]
+	m.Cursor = target.PairIndex
+	m.SourceLineCursor = target.AnchorLine
+	m.snapSourceLine()
 	m.Status = ""
 }
 
+func (m *Model) moveDiffChunkOrPair(delta int) {
+	if delta == 0 {
+		return
+	}
+	if m.moveWithinPairDiffHunks(delta) {
+		return
+	}
+	m.moveVisible(delta)
+}
+
+func (m *Model) moveWithinPairDiffHunks(delta int) bool {
+	anchors := diffHunkAnchorOffsets(m.CurrentPair())
+	if len(anchors) <= 1 {
+		return false
+	}
+	cur := m.SourceLineCursor
+	if cur < 1 {
+		cur = 1
+	}
+	idx := 0
+	for i, anchor := range anchors {
+		if anchor <= cur {
+			idx = i
+		}
+	}
+	if delta > 0 {
+		if idx+1 >= len(anchors) {
+			return false
+		}
+		m.SourceLineCursor = anchors[idx+1]
+		m.Status = fmtDiffChunkStatus(idx+2, len(anchors))
+		return true
+	}
+	// If we are below an anchor in the current hunk, first jump back to
+	// that hunk's start; otherwise go to the previous hunk.
+	if cur > anchors[idx] {
+		m.SourceLineCursor = anchors[idx]
+		m.Status = fmtDiffChunkStatus(idx+1, len(anchors))
+		return true
+	}
+	if idx-1 < 0 {
+		return false
+	}
+	m.SourceLineCursor = anchors[idx-1]
+	m.Status = fmtDiffChunkStatus(idx, len(anchors))
+	return true
+}
+
+func fmtDiffChunkStatus(idx, total int) string {
+	return "diff chunk " + strconv.Itoa(idx) + "/" + strconv.Itoa(total)
+}
+
 func (m *Model) moveToFirst() {
-	visible := m.visibleIndices()
-	if len(visible) == 0 {
+	targets := m.visibleTargets()
+	if len(targets) == 0 {
 		m.Status = "no pairs match filter"
 		return
 	}
-	m.Cursor = visible[0]
-	m.resetSourceLine()
+	m.Cursor = targets[0].PairIndex
+	m.SourceLineCursor = targets[0].AnchorLine
+	m.snapSourceLine()
 	m.Status = ""
 }
 
 func (m *Model) moveToLast() {
-	visible := m.visibleIndices()
-	if len(visible) == 0 {
+	targets := m.visibleTargets()
+	if len(targets) == 0 {
 		m.Status = "no pairs match filter"
 		return
 	}
-	m.Cursor = visible[len(visible)-1]
-	m.resetSourceLine()
+	last := targets[len(targets)-1]
+	m.Cursor = last.PairIndex
+	m.SourceLineCursor = last.AnchorLine
+	m.snapSourceLine()
 	m.Status = ""
 }
 
@@ -408,25 +470,27 @@ func (m Model) visiblePosition(visible []int) int {
 }
 
 func (m *Model) moveSection(direction int) {
-	visible := m.visibleIndices()
-	if len(visible) == 0 {
+	targets := m.visibleTargets()
+	if len(targets) == 0 {
 		m.Status = "no pairs match filter"
 		return
 	}
 	if m.Review == nil {
 		return
 	}
-	pos := m.visiblePosition(visible)
-	current := sectionKey(m.Review.Pairs[visible[pos]])
+	pos := m.visibleTargetPosition(targets)
+	current := sectionKey(m.Review.Pairs[targets[pos].PairIndex])
 	if current == "" {
 		m.Status = "no section information for current pair"
 		return
 	}
-	for i := pos + direction; i >= 0 && i < len(visible); i += direction {
-		next := sectionKey(m.Review.Pairs[visible[i]])
+	for i := pos + direction; i >= 0 && i < len(targets); i += direction {
+		nextTarget := targets[i]
+		next := sectionKey(m.Review.Pairs[nextTarget.PairIndex])
 		if next != "" && next != current {
-			m.Cursor = visible[i]
-			m.resetSourceLine()
+			m.Cursor = nextTarget.PairIndex
+			m.SourceLineCursor = nextTarget.AnchorLine
+			m.snapSourceLine()
 			m.Status = ""
 			return
 		}
@@ -435,7 +499,7 @@ func (m *Model) moveSection(direction int) {
 }
 
 func (m *Model) moveSourceLine(delta int) {
-	count, startLine, side := sourceLineTarget(m.CurrentPair())
+	count, startLine, side := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
 	if count == 0 {
 		m.Status = "no source line for current pair"
 		return
@@ -454,7 +518,7 @@ func (m *Model) moveSourceLine(delta int) {
 }
 
 func (m *Model) snapSourceLine() {
-	count, _, _ := sourceLineTarget(m.CurrentPair())
+	count, _, _ := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
 	if count < 1 {
 		m.SourceLineCursor = 1
 		return
@@ -472,9 +536,12 @@ func (m *Model) resetSourceLine() {
 	m.snapSourceLine()
 }
 
-func sourceLineTarget(pair *diffreview.Pair) (count int, startLine int, side string) {
+func sourceLineTarget(pair *diffreview.Pair, preferOld bool) (count int, startLine int, side string) {
 	if pair == nil {
 		return 0, 0, ""
+	}
+	if preferOld && pair.Old != nil {
+		return len(blockSourceLines(pair.Old)), pair.Old.StartLine, "old"
 	}
 	if pair.New != nil {
 		return len(blockSourceLines(pair.New)), pair.New.StartLine, "new"

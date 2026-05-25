@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/parser"
 )
 
 func TestBuildOutlineMarkersAndStats(t *testing.T) {
@@ -29,10 +30,10 @@ func TestBuildOutlineMarkersAndStats(t *testing.T) {
 			t.Fatalf("marker for %s: got %q want %q", id, markers[id], marker)
 		}
 	}
-	if !rows[4].Annotated {
+	if rowByPairID(rows, "fmt") == nil || !rowByPairID(rows, "fmt").Annotated {
 		t.Fatalf("expected annotated marker on fmt row")
 	}
-	if !rows[3].Issues {
+	if rowByPairID(rows, "deleted") == nil || !rowByPairID(rows, "deleted").Issues {
 		t.Fatalf("expected issues marker on deleted row")
 	}
 
@@ -42,6 +43,44 @@ func TestBuildOutlineMarkersAndStats(t *testing.T) {
 		if !strings.Contains(outline, needle) {
 			t.Fatalf("outline stats missing %q in:\n%s", needle, outline)
 		}
+	}
+}
+
+func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{
+		{
+			ID:     "intro-section",
+			Status: diffreview.Changed,
+			Old:    fixtureSectionBlock("old-intro", 1, "Introduction"),
+			New:    fixtureSectionBlock("new-intro", 1, "Introduction"),
+		},
+		{
+			ID:             "intro-para",
+			Status:         diffreview.Changed,
+			Old:            fixtureBlock("old-intro-para", 2, "first old\nunchanged middle\nsecond old"),
+			New:            fixtureBlock("new-intro-para", 2, "first new\nunchanged middle\nsecond new"),
+			SectionPathOld: []string{"Introduction"},
+			SectionPathNew: []string{"Introduction"},
+		},
+	}}
+	rows := BuildOutline(review, FilterChanged, nil, nil, nil)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %#v, want section group plus two chunks", rows)
+	}
+	if !rows[0].Group || rows[0].Title != "Introduction" {
+		t.Fatalf("first row = %#v, want Introduction group", rows[0])
+	}
+	for _, row := range rows {
+		if row.PairID == "intro-section" {
+			t.Fatalf("section container pair should be a group, not a selectable chunk: %#v", rows)
+		}
+	}
+	if rows[1].PairID != "intro-para" || rows[1].HunkIndex != 1 || rows[2].HunkIndex != 2 {
+		t.Fatalf("paragraph rows should be split hunks: %#v", rows)
+	}
+	outline := RenderOutlineAt(rows, 1, 3, 100, 10)
+	if !strings.Contains(outline, "▾ Introduction") || !strings.Contains(outline, ">     ~     chunk 2/2") {
+		t.Fatalf("outline should show group and cursor on second hunk:\n%s", outline)
 	}
 }
 
@@ -75,6 +114,15 @@ func TestFilterBehavior(t *testing.T) {
 	}
 }
 
+func rowByPairID(rows []OutlineRow, pairID string) *OutlineRow {
+	for i := range rows {
+		if rows[i].PairID == pairID {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
 func visibleIDs(m Model) []string {
 	indices := m.visibleIndices()
 	out := make([]string, 0, len(indices))
@@ -82,6 +130,18 @@ func visibleIDs(m Model) []string {
 		out = append(out, m.Review.Pairs[idx].ID)
 	}
 	return out
+}
+
+func fixtureSectionBlock(id string, startLine int, title string) *parser.Block {
+	source := "\\section{" + title + "}"
+	return &parser.Block{
+		ID:        id,
+		Kind:      parser.KindSection,
+		Title:     title,
+		StartLine: startLine,
+		EndLine:   startLine,
+		Source:    source,
+	}
 }
 
 func fixtureReview() *diffreview.Review {
