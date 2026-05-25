@@ -4,7 +4,7 @@
 # Install: copy or symlink this file to a directory in $fpath, e.g.
 #   /opt/homebrew/share/zsh/site-functions/_mreview
 # then run `compinit` (or open a new shell) to pick it up.
-# If completions still show non-.tex files, clear the cache:
+# If completions still show stale results, clear cache:
 #   rm -f ~/.zcompdump*; compinit
 
 _mreview() {
@@ -27,16 +27,23 @@ _mreview() {
   case $state in
     cmd_or_paper)
       _alternative \
-        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place config\:edit\ the\ global\ config\ in\ \$EDITOR pdf-comments\:anchor\ AI\ review\ comments\ to\ a\ PDF pdf-review\:open\ the\ side-by-side\ review\ TUI))' \
+        'commands:subcommand:((fmt\:reformat\ a\ paper\ in\ place diff\:run\ a\ semantic\ before\ slash\ after\ review\ for\ two\ endpoints config\:edit\ the\ global\ config\ in\ \$EDITOR pdf-comments\:anchor\ AI\ review\ comments\ to\ a\ PDF pdf-review\:open\ the\ side-by-side\ review\ TUI))' \
         'files:tex file:_files -g "*.tex"'
       ;;
     args)
       case $line[1] in
-        fmt)          _mreview_fmt ;;
-        config)       ;;
-        pdf-comments) _mreview_pdf_comments ;;
-        pdf-review)   _mreview_pdf_review ;;
-        *)            _files -g '*.tex' ;;
+        fmt)
+          _mreview_fmt ;;
+        diff)
+          _mreview_diff ;;
+        config)
+          ;;
+        pdf-comments)
+          _mreview_pdf_comments ;;
+        pdf-review)
+          _mreview_pdf_review ;;
+        *)
+          _files -g '*.tex' ;;
       esac
       ;;
   esac
@@ -57,6 +64,21 @@ _mreview_fmt() {
     '--config=[path to config file]:config file:_files -g "*.toml"' \
     '--noconfig[ignore config files; use built-in defaults]' \
     '*:tex file:_files -g "*.tex"'
+}
+
+_mreview_diff() {
+  _arguments \
+    '--base=[compare REV:path against working-tree path]:git revision or endpoint:' \
+    '--no-build[skip latexmk build for the new endpoint]' \
+    '--draft[open TUI even when the new build fails]' \
+    '--build-cmd=[override latexmk command for the new endpoint]:command:' \
+    '--sidecar=[path to diff sidecar file]:sidecar file:_files' \
+    '--stdout=[format for diff annotations emitted on quit]:format:(md json none)' \
+    '--config=[path to config file]:config file:_files -g "*.toml"' \
+    '--noconfig[ignore config files; use built-in defaults]' \
+    '--open-zed[open old+new in Zed after startup]' \
+    '--allow-modifications[allow e/E edits to the new endpoint when it is a real file]' \
+    '*:endpoint/file:_files'
 }
 
 _mreview_pdf_comments() {
