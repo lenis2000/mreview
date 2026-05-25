@@ -41,34 +41,19 @@ func BuildOutline(
 		return nil
 	}
 	rows := make([]OutlineRow, 0, len(review.Pairs))
-	currentGroup := ""
+	var currentPath []string
 	for i, pair := range review.Pairs {
 		if !pairMatchesFilter(pair, filter, reviewed, annotations, issues) {
 			continue
 		}
 		if isSectionPair(pair) {
-			label := pairTitle(pair)
-			if label == "" {
-				label = outlineGroupLabel(pair)
-			}
-			if label != "" && label != currentGroup {
-				rows = append(rows, OutlineRow{PairIndex: -1, Marker: "▾", Title: label, Group: true})
-				currentGroup = label
-			}
+			rows, currentPath = appendOutlineGroups(rows, currentPath, outlineSectionPairPath(pair))
 			continue
 		}
-		group := outlineGroupLabel(pair)
-		if group == "" {
-			currentGroup = ""
-		} else if group != currentGroup {
-			rows = append(rows, OutlineRow{PairIndex: -1, Marker: "▾", Title: group, Group: true})
-			currentGroup = group
-		}
+		path := outlinePairPath(pair)
+		rows, currentPath = appendOutlineGroups(rows, currentPath, path)
 		infos := outlineHunkInfos(pair)
-		depth := 0
-		if currentGroup != "" {
-			depth = 1
-		}
+		depth := len(path)
 		for h, info := range infos {
 			rows = append(rows, OutlineRow{
 				PairID:     pair.ID,
@@ -173,7 +158,8 @@ func RenderOutlineAt(rows []OutlineRow, cursorPairIndex, sourceLineCursor int, w
 	for i, row := range rows[start:end] {
 		absoluteRow := start + i
 		if row.Group {
-			line := fmt.Sprintf("  %s %s", row.Marker, row.Title)
+			indent := strings.Repeat("  ", row.Depth)
+			line := fmt.Sprintf("  %s%s %s", indent, row.Marker, row.Title)
 			rendered = append(rendered, clipLine(line, width))
 			continue
 		}
@@ -245,6 +231,50 @@ func outlineCursorRow(rows []OutlineRow, cursorPairIndex, sourceLineCursor int) 
 	return 0
 }
 
+func appendOutlineGroups(rows []OutlineRow, currentPath, nextPath []string) ([]OutlineRow, []string) {
+	common := commonStringPrefixLen(currentPath, nextPath)
+	for level := common; level < len(nextPath); level++ {
+		rows = append(rows, OutlineRow{
+			PairIndex: -1,
+			Marker:    "▾",
+			Title:     nextPath[level],
+			Group:     true,
+			Depth:     level,
+		})
+	}
+	return rows, append([]string(nil), nextPath...)
+}
+
+func commonStringPrefixLen(a, b []string) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+func outlinePairPath(pair diffreview.Pair) []string {
+	path := pair.SectionPathNew
+	if len(path) == 0 {
+		path = pair.SectionPathOld
+	}
+	return append([]string(nil), path...)
+}
+
+func outlineSectionPairPath(pair diffreview.Pair) []string {
+	path := outlinePairPath(pair)
+	title := strings.TrimSpace(pairTitle(pair))
+	if title != "" && title != "(missing block)" {
+		path = append(path, title)
+	}
+	return path
+}
+
 func outlineHunkInfos(pair diffreview.Pair) []diffHunkInfo {
 	infos := diffHunkInfos(&pair)
 	if len(infos) == 0 {
@@ -270,20 +300,6 @@ func outlineHunkTitle(pair diffreview.Pair, info diffHunkInfo, index, total int)
 		return fmt.Sprintf("chunk %d/%d: %s", index, total, title)
 	}
 	return title
-}
-
-func outlineGroupLabel(pair diffreview.Pair) string {
-	path := pair.SectionPathNew
-	if len(path) == 0 {
-		path = pair.SectionPathOld
-	}
-	if len(path) > 0 {
-		return path[0]
-	}
-	if isSectionPair(pair) {
-		return pairTitle(pair)
-	}
-	return ""
 }
 
 func isSectionPair(pair diffreview.Pair) bool {

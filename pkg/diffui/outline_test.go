@@ -55,32 +55,51 @@ func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
 			New:    fixtureSectionBlock("new-intro", 1, "Introduction"),
 		},
 		{
-			ID:             "intro-para",
+			ID:             "overview-section",
 			Status:         diffreview.Changed,
-			Old:            fixtureBlock("old-intro-para", 2, "first old\nunchanged middle\nsecond old"),
-			New:            fixtureBlock("new-intro-para", 2, "first new\nunchanged middle\nsecond new"),
+			Old:            fixtureSectionBlock("old-overview", 2, "Overview"),
+			New:            fixtureSectionBlock("new-overview", 2, "Overview"),
 			SectionPathOld: []string{"Introduction"},
 			SectionPathNew: []string{"Introduction"},
 		},
+		{
+			ID:             "intro-para",
+			Status:         diffreview.Changed,
+			Old:            fixtureBlock("old-intro-para", 3, "first old\nunchanged middle\nsecond old"),
+			New:            fixtureBlock("new-intro-para", 3, "first new\nunchanged middle\nsecond new"),
+			SectionPathOld: []string{"Introduction", "Overview"},
+			SectionPathNew: []string{"Introduction", "Overview"},
+		},
 	}}
 	rows := BuildOutline(review, FilterChanged, nil, nil, nil)
-	if len(rows) != 3 {
-		t.Fatalf("rows = %#v, want section group plus two chunks", rows)
+	if len(rows) != 4 {
+		t.Fatalf("rows = %#v, want two section groups plus two chunks", rows)
 	}
-	if !rows[0].Group || rows[0].Title != "Introduction" {
-		t.Fatalf("first row = %#v, want Introduction group", rows[0])
+	if !rows[0].Group || rows[0].Title != "Introduction" || rows[0].Depth != 0 {
+		t.Fatalf("first row = %#v, want top-level Introduction group", rows[0])
 	}
+	if !rows[1].Group || rows[1].Title != "Overview" || rows[1].Depth != 1 {
+		t.Fatalf("second row = %#v, want nested Overview group", rows[1])
+	}
+	introGroups := 0
 	for _, row := range rows {
-		if row.PairID == "intro-section" {
+		if row.PairID == "intro-section" || row.PairID == "overview-section" {
 			t.Fatalf("section container pair should be a group, not a selectable chunk: %#v", rows)
 		}
+		if row.Group && row.Title == "Introduction" {
+			introGroups++
+		}
 	}
-	if rows[1].PairID != "intro-para" || rows[1].HunkIndex != 1 || rows[2].HunkIndex != 2 {
+	if introGroups != 1 {
+		t.Fatalf("Introduction group should appear once, got %d rows=%#v", introGroups, rows)
+	}
+	if rows[2].PairID != "intro-para" || rows[2].HunkIndex != 1 || rows[3].HunkIndex != 2 {
 		t.Fatalf("paragraph rows should be split hunks: %#v", rows)
 	}
-	outline := RenderOutlineAt(rows, 1, 3, 100, 10)
-	if !strings.Contains(outline, "▾ Introduction") || !strings.Contains(outline, ">     ~     chunk 2/2") {
-		t.Fatalf("outline should show group and cursor on second hunk:\n%s", outline)
+	outline := RenderOutlineAt(rows, 2, 3, 100, 10)
+	if !strings.Contains(outline, "▾ Introduction") || !strings.Contains(outline, "▾ Overview") ||
+		!strings.Contains(outline, ">") || !strings.Contains(outline, "chunk 2/2") {
+		t.Fatalf("outline should show nested groups and cursor on second hunk:\n%s", outline)
 	}
 }
 

@@ -44,6 +44,18 @@ func TestRenderPairSourceTransparentWrapperKeepsInnerWordUnchanged(t *testing.T)
 	}
 }
 
+func TestRenderPairSourceShowsAnchorCursor(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-cursor", 1, "first old\nunchanged middle\nsecond old"),
+		New:    fixtureBlock("new-cursor", 1, "first new\nunchanged middle\nsecond new"),
+	}
+	view := RenderPairSourceSideHighlighted(pair, false, 80, 8, 0, 3)
+	if !strings.Contains(view, "~>   3") {
+		t.Fatalf("anchored changed line should show cursor in source pane:\n%q", view)
+	}
+}
+
 func TestRenderPairSourceHighlightsChangedLines(t *testing.T) {
 	review := fixtureReview()
 	highlighted := RenderPairSourceSideHighlighted(pairByID(t, review, "changed"), false, 80, 8, 0, 0)
