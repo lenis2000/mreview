@@ -88,7 +88,8 @@ func (m Model) paneAtPoint(x, y int) (Pane, bool) {
 	if x < 0 || y < 0 || y >= bodyH {
 		return PaneOutline, false
 	}
-	if m.Layout == LayoutStacked {
+	switch m.Layout {
+	case LayoutStacked:
 		outlineW, rightW := m.stackedWidths(m.Width)
 		if x < outlineW {
 			return PaneOutline, true
@@ -102,6 +103,26 @@ func (m Model) paneAtPoint(x, y int) (Pane, bool) {
 			return PanePDF, true
 		}
 		oldW, _ := m.sourcePaneWidths(rightW)
+		if relX < oldW {
+			return PaneOldSource, true
+		}
+		return PaneNewSource, true
+	case LayoutNoPDF:
+		outlineW, sourceW := m.noPDFWidths(m.Width)
+		if x < outlineW {
+			return PaneOutline, true
+		}
+		relX := x - outlineW
+		if relX < 0 || relX >= sourceW {
+			return PaneOutline, false
+		}
+		if comparisonCombined(sourceW) {
+			if relX < sourceW/2 {
+				return PaneOldSource, true
+			}
+			return PaneNewSource, true
+		}
+		oldW, _ := m.sourcePaneWidths(sourceW)
 		if relX < oldW {
 			return PaneOldSource, true
 		}

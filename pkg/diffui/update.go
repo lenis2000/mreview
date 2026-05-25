@@ -101,13 +101,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "P":
 		return m.openPreviewPDF()
 	case "\\":
-		if m.Layout == LayoutStacked {
-			m.Layout = LayoutThreeCol
-			m.Status = "layout: side-by-side"
-		} else {
-			m.Layout = LayoutStacked
-			m.Status = "layout: PDF below source"
-		}
+		m.cycleLayout()
 		m.PDFImage = ""
 		return m.withPDFRender()
 	case "h", "left":

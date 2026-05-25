@@ -95,6 +95,9 @@ const (
 	// LayoutStacked renders outline full-height on the left, with old/new source
 	// above the new-side PDF on the right.
 	LayoutStacked
+	// LayoutNoPDF renders outline | old | new, while keeping build/reload behavior
+	// unchanged; only the PDF pane is hidden.
+	LayoutNoPDF
 )
 
 // Options configures a new diff TUI model.

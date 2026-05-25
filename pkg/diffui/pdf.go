@@ -386,10 +386,13 @@ func (m Model) diffPDFPaneCells() (int, int) {
 		paneH = 1
 	}
 	var paneW int
-	if m.Layout == LayoutStacked {
+	switch m.Layout {
+	case LayoutNoPDF:
+		return 0, 0
+	case LayoutStacked:
 		_, paneW = m.stackedWidths(m.Width)
 		_, paneH = m.stackedHeights(paneH)
-	} else {
+	default:
 		_, _, paneW = m.paneWidths(m.Width)
 	}
 	innerW := paneW - 2

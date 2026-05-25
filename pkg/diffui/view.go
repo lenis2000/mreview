@@ -43,7 +43,8 @@ func (m Model) View() string {
 	}
 
 	var main string
-	if m.Layout == LayoutStacked {
+	switch m.Layout {
+	case LayoutStacked:
 		outlineW, rightW := m.stackedWidths(m.Width)
 		topH, pdfH := m.stackedHeights(bodyHeight)
 		outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight, m.Focus == PaneOutline)
@@ -51,7 +52,12 @@ func (m Model) View() string {
 		pdf := m.renderPDFPane(pdfWMin(rightW), pdfH, m.Focus == PanePDF)
 		right := lipgloss.JoinVertical(lipgloss.Left, comparison, pdf)
 		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, right)
-	} else {
+	case LayoutNoPDF:
+		outlineW, sourceW := m.noPDFWidths(m.Width)
+		outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight, m.Focus == PaneOutline)
+		comparison := m.renderComparisonArea(sourceW, bodyHeight)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, comparison)
+	default:
 		outlineW, sourceW, pdfW := m.paneWidths(m.Width)
 		outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight, m.Focus == PaneOutline)
 		comparison := m.renderComparisonArea(sourceW, bodyHeight)
@@ -233,6 +239,10 @@ func (m Model) stackedWidths(width int) (outline, right int) {
 	return outline, right
 }
 
+func (m Model) noPDFWidths(width int) (outline, source int) {
+	return m.stackedWidths(width)
+}
+
 func (m Model) stackedHeights(height int) (top, bottom int) {
 	if height < 2 {
 		return 1, 1
@@ -329,8 +339,32 @@ func (m *Model) ensureLayoutDefaults() {
 	m.OutlineFrac, m.PDFFrac, m.StackedTopFrac, m.SourceSplitFrac = m.layoutValues()
 }
 
+func (m *Model) cycleLayout() {
+	switch m.Layout {
+	case LayoutThreeCol:
+		m.Layout = LayoutStacked
+		m.Status = "layout: PDF below source"
+	case LayoutStacked:
+		m.Layout = LayoutNoPDF
+		if m.Focus == PanePDF {
+			m.Focus = PaneNewSource
+		}
+		m.Status = "layout: PDF hidden"
+	default:
+		m.Layout = LayoutThreeCol
+		m.Status = "layout: side-by-side"
+	}
+}
+
+func (m Model) focusOrder() []Pane {
+	if m.Layout == LayoutNoPDF {
+		return []Pane{PaneOutline, PaneOldSource, PaneNewSource}
+	}
+	return []Pane{PaneOutline, PaneOldSource, PaneNewSource, PanePDF}
+}
+
 func (m *Model) moveFocus(delta int) {
-	order := []Pane{PaneOutline, PaneOldSource, PaneNewSource, PanePDF}
+	order := m.focusOrder()
 	pos := 0
 	for i, pane := range order {
 		if pane == m.Focus {
@@ -360,6 +394,9 @@ func (m *Model) resizeFocusedPane(delta int) bool {
 	case PaneOutline:
 		m.OutlineFrac += step
 	case PanePDF:
+		if m.Layout == LayoutNoPDF {
+			return false
+		}
 		if m.Layout == LayoutStacked {
 			// Top share shrinks when the focused bottom PDF grows.
 			m.StackedTopFrac -= step
@@ -426,7 +463,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"[/] select previous/next source line (PDF anchor)",
 		"h/l or ←/→ focus pane",
 		"< / > resize focused pane or source split",
-		"\\ toggle PDF below source layout",
+		"\\ cycle PDF layout: side pane / below / hidden",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",
 		"B rebuild/reload new PDF; use after Zed edits",

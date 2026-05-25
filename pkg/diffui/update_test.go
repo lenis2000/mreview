@@ -209,6 +209,27 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 	if m.StackedTopFrac >= oldTop {
 		t.Fatalf("> on stacked PDF should grow bottom PDF by shrinking top: before %.2f after %.2f", oldTop, m.StackedTopFrac)
 	}
+
+	m = pressKey(t, m, "\\")
+	if m.Layout != LayoutNoPDF {
+		t.Fatalf("second \\ should hide PDF, got %v", m.Layout)
+	}
+	if m.Focus == PanePDF {
+		t.Fatalf("hidden PDF layout should move focus off PDF")
+	}
+	m.Status = ""
+	view = m.View()
+	if strings.Contains(view, "PDF") || !strings.Contains(view, "Old source") || !strings.Contains(view, "New source") {
+		t.Fatalf("hidden-PDF view should keep source panes and omit PDF pane:\n%s", view)
+	}
+	m = pressKey(t, m, "right")
+	if m.Focus == PanePDF {
+		t.Fatalf("focus traversal should skip hidden PDF pane")
+	}
+	m = pressKey(t, m, "\\")
+	if m.Layout != LayoutThreeCol {
+		t.Fatalf("third \\ should return to side-by-side layout")
+	}
 }
 
 func TestCopySelectedChunkUsesFocusedSide(t *testing.T) {
