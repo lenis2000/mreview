@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"mreview/pkg/pdf"
 )
 
 const statusBarHeight = 1
@@ -65,7 +67,14 @@ func (m Model) View() string {
 		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, comparison, pdf)
 	}
 	status := clipLine(m.statusText(), m.Width)
-	return lipgloss.JoinVertical(lipgloss.Left, main, status)
+	view := lipgloss.JoinVertical(lipgloss.Left, main, status)
+	if m.Layout == LayoutNoPDF && m.KittyAvailable {
+		// Kitty graphics persist independently of the terminal text grid. When the
+		// PDF pane is hidden, explicitly clear any image rendered by a previous
+		// layout; otherwise the stale crop remains over the source panes.
+		return pdf.KittyDeleteAll + view
+	}
+	return view
 }
 
 func (m Model) renderComparisonArea(width, height int) string {
