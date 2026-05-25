@@ -93,7 +93,7 @@ func TestDiffInlineEditRewritesNewFileOnly(t *testing.T) {
 	if m.LineEdit == nil {
 		t.Fatalf("expected line editor")
 	}
-	m.LineEdit.TI.SetValue("Edited new sentence.")
+	m.LineEdit.TA.SetValue("Edited new sentence.")
 	next, _ = m.submitLineEdit()
 	m = next.(Model)
 
@@ -197,7 +197,7 @@ func TestDiffReloadAfterEditRecomputesPairsAndPreservesSidecarState(t *testing.T
 
 	next, _ := m.startLineEdit()
 	m = next.(Model)
-	m.LineEdit.TI.SetValue("Old theorem body.")
+	m.LineEdit.TA.SetValue("Old theorem body.")
 	next, _ = m.submitLineEdit()
 	m = next.(Model)
 
@@ -256,7 +256,7 @@ func TestDiffUndoRedoApplyOnlyNewFile(t *testing.T) {
 
 	next, _ := m.startLineEdit()
 	m = next.(Model)
-	m.LineEdit.TI.SetValue("Edited sentence.")
+	m.LineEdit.TA.SetValue("Edited sentence.")
 	next, _ = m.submitLineEdit()
 	m = next.(Model)
 

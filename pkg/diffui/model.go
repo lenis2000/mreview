@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
@@ -262,9 +261,11 @@ type EditSnapshot struct {
 	Sequence int
 }
 
-// LineEditPopup hosts the one-line inline editor for diff mode.
+// LineEditPopup hosts the inline editor for one physical source line. It uses
+// a textarea, not a textinput, so very long TeX lines soft-wrap while editing;
+// submission still writes back one physical line.
 type LineEditPopup struct {
-	TI           textinput.Model
+	TA           textarea.Model
 	AbsoluteLine int
 	Original     string
 	Indent       string

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
@@ -118,14 +118,16 @@ func (m Model) startLineEdit() (tea.Model, tea.Cmd) {
 	}
 	full := lines[line-1]
 	indent, body := splitLeadingIndent(full)
-	ti := textinput.New()
-	ti.SetValue(body)
-	ti.Prompt = ""
-	ti.Width = 120
-	ti.CharLimit = 4000
-	cmd := ti.Focus()
+	ta := textarea.New()
+	ta.SetValue(body)
+	ta.Prompt = ""
+	ta.ShowLineNumbers = false
+	ta.CharLimit = 4000
+	ta.SetWidth(120)
+	ta.SetHeight(5)
+	cmd := ta.Focus()
 	m.LineEdit = &LineEditPopup{
-		TI:           ti,
+		TA:           ta,
 		AbsoluteLine: line,
 		Original:     full,
 		Indent:       indent,
@@ -147,7 +149,7 @@ func (m Model) updateLineEditPopup(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	var cmd tea.Cmd
-	m.LineEdit.TI, cmd = m.LineEdit.TI.Update(msg)
+	m.LineEdit.TA, cmd = m.LineEdit.TA.Update(msg)
 	return m, cmd
 }
 
@@ -156,7 +158,7 @@ func (m Model) submitLineEdit() (tea.Model, tea.Cmd) {
 	if p == nil {
 		return m, nil
 	}
-	newLine := p.Indent + p.TI.Value()
+	newLine := p.Indent + onePhysicalLine(p.TA.Value())
 	m.LineEdit = nil
 	if newLine == p.Original {
 		m.Status = "line edit: no change"
@@ -172,6 +174,12 @@ func (m Model) submitLineEdit() (tea.Model, tea.Cmd) {
 	}
 	m = m.reloadAfterEdit(fmt.Sprintf("line %d updated", p.AbsoluteLine))
 	return m.afterSourceReload()
+}
+
+func onePhysicalLine(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.ReplaceAll(s, "\n", " ")
 }
 
 func (m Model) applyEditFinished(msg diffEditFinishedMsg) (tea.Model, tea.Cmd) {

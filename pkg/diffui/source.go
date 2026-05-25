@@ -214,42 +214,284 @@ func rowsForMatched(oldBlock, newBlock *parser.Block) []sourceRow {
 	if len(oldLines) == 0 && len(newLines) == 0 {
 		return []sourceRow{{oldText: "(no old source)", newText: "(no new source)"}}
 	}
-	matcher := difflib.NewMatcher(oldLines, newLines)
-	var rows []sourceRow
+	return rowsForMatchedTokenBlock(oldBlock, newBlock, oldLines, newLines)
+}
+
+type lineToken struct {
+	Text    string
+	Norm    string
+	Line    int
+	Visible bool
+}
+
+func rowsForMatchedTokenBlock(oldBlock, newBlock *parser.Block, oldLines, newLines []string) []sourceRow {
+	oldParts, newParts, scores := tokenBlockDiffParts(oldLines, newLines)
+	oldMarks := sideLineMarks(oldLines, oldParts, true)
+	newMarks := sideLineMarks(newLines, newParts, false)
+	return alignDisplayRows(oldBlock, newBlock, oldLines, newLines, oldParts, newParts, oldMarks, newMarks, scores)
+}
+
+func tokenBlockDiffParts(oldLines, newLines []string) ([][]sourcePart, [][]sourcePart, [][]float64) {
+	oldTokens := tokenizeLatexLineTokens(oldLines)
+	newTokens := tokenizeLatexLineTokens(newLines)
+	oldParts := equalLineParts(oldLines)
+	newParts := equalLineParts(newLines)
+	scores := make([][]float64, len(oldLines))
+	for i := range scores {
+		scores[i] = make([]float64, len(newLines))
+	}
+	oldVisibleIdx, oldKeys := visibleLineTokenKeys(oldTokens)
+	newVisibleIdx, newKeys := visibleLineTokenKeys(newTokens)
+	matcher := difflib.NewMatcher(oldKeys, newKeys)
+	oldKinds := make([]sourcePartKind, len(oldTokens))
+	newKinds := make([]sourcePartKind, len(newTokens))
 	for _, op := range matcher.GetOpCodes() {
 		switch op.Tag {
 		case 'e':
-			for i, j := op.I1, op.J1; i < op.I2 && j < op.J2; i, j = i+1, j+1 {
-				rows = append(rows, sourceRow{
-					oldMark: " ",
-					oldLine: sourceLineNumber(oldBlock, i),
-					oldText: oldLines[i],
-					newMark: " ",
-					newLine: sourceLineNumber(newBlock, j),
-					newText: newLines[j],
-				})
+			for oi, nj := op.I1, op.J1; oi < op.I2 && nj < op.J2; oi, nj = oi+1, nj+1 {
+				ot := oldTokens[oldVisibleIdx[oi]]
+				nt := newTokens[newVisibleIdx[nj]]
+				if ot.Line >= 0 && ot.Line < len(scores) && nt.Line >= 0 && nt.Line < len(newLines) {
+					scores[ot.Line][nt.Line] += tokenDisplayWeight(ot.Norm)
+				}
 			}
 		case 'd':
-			for i := op.I1; i < op.I2; i++ {
-				rows = append(rows, sourceRow{
-					oldMark: "-",
-					oldLine: sourceLineNumber(oldBlock, i),
-					oldText: oldLines[i],
-				})
+			for oi := op.I1; oi < op.I2; oi++ {
+				oldKinds[oldVisibleIdx[oi]] = sourcePartDelete
 			}
 		case 'i':
-			for j := op.J1; j < op.J2; j++ {
-				rows = append(rows, sourceRow{
-					newMark: "+",
-					newLine: sourceLineNumber(newBlock, j),
-					newText: newLines[j],
-				})
+			for nj := op.J1; nj < op.J2; nj++ {
+				newKinds[newVisibleIdx[nj]] = sourcePartAdd
 			}
 		case 'r':
-			rows = append(rows, alignReplaceLineBlock(oldBlock, newBlock, oldLines, newLines, op.I1, op.I2, op.J1, op.J2)...)
+			for oi := op.I1; oi < op.I2; oi++ {
+				oldKinds[oldVisibleIdx[oi]] = sourcePartChange
+			}
+			for nj := op.J1; nj < op.J2; nj++ {
+				newKinds[newVisibleIdx[nj]] = sourcePartChange
+			}
+		}
+	}
+	oldParts = partsFromLineTokens(oldLines, oldTokens, oldKinds)
+	newParts = partsFromLineTokens(newLines, newTokens, newKinds)
+	return oldParts, newParts, scores
+}
+
+func tokenizeLatexLineTokens(lines []string) []lineToken {
+	var out []lineToken
+	for lineIdx, line := range lines {
+		for _, tok := range tokenizeLatex(line) {
+			out = append(out, lineToken{
+				Text:    tok,
+				Norm:    normalizeLineToken(tok),
+				Line:    lineIdx,
+				Visible: strings.TrimSpace(tok) != "",
+			})
+		}
+	}
+	return out
+}
+
+func normalizeLineToken(tok string) string {
+	if strings.TrimSpace(tok) == "" {
+		return ""
+	}
+	return strings.ToLower(tok)
+}
+
+func visibleLineTokenKeys(tokens []lineToken) ([]int, []string) {
+	idx := make([]int, 0, len(tokens))
+	keys := make([]string, 0, len(tokens))
+	for i, tok := range tokens {
+		if !tok.Visible {
+			continue
+		}
+		idx = append(idx, i)
+		keys = append(keys, tok.Norm)
+	}
+	return idx, keys
+}
+
+func equalLineParts(lines []string) [][]sourcePart {
+	parts := make([][]sourcePart, len(lines))
+	for i, line := range lines {
+		parts[i] = []sourcePart{{Text: line, Kind: sourcePartEqual}}
+	}
+	return parts
+}
+
+func partsFromLineTokens(lines []string, tokens []lineToken, kinds []sourcePartKind) [][]sourcePart {
+	parts := make([][]sourcePart, len(lines))
+	for i := range lines {
+		parts[i] = nil
+	}
+	for i, tok := range tokens {
+		kind := sourcePartEqual
+		if i < len(kinds) && kinds[i] != sourcePartEqual {
+			kind = kinds[i]
+		}
+		if tok.Line >= 0 && tok.Line < len(parts) {
+			parts[tok.Line] = appendPart(parts[tok.Line], kind, tok.Text)
+		}
+	}
+	for i, line := range lines {
+		if parts[i] == nil {
+			parts[i] = []sourcePart{{Text: line, Kind: sourcePartEqual}}
+		}
+	}
+	return parts
+}
+
+func tokenDisplayWeight(norm string) float64 {
+	if norm == "" {
+		return 0
+	}
+	if isDiffStopword(norm) {
+		return 0.35
+	}
+	if strings.HasPrefix(norm, "\\") {
+		return 2
+	}
+	if len([]rune(norm)) >= 6 {
+		return 2
+	}
+	return 1
+}
+
+func isDiffStopword(s string) bool {
+	switch s {
+	case "the", "a", "an", "of", "in", "on", "for", "to", "and", "or", "but", "with", "by", "as", "is", "are", "be", "this", "that":
+		return true
+	default:
+		return false
+	}
+}
+
+func sideLineMarks(lines []string, parts [][]sourcePart, oldSide bool) []string {
+	marks := make([]string, len(lines))
+	for i := range lines {
+		marks[i] = lineMarkForParts(parts[i], oldSide)
+	}
+	return marks
+}
+
+func lineMarkForParts(parts []sourcePart, oldSide bool) string {
+	visibleEqual := false
+	visibleChange := false
+	visibleInsertDelete := false
+	for _, part := range parts {
+		if strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		switch part.Kind {
+		case sourcePartEqual:
+			visibleEqual = true
+		case sourcePartDelete, sourcePartAdd:
+			visibleInsertDelete = true
+		case sourcePartChange:
+			visibleChange = true
+		}
+	}
+	if !visibleChange && !visibleInsertDelete {
+		return " "
+	}
+	if !visibleEqual && !visibleChange && visibleInsertDelete {
+		if oldSide {
+			return "-"
+		}
+		return "+"
+	}
+	return "~"
+}
+
+func alignDisplayRows(
+	oldBlock, newBlock *parser.Block,
+	oldLines, newLines []string,
+	oldParts, newParts [][]sourcePart,
+	oldMarks, newMarks []string,
+	scores [][]float64,
+) []sourceRow {
+	oldN, newN := len(oldLines), len(newLines)
+	dp := make([][]float64, oldN+1)
+	choice := make([][]byte, oldN+1)
+	for i := range dp {
+		dp[i] = make([]float64, newN+1)
+		choice[i] = make([]byte, newN+1)
+	}
+	for i := oldN; i >= 0; i-- {
+		for j := newN; j >= 0; j-- {
+			if i == oldN && j == newN {
+				continue
+			}
+			best := -1.0
+			if i < oldN {
+				best = dp[i+1][j]
+				choice[i][j] = 'd'
+			}
+			if j < newN && dp[i][j+1] > best {
+				best = dp[i][j+1]
+				choice[i][j] = 'i'
+			}
+			if i < oldN && j < newN {
+				if pairScore, ok := displayPairScore(oldLines[i], newLines[j], oldMarks[i], newMarks[j], scores[i][j]); ok {
+					score := pairScore + dp[i+1][j+1]
+					if score >= best {
+						best = score
+						choice[i][j] = 'p'
+					}
+				}
+			}
+			dp[i][j] = best
+		}
+	}
+	var rows []sourceRow
+	for i, j := 0, 0; i < oldN || j < newN; {
+		switch choice[i][j] {
+		case 'p':
+			rows = append(rows, sourceRow{
+				oldMark:  oldMarks[i],
+				oldLine:  sourceLineNumber(oldBlock, i),
+				oldText:  oldLines[i],
+				oldParts: oldParts[i],
+				newMark:  newMarks[j],
+				newLine:  sourceLineNumber(newBlock, j),
+				newText:  newLines[j],
+				newParts: newParts[j],
+			})
+			i++
+			j++
+		case 'i':
+			rows = append(rows, sourceRow{
+				newMark:  newMarks[j],
+				newLine:  sourceLineNumber(newBlock, j),
+				newText:  newLines[j],
+				newParts: newParts[j],
+			})
+			j++
+		default:
+			rows = append(rows, sourceRow{
+				oldMark:  oldMarks[i],
+				oldLine:  sourceLineNumber(oldBlock, i),
+				oldText:  oldLines[i],
+				oldParts: oldParts[i],
+			})
+			i++
 		}
 	}
 	return rows
+}
+
+func displayPairScore(oldLine, newLine, oldMark, newMark string, score float64) (float64, bool) {
+	if score > 0 {
+		return score + 0.2, true
+	}
+	if strings.TrimSpace(oldLine) == strings.TrimSpace(newLine) {
+		return 0.2, true
+	}
+	if oldMark != " " && newMark != " " {
+		return 0.05, true
+	}
+	return 0, false
 }
 
 func alignReplaceLineBlock(oldBlock, newBlock *parser.Block, oldLines, newLines []string, oldStart, oldEnd, newStart, newEnd int) []sourceRow {

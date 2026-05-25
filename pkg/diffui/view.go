@@ -1,6 +1,7 @@
 package diffui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -66,7 +67,7 @@ func (m Model) renderComparisonArea(width, height int) string {
 		return m.renderPane("Help", RenderHelpBody(width-2, m.AllowModifications), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
 	}
 	if m.LineEdit != nil {
-		return m.renderPane("Line Edit", m.LineEdit.TI.View(), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
+		return m.renderPane("Line Edit", m.renderLineEditBody(width-2, height-2), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
 	}
 	if m.Popup != nil {
 		return m.renderPane("Annotation", m.Popup.TA.View(), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
@@ -82,6 +83,26 @@ func (m Model) renderComparisonArea(width, height int) string {
 	oldSource := m.renderPaneRaw("Old source", oldBody, oldW, height, m.Focus == PaneOldSource)
 	newSource := m.renderPaneRaw("New source", newBody, newW, height, m.Focus == PaneNewSource)
 	return lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
+}
+
+func (m Model) renderLineEditBody(innerW, innerH int) string {
+	if m.LineEdit == nil {
+		return ""
+	}
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 2 {
+		innerH = 2
+	}
+	hint := fmt.Sprintf("line %d · Enter submit · Esc cancel", m.LineEdit.AbsoluteLine)
+	editorH := innerH - 1
+	if editorH < 1 {
+		editorH = 1
+	}
+	m.LineEdit.TA.SetWidth(innerW)
+	m.LineEdit.TA.SetHeight(editorH)
+	return m.LineEdit.TA.View() + "\n" + hint
 }
 
 func (m Model) renderPane(title, body string, width, height int, focusedOpt ...bool) string {

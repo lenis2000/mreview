@@ -8,6 +8,30 @@ import (
 	"mreview/pkg/parser"
 )
 
+func TestRenderPairSourceWholeBlockTokenDiffSurvivesRewrap(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-rewrap", 1, "We study domino tilings of the Aztec diamond with one-periodic weights."),
+		New:    fixtureBlock("new-rewrap", 1, "We study domino tilings of the Aztec diamond\nwith one-periodic weights."),
+	}
+	view := RenderPairSourceHighlighted(pair, 120, 6, 0, 0)
+	if strings.Contains(view, "\x1b[") {
+		t.Fatalf("pure rewrap should not produce content highlights:\n%q", view)
+	}
+}
+
+func TestRenderPairSourceTransparentWrapperKeepsInnerWordUnchanged(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-wrap", 1, "hybrid behavior"),
+		New:    fixtureBlock("new-wrap", 1, "\\emph{hybrid} behavior"),
+	}
+	view := RenderPairSourceSideHighlighted(pair, false, 80, 6, 0, 0)
+	if !strings.Contains(view, "hybrid") || !strings.Contains(view, "\\emph") {
+		t.Fatalf("wrapper rendering missing expected text:\n%q", view)
+	}
+}
+
 func TestRenderPairSourceHighlightsChangedLines(t *testing.T) {
 	review := fixtureReview()
 	highlighted := RenderPairSourceSideHighlighted(pairByID(t, review, "changed"), false, 80, 8, 0, 0)
@@ -70,8 +94,8 @@ func TestRenderPairSourceForAddedDeletedChangedAndFormatOnly(t *testing.T) {
 	}
 
 	formatOnly := RenderPairSource(pairByID(t, review, "fmt"), 100, 8)
-	if !strings.Contains(formatOnly, "~   12 A  B") || !strings.Contains(formatOnly, "~   12 A B") {
-		t.Fatalf("format-only source rendering should show raw line difference:\n%s", formatOnly)
+	if !strings.Contains(formatOnly, "12 A  B") || !strings.Contains(formatOnly, "12 A B") {
+		t.Fatalf("format-only source rendering should preserve raw line text:\n%s", formatOnly)
 	}
 }
 
