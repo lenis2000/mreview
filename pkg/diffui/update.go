@@ -85,6 +85,8 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startAnnotation(true)
 	case "d":
 		return m.beginDelete(), nil
+	case "y":
+		return m.copySelectedChunk()
 	case "E":
 		return m.editInExternalEditor()
 	case "e":

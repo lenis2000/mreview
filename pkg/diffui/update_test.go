@@ -177,6 +177,43 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 	}
 }
 
+func TestCopySelectedChunkUsesFocusedSide(t *testing.T) {
+	saved := writeDiffClipboard
+	var copied string
+	writeDiffClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+	t.Cleanup(func() { writeDiffClipboard = saved })
+
+	m := New(fixtureReview(), Options{})
+	m.Cursor = pairIndexByID(m.Review, "changed")
+	m.Focus = PaneNewSource
+	m = pressKey(t, m, "y")
+	if copied != "Alpha\nnew beta" {
+		t.Fatalf("new-focused y copied %q", copied)
+	}
+	if !strings.Contains(m.Status, "copied new chunk") {
+		t.Fatalf("copy status = %q", m.Status)
+	}
+
+	m.Focus = PaneOldSource
+	m = pressKey(t, m, "y")
+	if copied != "Alpha\nold beta" {
+		t.Fatalf("old-focused y copied %q", copied)
+	}
+
+	m.Cursor = pairIndexByID(m.Review, "deleted")
+	m.Focus = PaneNewSource
+	m = pressKey(t, m, "y")
+	if copied != "Deleted line one.\nDeleted line two." {
+		t.Fatalf("deleted row should fall back to old source, copied %q", copied)
+	}
+	if !strings.Contains(m.Status, "copied old chunk") {
+		t.Fatalf("fallback copy status = %q", m.Status)
+	}
+}
+
 func TestFocusedSourcePaneScrollsWithinChunk(t *testing.T) {
 	m := New(fixtureReview(), Options{})
 	m.Cursor = pairIndexByID(m.Review, "changed")

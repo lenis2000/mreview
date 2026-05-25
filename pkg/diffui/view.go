@@ -421,6 +421,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"a annotate pair",
 		"ctrl+a edit annotation",
 		"d delete annotation",
+		"y copy selected chunk (old/new side follows focus)",
 		"e/E edit new file only when --allow-modifications is supplied",
 		"[/] select previous/next source line (PDF anchor)",
 		"h/l or ←/→ focus pane",
