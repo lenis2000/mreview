@@ -285,7 +285,7 @@ func (m *Model) schedulePDFRender() tea.Cmd {
 	if pair == nil || pair.New == nil {
 		return nil
 	}
-	w, h := diffPDFPaneCells(m.Width, m.Height)
+	w, h := m.diffPDFPaneCells()
 	if w <= 0 || h <= 0 {
 		return nil
 	}
@@ -371,15 +371,27 @@ func (m Model) pdfPaneBody() string {
 	return pdf.KittyDeleteAll + pdf.NoRegionPlaceholder
 }
 
+// diffPDFPaneCells keeps the original package-level geometry helper for tests
+// that do not need resized/staked model state.
 func diffPDFPaneCells(termW, termH int) (int, int) {
-	if termW <= 0 || termH <= 0 {
+	return Model{Width: termW, Height: termH}.diffPDFPaneCells()
+}
+
+func (m Model) diffPDFPaneCells() (int, int) {
+	if m.Width <= 0 || m.Height <= 0 {
 		return 0, 0
 	}
-	paneH := termH - statusBarHeight
+	paneH := m.Height - statusBarHeight
 	if paneH < 1 {
 		paneH = 1
 	}
-	_, _, _, _, paneW, _ := paneWidths(termW)
+	var paneW int
+	if m.Layout == LayoutStacked {
+		_, paneW = m.stackedWidths(m.Width)
+		_, paneH = m.stackedHeights(paneH)
+	} else {
+		_, _, paneW = m.paneWidths(m.Width)
+	}
 	innerW := paneW - 2
 	if innerW < 1 {
 		innerW = 1

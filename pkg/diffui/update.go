@@ -25,6 +25,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyPDFRender(msg)
 	case diffPDFReloadMsg:
 		return m.applyPDFReload(msg)
+	case diffPDFOpenFinishedMsg:
+		return m.applyPDFOpenFinished(msg)
 	case tea.KeyMsg:
 		if m.LineEdit != nil {
 			return m.updateLineEditPopup(msg)
@@ -89,6 +91,38 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startLineEdit()
 	case "Z":
 		return m.openCompareEditor()
+	case "P":
+		return m.openPreviewPDF()
+	case "\\":
+		if m.Layout == LayoutStacked {
+			m.Layout = LayoutThreeCol
+			m.Status = "layout: side-by-side"
+		} else {
+			m.Layout = LayoutStacked
+			m.Status = "layout: PDF below source"
+		}
+		m.PDFImage = ""
+		return m.withPDFRender()
+	case "h", "left":
+		m.moveFocus(-1)
+		return m, nil
+	case "l", "right":
+		m.moveFocus(1)
+		return m, nil
+	case "<":
+		if m.resizeFocusedPane(-1) {
+			m.PDFImage = ""
+			m.Status = "resized " + m.Focus.String()
+			return m.withPDFRender()
+		}
+		return m, nil
+	case ">":
+		if m.resizeFocusedPane(1) {
+			m.PDFImage = ""
+			m.Status = "resized " + m.Focus.String()
+			return m.withPDFRender()
+		}
+		return m, nil
 	case "B":
 		m = m.reloadAfterEdit("source reloaded")
 		if strings.HasPrefix(m.Status, "reload:") {
@@ -106,10 +140,18 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveSourceLine(1)
 		return m.withPDFRender()
 	case "j", "down":
-		m.moveVisible(1)
+		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
+			m.moveSourceLine(1)
+		} else {
+			m.moveVisible(1)
+		}
 		return m.withPDFRender()
 	case "k", "up":
-		m.moveVisible(-1)
+		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
+			m.moveSourceLine(-1)
+		} else {
+			m.moveVisible(-1)
+		}
 		return m.withPDFRender()
 	case "J", "pgdown":
 		m.moveVisible(5)
@@ -391,14 +433,9 @@ func (m *Model) moveSection(direction int) {
 }
 
 func (m *Model) moveSourceLine(delta int) {
-	pair := m.CurrentPair()
-	if pair == nil || pair.New == nil {
-		m.Status = "no new source line for current pair"
-		return
-	}
-	count := len(blockSourceLines(pair.New))
+	count, startLine, side := sourceLineTarget(m.CurrentPair())
 	if count == 0 {
-		m.Status = "no new source line for current pair"
+		m.Status = "no source line for current pair"
 		return
 	}
 	if m.SourceLineCursor < 1 {
@@ -411,16 +448,11 @@ func (m *Model) moveSourceLine(delta int) {
 	if m.SourceLineCursor > count {
 		m.SourceLineCursor = count
 	}
-	m.Status = fmtSourceLineStatus(pair.New.StartLine + m.SourceLineCursor - 1)
+	m.Status = fmtSourceLineStatus(side, startLine+m.SourceLineCursor-1)
 }
 
 func (m *Model) snapSourceLine() {
-	pair := m.CurrentPair()
-	if pair == nil || pair.New == nil {
-		m.SourceLineCursor = 1
-		return
-	}
-	count := len(blockSourceLines(pair.New))
+	count, _, _ := sourceLineTarget(m.CurrentPair())
 	if count < 1 {
 		m.SourceLineCursor = 1
 		return
@@ -438,11 +470,27 @@ func (m *Model) resetSourceLine() {
 	m.snapSourceLine()
 }
 
-func fmtSourceLineStatus(line int) string {
-	if line < 1 {
-		return "selected new source line"
+func sourceLineTarget(pair *diffreview.Pair) (count int, startLine int, side string) {
+	if pair == nil {
+		return 0, 0, ""
 	}
-	return "selected new source line " + strconv.Itoa(line)
+	if pair.New != nil {
+		return len(blockSourceLines(pair.New)), pair.New.StartLine, "new"
+	}
+	if pair.Old != nil {
+		return len(blockSourceLines(pair.Old)), pair.Old.StartLine, "old"
+	}
+	return 0, 0, ""
+}
+
+func fmtSourceLineStatus(side string, line int) string {
+	if side == "" {
+		side = "source"
+	}
+	if line < 1 {
+		return "selected " + side + " source line"
+	}
+	return "selected " + side + " source line " + strconv.Itoa(line)
 }
 
 func sectionKey(pair diffreview.Pair) string {

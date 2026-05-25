@@ -66,7 +66,7 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 		"Z opens old+new in Zed",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",
-		"[/] select previous/next new source line",
+		"[/] select previous/next source line (PDF anchor)",
 	} {
 		if !strings.Contains(help, needle) {
 			t.Fatalf("help missing %q in:\n%s", needle, help)
@@ -134,6 +134,59 @@ func TestAnnotationAddEditAndDelete(t *testing.T) {
 	}
 	if notes := m.Sidecar.AnnotationNotes(); notes["changed"] != "" {
 		t.Fatalf("annotation was not removed from sidecar: %#v", notes)
+	}
+}
+
+func TestLayoutToggleAndPaneResize(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m.Width = 140
+	m.Height = 30
+
+	m = pressKey(t, m, "\\")
+	if m.Layout != LayoutStacked {
+		t.Fatalf("\\ should switch to stacked layout")
+	}
+	view := m.View()
+	if !strings.Contains(view, "Old source") || !strings.Contains(view, "New source") || !strings.Contains(view, "PDF") {
+		t.Fatalf("stacked view should retain old/new top panes and PDF pane:\n%s", view)
+	}
+
+	oldSplit := m.SourceSplitFrac
+	m = pressKey(t, m, "right") // outline -> old
+	if m.Focus != PaneOldSource {
+		t.Fatalf("focus after right = %s, want old", m.Focus)
+	}
+	m = pressKey(t, m, "left") // old -> outline
+	if m.Focus != PaneOutline {
+		t.Fatalf("focus after left = %s, want outline", m.Focus)
+	}
+	m = pressKey(t, m, "l") // outline -> old
+	if m.Focus != PaneOldSource {
+		t.Fatalf("focus after l = %s, want old", m.Focus)
+	}
+	m = pressKey(t, m, ">")
+	if m.SourceSplitFrac <= oldSplit {
+		t.Fatalf("> on old source should grow old side split: before %.2f after %.2f", oldSplit, m.SourceSplitFrac)
+	}
+
+	m.Focus = PanePDF
+	oldTop := m.StackedTopFrac
+	m = pressKey(t, m, ">")
+	if m.StackedTopFrac >= oldTop {
+		t.Fatalf("> on stacked PDF should grow bottom PDF by shrinking top: before %.2f after %.2f", oldTop, m.StackedTopFrac)
+	}
+}
+
+func TestFocusedSourcePaneScrollsWithinChunk(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m.Cursor = pairIndexByID(m.Review, "changed")
+	m.Focus = PaneNewSource
+	m = pressKey(t, m, "j")
+	if got := m.SourceLineCursor; got != 2 {
+		t.Fatalf("j with source focus should scroll source line, got cursor %d", got)
+	}
+	if currentID(m) != "changed" {
+		t.Fatalf("source scroll should not move semantic pair, got %s", currentID(m))
 	}
 }
 

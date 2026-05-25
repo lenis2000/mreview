@@ -22,7 +22,7 @@ func TestPDFPaneDoesNotClipKittyEscapeBody(t *testing.T) {
 	m := New(fixtureReview(), Options{KittyAvailable: true})
 	m.PDFImage = "\x1b_Ga=T,m=0;" + strings.Repeat("x", 200) + "\x1b\\"
 
-	view := m.renderPDFPane(24, 8)
+	view := m.renderPDFPane(24, 8, false)
 	if !strings.Contains(view, m.PDFImage) {
 		t.Fatalf("PDF pane clipped or rewrote kitty image escape")
 	}

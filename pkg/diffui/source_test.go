@@ -8,6 +8,49 @@ import (
 	"mreview/pkg/parser"
 )
 
+func TestRenderPairSourceHighlightsChangedLines(t *testing.T) {
+	review := fixtureReview()
+	highlighted := RenderPairSourceSideHighlighted(pairByID(t, review, "changed"), false, 80, 8, 0, 0)
+	if !strings.Contains(highlighted, "new beta") || !strings.Contains(highlighted, "~") {
+		t.Fatalf("highlighted source should preserve changed text and marker:\n%q", highlighted)
+	}
+}
+
+func TestRenderPairSourceAnchorScrollsWithinLongBlock(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-many", 10, "old one\nold two\nold three\nold four\nold five"),
+		New:    fixtureBlock("new-many", 10, "new one\nnew two\nnew three\nnew four\nnew five"),
+	}
+	view := RenderPairSourceSideAt(pair, false, 40, 2, 0, 14)
+	if !strings.Contains(view, "new five") || strings.Contains(view, "new one") {
+		t.Fatalf("anchored rendering should scroll toward requested line:\n%s", view)
+	}
+}
+
+func TestRenderPairSourceWrapsLongLines(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-long", 1, "old prefix alpha beta gamma delta epsilon tail"),
+		New:    fixtureBlock("new-long", 1, "new prefix alpha beta gamma delta epsilon tail"),
+	}
+
+	side := RenderPairSourceSide(pair, false, 24, 6)
+	if !strings.Contains(side, "tail") {
+		t.Fatalf("wrapped side source should expose the tail of a long line:\n%s", side)
+	}
+	for _, line := range strings.Split(side, "\n") {
+		if len([]rune(line)) > 24 {
+			t.Fatalf("wrapped line exceeds pane width: %q", line)
+		}
+	}
+
+	combined := RenderPairSource(pair, 52, 8)
+	if !strings.Contains(combined, "tail") {
+		t.Fatalf("wrapped combined source should expose the tail of a long line:\n%s", combined)
+	}
+}
+
 func TestRenderPairSourceForAddedDeletedChangedAndFormatOnly(t *testing.T) {
 	review := fixtureReview()
 

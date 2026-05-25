@@ -61,6 +61,43 @@ func CycleFilter(f Filter) Filter {
 	}
 }
 
+// Pane identifies a focusable diff pane. Focus drives pane resizing with
+// < and >, and is shown by a brighter border when styles provide one.
+type Pane int
+
+const (
+	PaneOutline Pane = iota
+	PaneOldSource
+	PaneNewSource
+	PanePDF
+)
+
+func (p Pane) String() string {
+	switch p {
+	case PaneOutline:
+		return "outline"
+	case PaneOldSource:
+		return "old"
+	case PaneNewSource:
+		return "new"
+	case PanePDF:
+		return "pdf"
+	default:
+		return "source"
+	}
+}
+
+// LayoutMode selects the top-level diff pane arrangement.
+type LayoutMode int
+
+const (
+	// LayoutThreeCol renders outline | old | new | PDF.
+	LayoutThreeCol LayoutMode = iota
+	// LayoutStacked renders outline full-height on the left, with old/new source
+	// above the new-side PDF on the right.
+	LayoutStacked
+)
+
 // Options configures a new diff TUI model.
 type Options struct {
 	Config             *ui.Config
@@ -99,9 +136,15 @@ type Model struct {
 	// to the first line and is kept here for edit anchoring.
 	SourceLineCursor int
 
-	Width, Height int
-	Status        string
-	Styles        ui.Styles
+	Width, Height   int
+	Status          string
+	Styles          ui.Styles
+	Layout          LayoutMode
+	Focus           Pane
+	OutlineFrac     float64
+	PDFFrac         float64
+	StackedTopFrac  float64
+	SourceSplitFrac float64
 
 	Sidecar            *diffreview.Sidecar
 	SidecarBase        *diffreview.Sidecar
@@ -195,6 +238,11 @@ func New(review *diffreview.Review, opts Options) Model {
 		PDFStatus:          opts.PDFStatus,
 		KittyAvailable:     opts.KittyAvailable,
 		SourceLineCursor:   1,
+		Focus:              PaneOutline,
+		OutlineFrac:        defaultOutlineFrac,
+		PDFFrac:            defaultPDFFrac,
+		StackedTopFrac:     defaultStackedTopFrac,
+		SourceSplitFrac:    defaultSourceSplitFrac,
 	}
 	if side.CursorPairID != "" {
 		if idx := pairIndexByID(review, side.CursorPairID); idx >= 0 {

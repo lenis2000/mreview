@@ -8,6 +8,25 @@ import (
 
 const statusBarHeight = 1
 
+const (
+	defaultOutlineFrac     = 0.25
+	defaultPDFFrac         = 0.25
+	defaultStackedTopFrac  = 0.55
+	defaultSourceSplitFrac = 0.50
+	diffResizeStep         = 0.03
+
+	minDiffOutlineFrac = 0.10
+	maxDiffOutlineFrac = 0.50
+	minDiffPDFFrac     = 0.10
+	maxDiffPDFFrac     = 0.55
+	minDiffSourceFrac  = 0.25
+
+	minDiffStackedTopFrac  = 0.20
+	maxDiffStackedTopFrac  = 0.85
+	minDiffSourceSplitFrac = 0.20
+	maxDiffSourceSplitFrac = 0.80
+)
+
 // View renders the diff outline, old/new source diff, PDF placeholder, and
 // status bar.
 func (m Model) View() string {
@@ -21,44 +40,52 @@ func (m Model) View() string {
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
-	outlineW, oldW, newW, sourceW, pdfW, combined := paneWidths(m.Width)
-	outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight)
-	if m.ShowHelp {
-		source := m.renderPane("Help", RenderHelpBody(sourceW-2, m.AllowModifications), sourceW, bodyHeight)
-		pdf := m.renderPDFPane(pdfW, bodyHeight)
-		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
-		status := clipLine(m.statusText(), m.Width)
-		return lipgloss.JoinVertical(lipgloss.Left, main, status)
-	}
-	if m.LineEdit != nil {
-		source := m.renderPane("Line Edit", m.LineEdit.TI.View(), sourceW, bodyHeight)
-		pdf := m.renderPDFPane(pdfW, bodyHeight)
-		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
-		status := clipLine(m.statusText(), m.Width)
-		return lipgloss.JoinVertical(lipgloss.Left, main, status)
-	}
-	if m.Popup != nil {
-		source := m.renderPane("Annotation", m.Popup.TA.View(), sourceW, bodyHeight)
-		pdf := m.renderPDFPane(pdfW, bodyHeight)
-		main := lipgloss.JoinHorizontal(lipgloss.Top, outline, source, pdf)
-		status := clipLine(m.statusText(), m.Width)
-		return lipgloss.JoinVertical(lipgloss.Left, main, status)
-	}
-	var middle string
-	if combined {
-		middle = m.renderPane("Source", RenderPairSource(m.CurrentPair(), sourceW-2, bodyHeight-2), sourceW, bodyHeight)
+
+	var main string
+	if m.Layout == LayoutStacked {
+		outlineW, rightW := m.stackedWidths(m.Width)
+		topH, pdfH := m.stackedHeights(bodyHeight)
+		outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight, m.Focus == PaneOutline)
+		comparison := m.renderComparisonArea(rightW, topH)
+		pdf := m.renderPDFPane(pdfWMin(rightW), pdfH, m.Focus == PanePDF)
+		right := lipgloss.JoinVertical(lipgloss.Left, comparison, pdf)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, right)
 	} else {
-		oldSource := m.renderPane("Old source", RenderPairSourceSide(m.CurrentPair(), true, oldW-2, bodyHeight-2), oldW, bodyHeight)
-		newSource := m.renderPane("New source", RenderPairSourceSide(m.CurrentPair(), false, newW-2, bodyHeight-2), newW, bodyHeight)
-		middle = lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
+		outlineW, sourceW, pdfW := m.paneWidths(m.Width)
+		outline := m.renderPane("Outline", m.renderOutline(outlineW-2, bodyHeight-2), outlineW, bodyHeight, m.Focus == PaneOutline)
+		comparison := m.renderComparisonArea(sourceW, bodyHeight)
+		pdf := m.renderPDFPane(pdfW, bodyHeight, m.Focus == PanePDF)
+		main = lipgloss.JoinHorizontal(lipgloss.Top, outline, comparison, pdf)
 	}
-	pdf := m.renderPDFPane(pdfW, bodyHeight)
-	main := lipgloss.JoinHorizontal(lipgloss.Top, outline, middle, pdf)
 	status := clipLine(m.statusText(), m.Width)
 	return lipgloss.JoinVertical(lipgloss.Left, main, status)
 }
 
-func (m Model) renderPane(title, body string, width, height int) string {
+func (m Model) renderComparisonArea(width, height int) string {
+	if m.ShowHelp {
+		return m.renderPane("Help", RenderHelpBody(width-2, m.AllowModifications), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
+	}
+	if m.LineEdit != nil {
+		return m.renderPane("Line Edit", m.LineEdit.TI.View(), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
+	}
+	if m.Popup != nil {
+		return m.renderPane("Annotation", m.Popup.TA.View(), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
+	}
+	oldAnchor, newAnchor := m.sourceAnchorLines()
+	if m.Layout != LayoutStacked && comparisonCombined(width) {
+		body := RenderPairSourceHighlighted(m.CurrentPair(), width-2, height-2, oldAnchor, newAnchor)
+		return m.renderPaneRaw("Source", body, width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
+	}
+	oldW, newW := m.sourcePaneWidths(width)
+	oldBody := RenderPairSourceSideHighlighted(m.CurrentPair(), true, oldW-2, height-2, oldAnchor, newAnchor)
+	newBody := RenderPairSourceSideHighlighted(m.CurrentPair(), false, newW-2, height-2, oldAnchor, newAnchor)
+	oldSource := m.renderPaneRaw("Old source", oldBody, oldW, height, m.Focus == PaneOldSource)
+	newSource := m.renderPaneRaw("New source", newBody, newW, height, m.Focus == PaneNewSource)
+	return lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
+}
+
+func (m Model) renderPane(title, body string, width, height int, focusedOpt ...bool) string {
+	focused := len(focusedOpt) > 0 && focusedOpt[0]
 	if width < 1 {
 		width = 1
 	}
@@ -78,10 +105,40 @@ func (m Model) renderPane(title, body string, width, height int) string {
 		content += "\n" + fitLines(body, innerW, innerH-1)
 	}
 	style := m.Styles.Pane
+	if focused {
+		style = m.Styles.PaneFocused
+	}
 	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
 }
 
-func (m Model) renderPDFPane(width, height int) string {
+func (m Model) renderPaneRaw(title, body string, width, height int, focused bool) string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	innerW := width - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	innerH := height - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	content := title
+	if body != "" {
+		content += "\n" + body
+	}
+	style := m.Styles.Pane
+	if focused {
+		style = m.Styles.PaneFocused
+	}
+	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
+}
+
+func (m Model) renderPDFPane(width, height int, focusedOpt ...bool) string {
+	focused := len(focusedOpt) > 0 && focusedOpt[0]
 	if width < 1 {
 		width = 1
 	}
@@ -101,21 +158,20 @@ func (m Model) renderPDFPane(width, height int) string {
 		content += "\n" + body
 	}
 	style := m.Styles.Pane
+	if focused {
+		style = m.Styles.PaneFocused
+	}
 	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
 }
 
-func paneWidths(width int) (outline, oldSource, newSource, source, pdf int, combined bool) {
+func (m Model) paneWidths(width int) (outline, source, pdf int) {
 	if width < 3 {
-		return 1, 0, 0, 1, 1, true
+		return 1, 1, 1
 	}
-	outline = width / 4
-	pdf = width / 4
+	outlineFrac, pdfFrac, _, _ := m.layoutValues()
+	outline = int(float64(width) * outlineFrac)
+	pdf = int(float64(width) * pdfFrac)
 	source = width - outline - pdf
-	combined = width < 120
-	if !combined {
-		oldSource = source / 2
-		newSource = source - oldSource
-	}
 	if outline < 1 {
 		outline = 1
 	}
@@ -125,19 +181,217 @@ func paneWidths(width int) (outline, oldSource, newSource, source, pdf int, comb
 	if pdf < 1 {
 		pdf = 1
 	}
-	if oldSource < 0 {
-		oldSource = 0
-	}
-	if newSource < 0 {
-		newSource = 0
+	return outline, source, pdf
+}
+
+// paneWidths keeps the original package-level splitter available for tests and
+// small helpers that do not care about user-resized model state.
+func paneWidths(width int) (outline, oldSource, newSource, source, pdf int, combined bool) {
+	m := Model{}
+	outline, source, pdf = m.paneWidths(width)
+	combined = comparisonCombined(source)
+	if !combined {
+		oldSource, newSource = m.sourcePaneWidths(source)
 	}
 	return outline, oldSource, newSource, source, pdf, combined
+}
+
+func (m Model) stackedWidths(width int) (outline, right int) {
+	if width < 2 {
+		return 1, 1
+	}
+	outlineFrac, _, _, _ := m.layoutValues()
+	outline = int(float64(width) * outlineFrac)
+	if outline < 1 {
+		outline = 1
+	}
+	right = width - outline
+	if right < 1 {
+		right = 1
+	}
+	return outline, right
+}
+
+func (m Model) stackedHeights(height int) (top, bottom int) {
+	if height < 2 {
+		return 1, 1
+	}
+	_, _, stackedTopFrac, _ := m.layoutValues()
+	top = int(float64(height) * stackedTopFrac)
+	if top < 1 {
+		top = 1
+	}
+	if top >= height {
+		top = height - 1
+	}
+	bottom = height - top
+	if bottom < 1 {
+		bottom = 1
+	}
+	return top, bottom
+}
+
+func (m Model) sourceAnchorLines() (oldLine, newLine int) {
+	pair := m.CurrentPair()
+	if pair == nil {
+		return 0, 0
+	}
+	offset := m.SourceLineCursor
+	if offset < 1 {
+		offset = 1
+	}
+	if pair.Old != nil && pair.Old.StartLine > 0 {
+		oldOffset := offset
+		if count := len(blockSourceLines(pair.Old)); count > 0 && oldOffset > count {
+			oldOffset = count
+		}
+		oldLine = pair.Old.StartLine + oldOffset - 1
+	}
+	if pair.New != nil && pair.New.StartLine > 0 {
+		newOffset := offset
+		if count := len(blockSourceLines(pair.New)); count > 0 && newOffset > count {
+			newOffset = count
+		}
+		newLine = pair.New.StartLine + newOffset - 1
+	}
+	return oldLine, newLine
+}
+
+func (m Model) sourcePaneWidths(width int) (oldSource, newSource int) {
+	if width < 2 {
+		return 1, 1
+	}
+	_, _, _, split := m.layoutValues()
+	oldSource = int(float64(width) * split)
+	if oldSource < 1 {
+		oldSource = 1
+	}
+	newSource = width - oldSource
+	if newSource < 1 {
+		newSource = 1
+	}
+	return oldSource, newSource
+}
+
+func comparisonCombined(width int) bool {
+	return width < 70
+}
+
+func pdfWMin(width int) int {
+	if width < 1 {
+		return 1
+	}
+	return width
+}
+
+func (m Model) layoutValues() (outlineFrac, pdfFrac, stackedTopFrac, sourceSplitFrac float64) {
+	outlineFrac = m.OutlineFrac
+	if outlineFrac <= 0 {
+		outlineFrac = defaultOutlineFrac
+	}
+	pdfFrac = m.PDFFrac
+	if pdfFrac <= 0 {
+		pdfFrac = defaultPDFFrac
+	}
+	stackedTopFrac = m.StackedTopFrac
+	if stackedTopFrac <= 0 {
+		stackedTopFrac = defaultStackedTopFrac
+	}
+	sourceSplitFrac = m.SourceSplitFrac
+	if sourceSplitFrac <= 0 {
+		sourceSplitFrac = defaultSourceSplitFrac
+	}
+	return clampLayoutValues(outlineFrac, pdfFrac, stackedTopFrac, sourceSplitFrac)
+}
+
+func (m *Model) ensureLayoutDefaults() {
+	m.OutlineFrac, m.PDFFrac, m.StackedTopFrac, m.SourceSplitFrac = m.layoutValues()
+}
+
+func (m *Model) moveFocus(delta int) {
+	order := []Pane{PaneOutline, PaneOldSource, PaneNewSource, PanePDF}
+	pos := 0
+	for i, pane := range order {
+		if pane == m.Focus {
+			pos = i
+			break
+		}
+	}
+	pos += delta
+	if pos < 0 {
+		pos = 0
+	}
+	if pos >= len(order) {
+		pos = len(order) - 1
+	}
+	m.Focus = order[pos]
+	m.Status = "focus: " + m.Focus.String()
+}
+
+func (m *Model) resizeFocusedPane(delta int) bool {
+	if delta == 0 {
+		return false
+	}
+	m.ensureLayoutDefaults()
+	before := [4]float64{m.OutlineFrac, m.PDFFrac, m.StackedTopFrac, m.SourceSplitFrac}
+	step := diffResizeStep * float64(delta)
+	switch m.Focus {
+	case PaneOutline:
+		m.OutlineFrac += step
+	case PanePDF:
+		if m.Layout == LayoutStacked {
+			// Top share shrinks when the focused bottom PDF grows.
+			m.StackedTopFrac -= step
+		} else {
+			m.PDFFrac += step
+		}
+	case PaneOldSource:
+		m.SourceSplitFrac += step
+	case PaneNewSource:
+		m.SourceSplitFrac -= step
+	}
+	m.OutlineFrac, m.PDFFrac, m.StackedTopFrac, m.SourceSplitFrac = clampLayoutValues(
+		m.OutlineFrac,
+		m.PDFFrac,
+		m.StackedTopFrac,
+		m.SourceSplitFrac,
+	)
+	return before != [4]float64{m.OutlineFrac, m.PDFFrac, m.StackedTopFrac, m.SourceSplitFrac}
+}
+
+func clampLayoutValues(outlineFrac, pdfFrac, stackedTopFrac, sourceSplitFrac float64) (float64, float64, float64, float64) {
+	outlineFrac = clampFloat(outlineFrac, minDiffOutlineFrac, maxDiffOutlineFrac)
+	pdfFrac = clampFloat(pdfFrac, minDiffPDFFrac, maxDiffPDFFrac)
+	if 1-outlineFrac-pdfFrac < minDiffSourceFrac {
+		need := minDiffSourceFrac - (1 - outlineFrac - pdfFrac)
+		if pdfFrac-need >= minDiffPDFFrac {
+			pdfFrac -= need
+		} else if outlineFrac-need >= minDiffOutlineFrac {
+			outlineFrac -= need
+		} else {
+			outlineFrac = minDiffOutlineFrac
+			pdfFrac = 1 - outlineFrac - minDiffSourceFrac
+		}
+	}
+	stackedTopFrac = clampFloat(stackedTopFrac, minDiffStackedTopFrac, maxDiffStackedTopFrac)
+	sourceSplitFrac = clampFloat(sourceSplitFrac, minDiffSourceSplitFrac, maxDiffSourceSplitFrac)
+	return outlineFrac, pdfFrac, stackedTopFrac, sourceSplitFrac
+}
+
+func clampFloat(v, lo, hi float64) float64 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // RenderHelpBody returns the diff-specific help text.
 func RenderHelpBody(width int, allowModifications bool) string {
 	lines := []string{
-		"j/k move pair",
+		"j/k or ↑/↓ move pair; scroll source when source focused",
 		"J/K jump pairs",
 		"gg/G first/last pair",
 		"{/} previous/next section",
@@ -147,10 +401,14 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"e/E edit new file only when --allow-modifications is supplied",
-		"[/] select previous/next new source line",
+		"[/] select previous/next source line (PDF anchor)",
+		"h/l or ←/→ focus pane",
+		"< / > resize focused pane or source split",
+		"\\ toggle PDF below source layout",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",
 		"B rebuild/reload new PDF; use after Zed edits",
+		"P open new PDF in Preview",
 		"Z opens old+new in Zed",
 		"? close help",
 		"q quit",
