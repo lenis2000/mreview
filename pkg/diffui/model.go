@@ -200,6 +200,8 @@ type Model struct {
 	KittyAvailable bool
 
 	ShowHelp bool
+	// CountBuf accumulates digit prefixes for Vim-style diff motions (e.g. "10j").
+	CountBuf string
 	pendingG bool
 	quitting bool
 

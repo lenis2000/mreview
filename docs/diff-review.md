@@ -223,7 +223,8 @@ all / changed / unreviewed / annotated / issues
 Common diff-mode keys:
 
 ```text
-j/k, J/K, gg/G    navigate semantic pairs
+j/k, 10j/5k      navigate semantic pairs
+J/K               jump 10 down / 5 up pairs
 m                 toggle semantic vs coalesced rewrite outline mode
 {/}               previous/next section
 [/]               select previous/next new source line

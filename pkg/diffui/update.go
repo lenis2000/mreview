@@ -11,6 +11,11 @@ import (
 	"mreview/pkg/parser"
 )
 
+const (
+	diffJumpDownCount = 10
+	diffJumpUpCount   = 5
+)
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -49,6 +54,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if m.Pending != nil {
+		m.CountBuf = ""
 		if key == "ctrl+c" {
 			m.Pending = nil
 			m.quitting = true
@@ -57,25 +63,38 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.confirmDelete(key == "y" || key == "Y"), nil
 	}
 	if key == "ctrl+c" || key == "q" {
+		m.CountBuf = ""
 		m.quitting = true
 		return m, tea.Quit
 	}
 	if key == "?" {
 		m.ShowHelp = !m.ShowHelp
+		m.CountBuf = ""
 		m.pendingG = false
 		return m, nil
 	}
 	if m.ShowHelp {
+		m.CountBuf = ""
 		return m, nil
 	}
 
 	if m.pendingG {
 		m.pendingG = false
 		if key == "g" {
+			m.CountBuf = ""
 			m.moveToFirst()
 			return m.withPDFRender()
 		}
 	}
+	if isDiffMotionDigit(key) {
+		if key == "0" && m.CountBuf == "" {
+			return m, nil
+		}
+		m.CountBuf += key
+		return m, nil
+	}
+	count := parseDiffMotionCount(m.CountBuf)
+	m.CountBuf = ""
 
 	switch key {
 	case "f":
@@ -139,30 +158,30 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r":
 		return m.redoEdit()
 	case "[":
-		m.moveSourceLine(-1)
+		m.moveSourceLine(-count)
 		return m.withPDFRender()
 	case "]":
-		m.moveSourceLine(1)
+		m.moveSourceLine(count)
 		return m.withPDFRender()
 	case "j", "down":
 		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
-			m.moveSourceLine(1)
+			m.moveSourceLine(count)
 		} else {
-			m.moveDiffChunkOrPair(1)
+			m.moveDiffChunkOrPairRepeat(1, count)
 		}
 		return m.withPDFRender()
 	case "k", "up":
 		if m.Focus == PaneOldSource || m.Focus == PaneNewSource {
-			m.moveSourceLine(-1)
+			m.moveSourceLine(-count)
 		} else {
-			m.moveDiffChunkOrPair(-1)
+			m.moveDiffChunkOrPairRepeat(-1, count)
 		}
 		return m.withPDFRender()
 	case "J", "pgdown":
-		m.moveVisible(5)
+		m.moveVisible(diffJumpDownCount * count)
 		return m.withPDFRender()
 	case "K", "pgup":
-		m.moveVisible(-5)
+		m.moveVisible(-diffJumpUpCount * count)
 		return m.withPDFRender()
 	case "g":
 		m.pendingG = true
@@ -173,13 +192,30 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveToLast()
 		return m.withPDFRender()
 	case "}":
-		m.moveSection(1)
+		m.moveSectionRepeat(1, count)
 		return m.withPDFRender()
 	case "{":
-		m.moveSection(-1)
+		m.moveSectionRepeat(-1, count)
 		return m.withPDFRender()
 	}
 	return m, nil
+}
+
+func isDiffMotionDigit(key string) bool {
+	return len(key) == 1 && key[0] >= '0' && key[0] <= '9'
+}
+
+// parseDiffMotionCount turns a Vim-style digit prefix into a repeat count.
+// Empty, malformed, and zero buffers all mean one motion.
+func parseDiffMotionCount(buf string) int {
+	if buf == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(buf)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (m Model) toggleDiffRegime() Model {
@@ -494,6 +530,24 @@ func (m *Model) moveDiffChunkOrPair(delta int) {
 	m.moveVisible(delta)
 }
 
+func (m *Model) moveDiffChunkOrPairRepeat(delta, count int) {
+	if count < 1 {
+		count = 1
+	}
+	if delta < 0 {
+		delta = -1
+	} else {
+		delta = 1
+	}
+	for i := 0; i < count; i++ {
+		oldCursor, oldLine := m.Cursor, m.SourceLineCursor
+		m.moveDiffChunkOrPair(delta)
+		if m.Cursor == oldCursor && m.SourceLineCursor == oldLine {
+			return
+		}
+	}
+}
+
 func (m *Model) moveWithinPairDiffHunks(delta int) bool {
 	anchors := diffHunkAnchorOffsets(m.CurrentDisplayPair())
 	if len(anchors) <= 1 {
@@ -605,6 +659,19 @@ func (m *Model) moveSection(direction int) {
 		}
 	}
 	m.Status = "no more sections"
+}
+
+func (m *Model) moveSectionRepeat(direction, count int) {
+	if count < 1 {
+		count = 1
+	}
+	for i := 0; i < count; i++ {
+		oldCursor, oldLine := m.Cursor, m.SourceLineCursor
+		m.moveSection(direction)
+		if m.Cursor == oldCursor && m.SourceLineCursor == oldLine {
+			return
+		}
+	}
 }
 
 func (m *Model) moveSourceLine(delta int) {

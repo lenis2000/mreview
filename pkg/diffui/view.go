@@ -459,8 +459,8 @@ func clampFloat(v, lo, hi float64) float64 {
 // RenderHelpBody returns the diff-specific help text.
 func RenderHelpBody(width int, allowModifications bool) string {
 	lines := []string{
-		"j/k, ↑/↓, or mouse wheel move by diff chunk; scroll when source focused",
-		"J/K jump pairs",
+		"j/k, ↑/↓ move by diff chunk; source panes scroll; counts work (10j/5k)",
+		"J/K jump 10 down / 5 up pairs",
 		"gg/G first/last pair",
 		"{/} previous/next section",
 		"f cycle filter",

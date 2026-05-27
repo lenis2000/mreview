@@ -1,6 +1,7 @@
 package diffui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -39,6 +40,43 @@ func TestCursorMovementIsPairBased(t *testing.T) {
 	m = pressKey(t, m, "g")
 	if currentID(m) != "changed" {
 		t.Fatalf("gg moved cursor to %s, want changed", currentID(m))
+	}
+}
+
+func TestCursorMovementAcceptsVimCountPrefixes(t *testing.T) {
+	m := New(fixtureManyChangedReview(20), Options{})
+	if currentID(m) != "p00" {
+		t.Fatalf("default cursor = %s, want p00", currentID(m))
+	}
+
+	m = pressKey(t, m, "1")
+	m = pressKey(t, m, "0")
+	m = pressKey(t, m, "j")
+	if currentID(m) != "p10" {
+		t.Fatalf("10j moved cursor to %s, want p10", currentID(m))
+	}
+	if m.CountBuf != "" {
+		t.Fatalf("count buffer after motion = %q, want empty", m.CountBuf)
+	}
+
+	m = pressKey(t, m, "5")
+	m = pressKey(t, m, "k")
+	if currentID(m) != "p05" {
+		t.Fatalf("5k moved cursor to %s, want p05", currentID(m))
+	}
+}
+
+func TestUppercaseJKJumpTenDownAndFiveUp(t *testing.T) {
+	m := New(fixtureManyChangedReview(20), Options{})
+
+	m = pressKey(t, m, "J")
+	if currentID(m) != "p10" {
+		t.Fatalf("J moved cursor to %s, want p10", currentID(m))
+	}
+
+	m = pressKey(t, m, "K")
+	if currentID(m) != "p05" {
+		t.Fatalf("K moved cursor to %s, want p05", currentID(m))
 	}
 }
 
@@ -453,4 +491,20 @@ func currentID(m Model) string {
 		return ""
 	}
 	return pair.ID
+}
+
+func fixtureManyChangedReview(n int) *diffreview.Review {
+	pairs := make([]diffreview.Pair, n)
+	for i := range pairs {
+		id := fmt.Sprintf("p%02d", i)
+		pairs[i] = diffreview.Pair{
+			ID:       id,
+			Status:   diffreview.Changed,
+			Old:      fixtureBlock("old-"+id, i+1, fmt.Sprintf("old %d", i)),
+			New:      fixtureBlock("new-"+id, i+1, fmt.Sprintf("new %d", i)),
+			OldIndex: i,
+			NewIndex: i,
+		}
+	}
+	return &diffreview.Review{Pairs: pairs}
 }
