@@ -381,21 +381,6 @@ func (m Model) ConfirmDelete(yes bool) Model {
 	return m
 }
 
-// findAnnotation returns the note text for the first annotation matching
-// id (any LineOffset), and a boolean indicating whether one existed.
-// Retained as a thin wrapper for callers that don't care about line anchors.
-func findAnnotation(side *persist.Sidecar, id string) (string, bool) {
-	if side == nil {
-		return "", false
-	}
-	for _, a := range side.Annotations {
-		if a.BlockID == id {
-			return a.Note, true
-		}
-	}
-	return "", false
-}
-
 // findAnnotationFor returns the note matching exactly (blockID, lineOffset).
 // Used by the popup-open path so a `a` on line 3 reuses the existing line-3
 // note if any, while `A` reuses an existing block-level note. Block + line

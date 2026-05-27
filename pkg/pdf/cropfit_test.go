@@ -74,7 +74,7 @@ func TestSuggestDPI_DegenerateInputsReturnDefault(t *testing.T) {
 // helper) lives in the same package so we can lean on it directly.
 func TestCropFitted_ProducesDecodablePNGAtAdaptiveDPI(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestCropFitted_ProducesDecodablePNGAtAdaptiveDPI(t *testing.T) {
 
 func TestCropFitted_MultiColumnVpadStaysTight(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -136,7 +136,7 @@ func TestCropFitted_MultiColumnVpadStaysTight(t *testing.T) {
 
 func TestCropFitted_SingleColumnVpadAdaptsToPaneAspect(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestCropFitted_SingleColumnVpadAdaptsToPaneAspect(t *testing.T) {
 // cursor block needs to remain a meaningful fraction of what's drawn.
 func TestCropFitted_SmallRegionStaysFocused(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -212,7 +212,7 @@ func max64(a, b float64) float64 {
 
 func TestCropFitted_ColumnModeNarrowsHorizontally(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ func TestCropFitted_ColumnModeNarrowsHorizontally(t *testing.T) {
 
 func TestCropFitted_RebalancesClampedTopEdge(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	bounds, err := d.Bounds(0)
 	require.NoError(t, err)
@@ -294,7 +294,7 @@ func TestCropFitted_RebalancesClampedTopEdge(t *testing.T) {
 
 func TestCropFitted_DegenerateInputsErrorEarly(t *testing.T) {
 	d := openFixture(t)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	_, err := CropFitted(nil, synctex.Region{Page: 1, W: 10, H: 10}, FitOptions{})
 	assert.Error(t, err, "nil doc")

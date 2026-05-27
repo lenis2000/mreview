@@ -65,7 +65,7 @@ func renderManualPDF(in manualRenderInputs) (string, string) {
 	if err != nil {
 		return "", fmt.Sprintf("pdf: %v", err)
 	}
-	var composed image.Image = primary
+	composed := primary
 	if in.Dual != "" && in.Page+1 < in.Doc.NumPage() {
 		second, err := renderSinglePage(in.Doc, in.Page+1, in, dpi)
 		if err == nil {

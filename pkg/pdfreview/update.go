@@ -198,7 +198,7 @@ end tell`, abs, page)
 		m.Status = "skim: " + err.Error()
 		return m, clearStatusAfter(3 * time.Second)
 	}
-	go cmd.Wait() // reap the child; we don't care about the result
+	go func() { _ = cmd.Wait() }() // reap the child; we don't care about the result
 	m.Status = fmt.Sprintf("opened page %d in Skim", page)
 	return m, clearStatusAfter(2 * time.Second)
 }

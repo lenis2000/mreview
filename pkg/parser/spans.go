@@ -102,9 +102,8 @@ func nextNewline(src []byte, pos int) int {
 func appendLineSpans(spans []ProtectedSpan, src []byte, lineStart, lineEnd int) []ProtectedSpan {
 	i := lineStart
 	for i < lineEnd {
-		c := src[i]
-		switch {
-		case c == '%':
+		switch c := src[i]; c {
+		case '%':
 			// Count consecutive backslashes before the %. If odd, the %
 			// is escaped (\%); if even (including zero), the % starts a
 			// real comment (e.g. \\% where \\ is a line break).
@@ -118,7 +117,7 @@ func appendLineSpans(spans []ProtectedSpan, src []byte, lineStart, lineEnd int) 
 			}
 			spans = append(spans, ProtectedSpan{Start: i, End: lineEnd, Kind: "comment-line"})
 			return spans
-		case c == '\\':
+		case '\\':
 			sp, end, ok := scanInlineVerb(src, i, lineEnd)
 			if ok {
 				spans = append(spans, sp)
@@ -181,14 +180,16 @@ func scanInlineVerb(src []byte, pos, lineEnd int) (ProtectedSpan, int, bool) {
 		}
 		// \lstinline can use {…} (brace-balanced) or <delim>…<delim> like \verb.
 		// It can also have an optional [...] argument before the content.
-		if src[j] == '[' {
+		switch src[j] {
+		case '[':
 			// Skip optional argument
 			depth := 1
 			j++
 			for j < lineEnd && depth > 0 {
-				if src[j] == '[' {
+				switch src[j] {
+				case '[':
 					depth++
-				} else if src[j] == ']' {
+				case ']':
 					depth--
 				}
 				j++
@@ -223,12 +224,6 @@ func scanInlineVerb(src []byte, pos, lineEnd int) (ProtectedSpan, int, bool) {
 	}
 
 	return ProtectedSpan{}, 0, false
-}
-
-// scanSkipEnvs finds all \begin{env}...\end{env} pairs for environments in
-// the default skipEnvs map and returns a span covering each pair.
-func scanSkipEnvs(src []byte, existing []ProtectedSpan) []ProtectedSpan {
-	return scanSkipEnvsWith(src, existing, skipEnvs)
 }
 
 // scanSkipEnvsWith is scanSkipEnvs against a caller-supplied env set so the

@@ -182,7 +182,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// are skipped while manual PDF mode is active so they keep their
 	// docviewer-style page-nav meaning there.
 	isArrow := key == "left" || key == "right"
-	if matches(key, m.Keymap.FocusOutline) && !(isArrow && m.PDFManual) {
+	if matches(key, m.Keymap.FocusOutline) && (!isArrow || !m.PDFManual) {
 		switch m.Focus {
 		case PanePDF:
 			m.Focus = PaneSource
@@ -192,7 +192,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.CountBuf = ""
 		return m, nil
 	}
-	if matches(key, m.Keymap.FocusSource) && !(isArrow && m.PDFManual) {
+	if matches(key, m.Keymap.FocusSource) && (!isArrow || !m.PDFManual) {
 		switch m.Focus {
 		case PaneOutline:
 			m.Focus = PaneSource
@@ -208,7 +208,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// when the source pane is focused. Non-directional V-mode keys
 	// (n/p/+/-/2/0/i/space/,/.) still act on the PDF regardless of focus.
 	inVModeDirectional := m.PDFManual && (key == "j" || key == "k" || key == "up" || key == "down")
-	if m.PDFManual && !(inVModeDirectional && m.Focus == PaneSource) {
+	if m.PDFManual && (!inVModeDirectional || m.Focus != PaneSource) {
 		switch {
 		case matches(key, m.Keymap.PDFNextPage):
 			if m.PDF != nil {

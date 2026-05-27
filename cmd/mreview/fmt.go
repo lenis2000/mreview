@@ -698,19 +698,6 @@ func printRulesList(w io.Writer) {
 	}
 }
 
-// mergeSkipRules unions the config-provided skip list with the CLI-provided one,
-// dropping duplicates. Order is config-first, then CLI extras.
-//
-// `prose.tilde-refs` is added implicitly unless the user has opted in by
-// setting `tilde_refs = [...]` in config or by passing --rule=prose.tilde-refs
-// on the CLI. The rule rewrites a regular space into a non-breaking space (~),
-// which is the only Tier-2 change that visibly shifts page-line layout in the
-// rendered PDF — so verification fails on every paragraph downstream of any
-// `~` insertion. Off-by-default avoids that surprise.
-func mergeSkipRules(fromCfg, fromCLI []string) []string {
-	return mergeSkipRulesWith(fromCfg, fromCLI, nil, nil)
-}
-
 // mergeSkipRulesWith is mergeSkipRules with the additional ability to skip
 // the implicit `prose.tilde-refs` default when the user has opted in.
 //   - tildeRefs: from config (non-empty means user configured custom refs)

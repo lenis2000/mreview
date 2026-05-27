@@ -149,9 +149,7 @@ func extractAuthorsTitle(text string) (string, string) {
 		if line == "" {
 			continue
 		}
-		if strings.HasSuffix(line, ".") {
-			line = strings.TrimSuffix(line, ".")
-		}
+		line = strings.TrimSuffix(line, ".")
 		authors = line
 		break
 	}

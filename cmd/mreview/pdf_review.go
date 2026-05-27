@@ -34,41 +34,41 @@ func runPdfReview(args []string, stdout, stderr io.Writer) int {
 	if _, err := parser.ParseArgs(args); err != nil {
 		var fe *flags.Error
 		if errors.As(err, &fe) && fe.Type == flags.ErrHelp {
-			fmt.Fprintln(stdout, err.Error())
+			_, _ = fmt.Fprintln(stdout, err.Error())
 			return 0
 		}
-		fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
 		return 2
 	}
 
 	pdfPath := o.Args.PDF
 	if !strings.EqualFold(filepath.Ext(pdfPath), ".pdf") {
-		fmt.Fprintf(stderr, "mreview pdf-review: argument must be a .pdf file (got %q)\n", pdfPath)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: argument must be a .pdf file (got %q)\n", pdfPath)
 		return 2
 	}
 	if _, err := os.Stat(pdfPath); err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
 		return 1
 	}
 
 	jsonPath := pdfreview.ReportPath(pdfPath)
 	if _, err := os.Stat(jsonPath); err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-review: missing %s\n", jsonPath)
-		fmt.Fprintf(stderr, "  run `mreview pdf-comments REVIEW.md %s` first to anchor your comments.\n", pdfPath)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: missing %s\n", jsonPath)
+		_, _ = fmt.Fprintf(stderr, "  run `mreview pdf-comments REVIEW.md %s` first to anchor your comments.\n", pdfPath)
 		return 1
 	}
 	report, err := pdfreview.LoadReport(jsonPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-review: load %s: %v\n", jsonPath, err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: load %s: %v\n", jsonPath, err)
 		return 1
 	}
 
 	doc, err := pdf.Open(pdfPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: %v\n", err)
 		return 1
 	}
-	defer doc.Close()
+	defer func() { _ = doc.Close() }()
 
 	letterPath := o.Out
 	if letterPath == "" {
@@ -80,7 +80,7 @@ func runPdfReview(args []string, stdout, stderr io.Writer) int {
 
 	final, err := runReviewTUI(model, stdout, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview pdf-review: tui: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview pdf-review: tui: %v\n", err)
 		return 1
 	}
 	if fm, ok := final.(pdfreview.Model); ok {
@@ -94,7 +94,7 @@ func runPdfReview(args []string, stdout, stderr io.Writer) int {
 				Model:     report.Model,
 				Comments:  fm.Comments,
 			}); err != nil {
-				fmt.Fprintf(stderr, "mreview pdf-review: save: %v\n", err)
+				_, _ = fmt.Fprintf(stderr, "mreview pdf-review: save: %v\n", err)
 				return 1
 			}
 		}
@@ -111,7 +111,7 @@ func runReviewTUI(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	}
 	var ttyFile *os.File
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 		ttyFile = tty
 		opts = append(opts, tea.WithInput(tty), tea.WithOutput(tty))
 	} else {
@@ -120,7 +120,7 @@ func runReviewTUI(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	prog := tea.NewProgram(model, opts...)
 	final, runErr := prog.Run()
 	if ttyFile != nil && ui.KittyGraphicsAvailable() {
-		fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
+		_, _ = fmt.Fprint(ttyFile, pdf.KittyDeleteAll)
 	}
 	return final, runErr
 }

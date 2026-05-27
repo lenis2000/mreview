@@ -76,7 +76,7 @@ func TestSchedulePDFRender_SuppressedWithoutKitty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open fixture pdf: %v", err)
 	}
-	defer pdfDoc.Close()
+	defer func() { _ = pdfDoc.Close() }()
 
 	m := New(parsedSample(t), &persist.Sidecar{})
 	m.PDF = pdfDoc

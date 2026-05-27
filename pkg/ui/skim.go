@@ -100,7 +100,7 @@ tell application "Skim"
 end tell`, pdfPath, page)
 		cmd := exec.Command("osascript", "-e", script)
 		if err := cmd.Start(); err == nil {
-			go cmd.Wait()
+			go func() { _ = cmd.Wait() }()
 			m.Status = ""
 			return m, nil
 		}
@@ -111,7 +111,7 @@ end tell`, pdfPath, page)
 		m.Status = "S: " + err.Error()
 		return m, nil
 	}
-	go cmd.Wait()
+	go func() { _ = cmd.Wait() }()
 	m.Status = ""
 	return m, nil
 }
@@ -177,7 +177,7 @@ return didRevert`, pdfPath)
 			m.Status = "R: " + err.Error()
 			return m, nil
 		}
-		go cmd.Wait()
+		go func() { _ = cmd.Wait() }()
 	}
 
 	// Step 3: piggyback on the pdf-watch reopen pipeline so the in-TUI

@@ -100,12 +100,12 @@ func saveLayoutFracs() {
 		PDF:        pdfFrac,
 		StackedTop: stackedTopFrac,
 	}); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return
 	}
 	_ = os.Rename(tmp, path)

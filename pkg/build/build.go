@@ -235,7 +235,7 @@ func scanLogForErrors(logPath string) string {
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return scanLogReader(f)
 }
 
@@ -294,7 +294,7 @@ func tailLines(path string, n int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	ring := make([]string, 0, n)

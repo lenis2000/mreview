@@ -358,20 +358,6 @@ func (p *parser) attachLabel(target string) {
 	p.doc.ByLabel[target] = b
 }
 
-// containerGapSkip is the set of block kinds whose body should NOT be
-// scanned for prose-bearing gaps: theorem statements stay whole, proofs
-// are split by segmentProof, lists by segmentItemEnvs, displays/figures/
-// bibliography are atomic. Abstract is a leaf prose container handled by
-// segmentLeafProse.
-var containerGapSkip = map[Kind]bool{
-	KindTheoremLike:  true,
-	KindProof:        true,
-	KindFigure:       true,
-	KindDisplay:      true,
-	KindBibliography: true,
-	KindAbstract:     true,
-}
-
 // segmentContainerGaps walks every container that owns a structural body
 // (the document Root and every KindSection block) and emits a KindParagraph
 // child for each prose-bearing gap between, before, or after that

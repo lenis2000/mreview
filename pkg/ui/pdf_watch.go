@@ -119,7 +119,7 @@ func performPDFWatchReopen(pdfPath, sxPath string, gen int, oldPDF *pdf.Doc) pdf
 	newSx, sxErr := synctex.Open(sxPath)
 	if pdfErr != nil || sxErr != nil {
 		if newPDF != nil {
-			newPDF.Close()
+			_ = newPDF.Close()
 		}
 		// synctex.Index has no Close — GC reclaims it once the local
 		// goes out of scope.
@@ -151,7 +151,7 @@ func (m Model) applyPDFWatchResult(r pdfWatchResultMsg) (Model, tea.Cmd) {
 		// result. Close the orphan handle from this stale reopen so
 		// it doesn't leak.
 		if r.newPDF != nil {
-			r.newPDF.Close()
+			_ = r.newPDF.Close()
 		}
 		return m, nil
 	}
@@ -162,7 +162,7 @@ func (m Model) applyPDFWatchResult(r pdfWatchResultMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if r.oldPDF != nil && r.oldPDF != r.newPDF {
-		r.oldPDF.Close()
+		_ = r.oldPDF.Close()
 	}
 	m.PDF = r.newPDF
 	m.Synctex = r.newSyncTeX

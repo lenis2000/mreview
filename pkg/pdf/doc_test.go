@@ -24,7 +24,7 @@ func fixturePath(t *testing.T, name string) string {
 func TestOpenCloseSamplePDF(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	assert.NotEmpty(t, d.Path())
 	assert.Greater(t, d.NumPage(), 0)
 
@@ -37,7 +37,7 @@ func TestOpenCloseSamplePDF(t *testing.T) {
 func TestPageRendersAndCaches(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	img1, err := d.Page(0, 100.0)
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestPageRendersAndCaches(t *testing.T) {
 func TestPageOutOfRange(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { require.NoError(t, d.Close()) }()
 	_, err = d.Page(9999, 100.0)
 	assert.Error(t, err)
 	_, err = d.Page(-1, 100.0)
@@ -82,7 +82,7 @@ func TestLRUEviction(t *testing.T) {
 func TestCropReturnsDecodablePNG(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { require.NoError(t, d.Close()) }()
 
 	// Bounds of page 1 in 72-dpi space.
 	b, err := d.Bounds(0)
@@ -108,7 +108,7 @@ func TestCropReturnsDecodablePNG(t *testing.T) {
 func TestCropRejectsZeroExtent(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { require.NoError(t, d.Close()) }()
 	_, err = Crop(d, synctex.Region{Page: 1}, 0)
 	assert.Error(t, err)
 }
@@ -132,7 +132,7 @@ func TestRenderKittyValidatesInputs(t *testing.T) {
 func TestRenderKittyEmitsEscape(t *testing.T) {
 	d, err := Open(fixturePath(t, "sample.pdf"))
 	require.NoError(t, err)
-	defer d.Close()
+	defer func() { require.NoError(t, d.Close()) }()
 	b, err := d.Bounds(0)
 	require.NoError(t, err)
 	r := synctex.Region{

@@ -26,7 +26,7 @@ func TestRenderLetter_OrderAndPrefixes(t *testing.T) {
 	idxBodyU := strings.Index(out, "Unanchored remark")
 	idxMinor1 := strings.Index(out, "Stray period")
 	idxOutro := strings.Index(out, "Best, Leo")
-	if !(idxIntro >= 0 && idxIntro < idxBody1 && idxBody1 < idxBody2 && idxBody2 < idxBodyU && idxBodyU < idxMinor1 && idxMinor1 < idxOutro) {
+	if idxIntro < 0 || idxIntro >= idxBody1 || idxBody1 >= idxBody2 || idxBody2 >= idxBodyU || idxBodyU >= idxMinor1 || idxMinor1 >= idxOutro {
 		t.Fatalf("ordering wrong:\n%s", out)
 	}
 

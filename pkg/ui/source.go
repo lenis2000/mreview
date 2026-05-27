@@ -603,12 +603,11 @@ func colorizeLaTeXLine(line string, styles Styles) string {
 	inMath := false
 	expectEnvArg := false
 	for i < len(runes) {
-		r := runes[i]
-		switch {
-		case r == '%':
+		switch r := runes[i]; r {
+		case '%':
 			b.WriteString(styles.SourceComment.Render(string(runes[i:])))
 			return b.String()
-		case r == '\\':
+		case '\\':
 			if i+1 >= len(runes) {
 				// Trailing backslash with no following rune. Happens when
 				// soft-wrap splits a line mid-command (e.g. between `\` and
@@ -657,7 +656,7 @@ func colorizeLaTeXLine(line string, styles Styles) string {
 			}
 			b.WriteString(styles.SourceCommand.Render(string(runes[i : i+2])))
 			i += 2
-		case r == '$':
+		case '$':
 			if i+1 < len(runes) && runes[i+1] == '$' {
 				b.WriteString(styles.SourceMath.Render("$$"))
 				i += 2
@@ -667,7 +666,7 @@ func colorizeLaTeXLine(line string, styles Styles) string {
 			b.WriteString(styles.SourceMath.Render("$"))
 			i++
 			inMath = !inMath
-		case r == '{' || r == '}':
+		case '{', '}':
 			if expectEnvArg && r == '{' {
 				// Consume the env-name argument: everything up to the next '}'.
 				j := i + 1
@@ -732,7 +731,7 @@ func highlightNumbers(s string, styles Styles) string {
 			continue
 		}
 		j := i
-		for j < len(runes) && !(runes[j] >= '0' && runes[j] <= '9') {
+		for j < len(runes) && (runes[j] < '0' || runes[j] > '9') {
 			j++
 		}
 		b.WriteString(string(runes[i:j]))

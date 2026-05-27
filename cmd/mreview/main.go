@@ -68,10 +68,10 @@ var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	if err != nil {
 		return model, fmt.Errorf("no controlling terminal (cannot open /dev/tty); pipe interactively or use --stdout=none for headless use: %w", err)
 	}
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 	defer func() {
 		if ui.KittyGraphicsAvailable() {
-			fmt.Fprint(tty, pdf.KittyDeleteAll)
+			_, _ = fmt.Fprint(tty, pdf.KittyDeleteAll)
 		}
 	}()
 	opts := []tea.ProgramOption{
@@ -115,6 +115,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		switch args[0] {
 		case "fmt":
 			return runFmt(args[1:], stdout, stderr)
+		case "diff":
+			return runDiff(args[1:], stdout, stderr)
 		case "config":
 			return runConfig(args[1:], stdout, stderr)
 		case "pdf-comments":
@@ -130,7 +132,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			filepath.Ext(first) != ".tex" {
 			if _, err := os.Stat(first); err != nil {
 				if guess := closestSubcommand(first); guess != "" {
-					fmt.Fprintf(stderr, "mreview: unknown subcommand %q (did you mean %q?)\n", first, guess)
+					_, _ = fmt.Fprintf(stderr, "mreview: unknown subcommand %q (did you mean %q?)\n", first, guess)
 					return 2
 				}
 			}
@@ -146,21 +148,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		var flagsErr *flags.Error
 		if errors.As(err, &flagsErr) && flagsErr.Type == flags.ErrHelp {
-			fmt.Fprintln(stdout, err.Error())
+			_, _ = fmt.Fprintln(stdout, err.Error())
 			return 0
 		}
-		fmt.Fprintf(stderr, "mreview: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview: %v\n", err)
 		return 2
 	}
 
 	if o.Version {
-		fmt.Fprintf(stdout, "mreview %s\n", version)
+		_, _ = fmt.Fprintf(stdout, "mreview %s\n", version)
 		return 0
 	}
 
 	if len(rest) > 1 {
-		fmt.Fprintf(stderr, "mreview: unexpected extra argument %q\n", rest[1])
-		fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
+		_, _ = fmt.Fprintf(stderr, "mreview: unexpected extra argument %q\n", rest[1])
+		_, _ = fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
 		return 2
 	}
 	if len(rest) == 1 {
@@ -177,29 +179,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 		case ok:
 			o.File = lone
 		case len(multi) > 1:
-			fmt.Fprintf(stderr, "mreview: multiple .tex files in cwd: %s; specify one\n",
+			_, _ = fmt.Fprintf(stderr, "mreview: multiple .tex files in cwd: %s; specify one\n",
 				strings.Join(multi, ", "))
 			return 2
 		default:
-			fmt.Fprintln(stderr, "mreview: missing paper argument")
-			fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
+			_, _ = fmt.Fprintln(stderr, "mreview: missing paper argument")
+			_, _ = fmt.Fprintln(stderr, "usage: mreview [OPTIONS] paper.tex")
 			return 2
 		}
 	}
 
 	if _, statErr := os.Stat(o.File); statErr != nil {
-		fmt.Fprintf(stderr, "mreview: cannot read %q: %v\n", o.File, statErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: cannot read %q: %v\n", o.File, statErr)
 		return 1
 	}
 
 	src, readErr := os.ReadFile(o.File)
 	if readErr != nil {
-		fmt.Fprintf(stderr, "mreview: read %q: %v\n", o.File, readErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: read %q: %v\n", o.File, readErr)
 		return 1
 	}
 	doc, parseErr := parser.Parse(src)
 	if parseErr != nil {
-		fmt.Fprintf(stderr, "mreview: parse %q: %v\n", o.File, parseErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: parse %q: %v\n", o.File, parseErr)
 		return 1
 	}
 	doc.File = o.File
@@ -207,7 +209,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Load config early so the build step can use cfg.BuildCmd.
 	cfg, cfgErr := ui.LoadConfig(o.Config, o.NoConfig)
 	if cfgErr != nil {
-		fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: %v\n", cfgErr)
 		return 1
 	}
 	cfg = ui.ApplyThemeEnv(cfg)
@@ -240,10 +242,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		})
 		if berr != nil {
 			if !o.Draft {
-				fmt.Fprintf(stderr, "mreview: %v\n", berr)
+				_, _ = fmt.Fprintf(stderr, "mreview: %v\n", berr)
 				return 1
 			}
-			fmt.Fprintf(stderr, "mreview: --draft: %v\n", berr)
+			_, _ = fmt.Fprintf(stderr, "mreview: --draft: %v\n", berr)
 			buildWarning = shortBuildWarning(berr)
 		}
 		buildRes = res
@@ -266,7 +268,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	loaded, sideErr := persist.Load(sidecarPath)
 	if sideErr != nil {
-		fmt.Fprintf(stderr, "mreview: load sidecar %q: %v\n", sidecarPath, sideErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: load sidecar %q: %v\n", sidecarPath, sideErr)
 		return 1
 	}
 	// Remap against the freshly parsed document. Annotations that no longer
@@ -284,7 +286,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	stdoutFmt, fmtErr := persist.ParseStdoutFormat(o.Stdout)
 	if fmtErr != nil {
-		fmt.Fprintf(stderr, "mreview: %v\n", fmtErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: %v\n", fmtErr)
 		return 2
 	}
 
@@ -317,7 +319,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Load external fmt-report diagnostics if a report file exists.
 	reportPath := format.ReportPath(o.File)
 	if ext, extErr := ui.LoadExternalIssues(reportPath, doc); extErr != nil {
-		fmt.Fprintf(stderr, "mreview: warning: load fmt-report: %v\n", extErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: warning: load fmt-report: %v\n", extErr)
 	} else if ext != nil {
 		model.ExternalIssues = ext
 	}
@@ -345,7 +347,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// either file is missing (e.g. --no-build on a never-built paper) the
 	// pane falls back to a placeholder rather than aborting the session.
 	if pdfDoc, pdfErr := pdf.Open(buildRes.PDFPath); pdfErr == nil {
-		defer pdfDoc.Close()
+		defer func() { _ = pdfDoc.Close() }()
 		model.PDF = pdfDoc
 	}
 	if idx, idxErr := synctex.Open(buildRes.SyncTeXPath); idxErr == nil {
@@ -362,7 +364,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	final, err := runTUI(model, stdout, stderr)
 	if err != nil {
-		fmt.Fprintf(stderr, "mreview: tui: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "mreview: tui: %v\n", err)
 		return 1
 	}
 	// Prefer the final Model's sidecar — it is the same pointer in practice
@@ -375,11 +377,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	finalSide.Paper = o.File
 	finalSide.PDF = buildRes.PDFPath
 	if saveErr := persist.Save(sidecarPath, finalSide); saveErr != nil {
-		fmt.Fprintf(stderr, "mreview: save sidecar %q: %v\n", sidecarPath, saveErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: save sidecar %q: %v\n", sidecarPath, saveErr)
 		return 1
 	}
 	if emitErr := persist.Emit(stdout, finalSide, stdoutFmt); emitErr != nil {
-		fmt.Fprintf(stderr, "mreview: emit: %v\n", emitErr)
+		_, _ = fmt.Fprintf(stderr, "mreview: emit: %v\n", emitErr)
 		return 1
 	}
 	return 0
@@ -421,7 +423,7 @@ func startupArtefactsStale(texPath, pdfPath, synctexPath string) bool {
 
 // knownSubcommands lists the dispatch targets recognised by run(). Used by
 // closestSubcommand to suggest fixes for typos.
-var knownSubcommands = []string{"fmt", "config", "pdf-comments", "pdf-review"}
+var knownSubcommands = []string{"fmt", "diff", "config", "pdf-comments", "pdf-review"}
 
 // closestSubcommand returns the known subcommand whose Levenshtein distance
 // from name is smallest, provided that distance is ≤ 2. Returns "" when no
