@@ -11,20 +11,22 @@ import (
 // OutlineRow is one visible row in the diff outline. Selectable rows point to
 // a semantic pair plus a source-line anchor; group rows are section headers.
 type OutlineRow struct {
-	PairID     string
-	PairIndex  int
-	AnchorLine int
-	HunkIndex  int
-	HunkCount  int
-	Marker     string
-	Status     diffreview.PairStatus
-	Title      string
-	Section    string
-	Reviewed   bool
-	Annotated  bool
-	Issues     bool
-	Group      bool
-	Depth      int
+	PairID            string
+	PairIndex         int
+	MemberPairIndices []int
+	AnchorLine        int
+	HunkIndex         int
+	HunkCount         int
+	Marker            string
+	Status            diffreview.PairStatus
+	Title             string
+	Section           string
+	Reviewed          bool
+	Annotated         bool
+	Issues            bool
+	Group             bool
+	Coalesced         bool
+	Depth             int
 }
 
 // BuildOutline returns visible section headers and diff chunks under the
@@ -37,12 +39,33 @@ func BuildOutline(
 	annotations map[string]string,
 	issues map[string][]string,
 ) []OutlineRow {
+	return BuildOutlineWithRegime(review, filter, DiffRegimeSemantic, reviewed, annotations, issues)
+}
+
+func BuildOutlineWithRegime(
+	review *diffreview.Review,
+	filter Filter,
+	regime DiffRegime,
+	reviewed map[string]bool,
+	annotations map[string]string,
+	issues map[string][]string,
+) []OutlineRow {
 	if review == nil {
 		return nil
 	}
 	rows := make([]OutlineRow, 0, len(review.Pairs))
 	var currentPath []string
-	for i, pair := range review.Pairs {
+	for i := 0; i < len(review.Pairs); i++ {
+		if regime == DiffRegimeCoalesced {
+			if group, ok := collectRewriteGroup(review, i, filter, reviewed, annotations, issues); ok {
+				path := outlinePairPath(review.Pairs[group[0]])
+				rows, currentPath = appendOutlineGroups(rows, currentPath, path)
+				rows = append(rows, outlineRewriteRow(review, group, len(path), reviewed, annotations, issues))
+				i = group[len(group)-1]
+				continue
+			}
+		}
+		pair := review.Pairs[i]
 		if !pairMatchesFilter(pair, filter, reviewed, annotations, issues) {
 			continue
 		}
@@ -56,22 +79,145 @@ func BuildOutline(
 		depth := len(path)
 		for h, info := range infos {
 			rows = append(rows, OutlineRow{
-				PairID:     pair.ID,
-				PairIndex:  i,
-				AnchorLine: info.AnchorLine,
-				HunkIndex:  h + 1,
-				HunkCount:  len(infos),
-				Marker:     StatusMarker(pair.Status),
-				Status:     pair.Status,
-				Title:      outlineHunkTitle(pair, info, h+1, len(infos)),
-				Reviewed:   reviewed[pair.ID],
-				Annotated:  annotations[pair.ID] != "",
-				Issues:     len(issues[pair.ID]) > 0,
-				Depth:      depth,
+				PairID:            pair.ID,
+				PairIndex:         i,
+				MemberPairIndices: []int{i},
+				AnchorLine:        info.AnchorLine,
+				HunkIndex:         h + 1,
+				HunkCount:         len(infos),
+				Marker:            StatusMarker(pair.Status),
+				Status:            pair.Status,
+				Title:             outlineHunkTitle(pair, info, h+1, len(infos)),
+				Reviewed:          reviewed[pair.ID],
+				Annotated:         annotations[pair.ID] != "",
+				Issues:            len(issues[pair.ID]) > 0,
+				Depth:             depth,
 			})
 		}
 	}
 	return rows
+}
+
+func collectRewriteGroup(
+	review *diffreview.Review,
+	start int,
+	filter Filter,
+	reviewed map[string]bool,
+	annotations map[string]string,
+	issues map[string][]string,
+) ([]int, bool) {
+	if review == nil || start < 0 || start >= len(review.Pairs) {
+		return nil, false
+	}
+	if !coalescingFilter(filter) {
+		return nil, false
+	}
+	first := review.Pairs[start]
+	if !rewriteGroupCandidate(first, filter, reviewed, annotations, issues) {
+		return nil, false
+	}
+	section := sectionKey(first)
+	group := []int{start}
+	hasAdded := first.Status == diffreview.Added
+	hasDeleted := first.Status == diffreview.Deleted
+	for i := start + 1; i < len(review.Pairs); i++ {
+		pair := review.Pairs[i]
+		if !rewriteGroupCandidate(pair, filter, reviewed, annotations, issues) {
+			break
+		}
+		if sectionKey(pair) != section {
+			break
+		}
+		group = append(group, i)
+		hasAdded = hasAdded || pair.Status == diffreview.Added
+		hasDeleted = hasDeleted || pair.Status == diffreview.Deleted
+	}
+	if len(group) < 2 || !hasAdded || !hasDeleted {
+		return nil, false
+	}
+	return group, true
+}
+
+func coalescingFilter(filter Filter) bool {
+	switch filter {
+	case FilterAll, FilterChanged, FilterUnreviewed:
+		return true
+	default:
+		return false
+	}
+}
+
+func rewriteGroupCandidate(pair diffreview.Pair, filter Filter, reviewed map[string]bool, annotations map[string]string, issues map[string][]string) bool {
+	if pair.Status != diffreview.Added && pair.Status != diffreview.Deleted {
+		return false
+	}
+	return pairMatchesFilter(pair, filter, reviewed, annotations, issues)
+}
+
+func outlineRewriteRow(review *diffreview.Review, indices []int, depth int, reviewed map[string]bool, annotations map[string]string, issues map[string][]string) OutlineRow {
+	rep := representativeRewritePair(review, indices)
+	added, deleted := 0, 0
+	row := OutlineRow{
+		PairID:            review.Pairs[rep].ID,
+		PairIndex:         rep,
+		MemberPairIndices: append([]int(nil), indices...),
+		AnchorLine:        1,
+		HunkIndex:         1,
+		HunkCount:         1,
+		Marker:            "±",
+		Status:            diffreview.Changed,
+		Coalesced:         true,
+		Depth:             depth,
+	}
+	reviewedAll := true
+	for _, idx := range indices {
+		pair := review.Pairs[idx]
+		switch pair.Status {
+		case diffreview.Added:
+			added++
+		case diffreview.Deleted:
+			deleted++
+		}
+		if !reviewed[pair.ID] {
+			reviewedAll = false
+		}
+		row.Annotated = row.Annotated || annotations[pair.ID] != ""
+		row.Issues = row.Issues || len(issues[pair.ID]) > 0
+	}
+	row.Reviewed = reviewedAll
+	row.Title = fmt.Sprintf("rewrite +%d/-%d: %s", added, deleted, rewriteGroupTitle(review, indices))
+	return row
+}
+
+func representativeRewritePair(review *diffreview.Review, indices []int) int {
+	if len(indices) == 0 {
+		return 0
+	}
+	for _, idx := range indices {
+		if idx >= 0 && idx < len(review.Pairs) && review.Pairs[idx].New != nil {
+			return idx
+		}
+	}
+	return indices[0]
+}
+
+func rewriteGroupTitle(review *diffreview.Review, indices []int) string {
+	if review == nil {
+		return "replacement"
+	}
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(review.Pairs) {
+			continue
+		}
+		pair := review.Pairs[idx]
+		if pair.New != nil {
+			return pairTitle(pair)
+		}
+	}
+	if len(indices) > 0 && indices[0] >= 0 && indices[0] < len(review.Pairs) {
+		return pairTitle(review.Pairs[indices[0]])
+	}
+	return "replacement"
 }
 
 // StatusMarker returns the compact marker used for a pair status.
@@ -94,8 +240,12 @@ func StatusMarker(status diffreview.PairStatus) string {
 	}
 }
 
+func (m Model) outlineRows() []OutlineRow {
+	return BuildOutlineWithRegime(m.Review, m.Filter, m.DiffRegime, m.Reviewed, m.Annotations, m.Issues)
+}
+
 func (m Model) renderOutline(width, height int) string {
-	rows := BuildOutline(m.Review, m.Filter, m.Reviewed, m.Annotations, m.Issues)
+	rows := m.outlineRows()
 	stats := reviewStats(m.Review)
 	header := fmt.Sprintf(
 		"stats total:%d %s:%d ~:%d +:%d -:%d fmt:%d ↷:%d",
@@ -202,7 +352,7 @@ func outlineCursorRow(rows []OutlineRow, cursorPairIndex, sourceLineCursor int) 
 	best := -1
 	bestAnchor := -1
 	for i, row := range rows {
-		if row.Group || row.PairIndex != cursorPairIndex {
+		if row.Group || !outlineRowContainsPair(row, cursorPairIndex) {
 			continue
 		}
 		if fallback < 0 {
@@ -229,6 +379,18 @@ func outlineCursorRow(rows []OutlineRow, cursorPairIndex, sourceLineCursor int) 
 		}
 	}
 	return 0
+}
+
+func outlineRowContainsPair(row OutlineRow, pairIndex int) bool {
+	if row.PairIndex == pairIndex {
+		return true
+	}
+	for _, idx := range row.MemberPairIndices {
+		if idx == pairIndex {
+			return true
+		}
+	}
+	return false
 }
 
 func appendOutlineGroups(rows []OutlineRow, currentPath, nextPath []string) ([]OutlineRow, []string) {

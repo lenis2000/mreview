@@ -313,7 +313,7 @@ func (m Model) editDisabledStatus(requireNewBlock bool) string {
 	if !m.RequestedAllowMods {
 		return "edit disabled; rerun with --allow-modifications"
 	}
-	pair := m.CurrentPair()
+	pair := m.CurrentDisplayPair()
 	if requireNewBlock && (pair == nil || pair.New == nil) {
 		return "deleted block has no new source to edit"
 	}
@@ -327,7 +327,7 @@ func (m Model) editDisabledStatus(requireNewBlock bool) string {
 }
 
 func (m Model) currentNewLine() int {
-	pair := m.CurrentPair()
+	pair := m.CurrentDisplayPair()
 	if pair == nil || pair.New == nil || pair.New.StartLine < 1 {
 		return 0
 	}

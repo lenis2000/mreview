@@ -224,6 +224,7 @@ Common diff-mode keys:
 
 ```text
 j/k, J/K, gg/G    navigate semantic pairs
+m                 toggle semantic vs coalesced rewrite outline mode
 {/}               previous/next section
 [/]               select previous/next new source line
 space             toggle reviewed and auto-advance in changed/unreviewed filters

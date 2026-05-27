@@ -46,6 +46,66 @@ func TestBuildOutlineMarkersAndStats(t *testing.T) {
 	}
 }
 
+func TestCoalescedOutlineGroupsAdjacentAddDeleteRewrite(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{
+		{
+			ID:             "added-rewrite",
+			Status:         diffreview.Added,
+			New:            fixtureBlock("new-added-rewrite", 10, "The new coherent replacement paragraph."),
+			OldIndex:       -1,
+			NewIndex:       0,
+			SectionPathNew: []string{"Intro"},
+		},
+		{
+			ID:             "deleted-rewrite-1",
+			Status:         diffreview.Deleted,
+			Old:            fixtureBlock("old-deleted-rewrite-1", 20, "Old paragraph one."),
+			OldIndex:       0,
+			NewIndex:       -1,
+			SectionPathOld: []string{"Intro"},
+		},
+		{
+			ID:             "deleted-rewrite-2",
+			Status:         diffreview.Deleted,
+			Old:            fixtureBlock("old-deleted-rewrite-2", 21, "Old paragraph two."),
+			OldIndex:       1,
+			NewIndex:       -1,
+			SectionPathOld: []string{"Intro"},
+		},
+	}}
+
+	semantic := BuildOutlineWithRegime(review, FilterChanged, DiffRegimeSemantic, nil, nil, nil)
+	if rowByPairID(semantic, "added-rewrite") == nil || rowByPairID(semantic, "deleted-rewrite-1") == nil || rowByPairID(semantic, "deleted-rewrite-2") == nil {
+		t.Fatalf("semantic outline should keep individual rows: %#v", semantic)
+	}
+	coalesced := BuildOutlineWithRegime(review, FilterChanged, DiffRegimeCoalesced, nil, nil, nil)
+	var rows []OutlineRow
+	for _, row := range coalesced {
+		if !row.Group {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) != 1 || !rows[0].Coalesced {
+		t.Fatalf("coalesced outline rows = %#v, want one rewrite row", coalesced)
+	}
+	if rows[0].Marker != "±" || !strings.Contains(rows[0].Title, "+1/-2") {
+		t.Fatalf("rewrite row = %#v, want ± +1/-2 summary", rows[0])
+	}
+	if got := outlineCursorRow(coalesced, 2, 1); got != 1 {
+		t.Fatalf("cursor for hidden member row = %d, want rewrite row 1 in %#v", got, coalesced)
+	}
+
+	m := New(review, Options{Filter: FilterChanged, DiffRegime: DiffRegimeCoalesced})
+	m.Cursor = 1
+	display := m.CurrentDisplayPair()
+	if display == nil || display.Old == nil || display.New == nil {
+		t.Fatalf("display pair = %#v, want synthetic old+new replacement", display)
+	}
+	if !strings.Contains(display.Old.Source, "Old paragraph one") || !strings.Contains(display.Old.Source, "Old paragraph two") || !strings.Contains(display.New.Source, "new coherent replacement") {
+		t.Fatalf("display pair did not combine rewrite sources: old=%q new=%q", display.Old.Source, display.New.Source)
+	}
+}
+
 func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
 	review := &diffreview.Review{Pairs: []diffreview.Pair{
 		{

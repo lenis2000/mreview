@@ -88,13 +88,14 @@ func (m Model) renderComparisonArea(width, height int) string {
 		return m.renderPane("Annotation", m.Popup.TA.View(), width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
 	}
 	oldAnchor, newAnchor := m.sourceAnchorLines()
+	pair := m.CurrentDisplayPair()
 	if m.Layout != LayoutStacked && comparisonCombined(width) {
-		body := RenderPairSourceHighlighted(m.CurrentPair(), width-2, height-2, oldAnchor, newAnchor)
+		body := RenderPairSourceHighlighted(pair, width-2, height-2, oldAnchor, newAnchor)
 		return m.renderPaneRaw("Source", body, width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
 	}
 	oldW, newW := m.sourcePaneWidths(width)
-	oldBody := RenderPairSourceSideHighlighted(m.CurrentPair(), true, oldW-2, height-2, oldAnchor, newAnchor)
-	newBody := RenderPairSourceSideHighlighted(m.CurrentPair(), false, newW-2, height-2, oldAnchor, newAnchor)
+	oldBody := RenderPairSourceSideHighlighted(pair, true, oldW-2, height-2, oldAnchor, newAnchor)
+	newBody := RenderPairSourceSideHighlighted(pair, false, newW-2, height-2, oldAnchor, newAnchor)
 	oldSource := m.renderPaneRaw("Old source", oldBody, oldW, height, m.Focus == PaneOldSource)
 	newSource := m.renderPaneRaw("New source", newBody, newW, height, m.Focus == PaneNewSource)
 	return lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
@@ -272,7 +273,7 @@ func (m Model) stackedHeights(height int) (top, bottom int) {
 }
 
 func (m Model) sourceAnchorLines() (oldLine, newLine int) {
-	pair := m.CurrentPair()
+	pair := m.CurrentDisplayPair()
 	if pair == nil {
 		return 0, 0
 	}
@@ -463,6 +464,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"gg/G first/last pair",
 		"{/} previous/next section",
 		"f cycle filter",
+		"m toggle semantic/coalesced diff mode",
 		"space mark reviewed",
 		"a annotate pair",
 		"ctrl+a edit annotation",

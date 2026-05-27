@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/parser"
 )
 
 // Update implements tea.Model.
@@ -80,6 +81,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.Filter = CycleFilter(m.Filter)
 		m.snapCursor()
+		return m.withPDFRender()
+	case "m":
+		m = m.toggleDiffRegime()
 		return m.withPDFRender()
 	case " ", "space":
 		m = m.toggleReviewed()
@@ -178,18 +182,129 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) toggleDiffRegime() Model {
+	oldLine, newLine := m.sourceAnchorLines()
+	preferOld := m.Focus == PaneOldSource
+	oldRegime := m.DiffRegime
+	members := m.currentMemberPairIndices()
+	if oldRegime == DiffRegimeCoalesced {
+		if idx := memberPairIndexForLine(m.Review, members, oldLine, newLine, preferOld); idx >= 0 {
+			m.Cursor = idx
+		}
+	}
+	m.DiffRegime = CycleDiffRegime(m.DiffRegime)
+	if offset := displayPairOffsetForLine(m.CurrentDisplayPair(), oldLine, newLine, preferOld); offset > 0 {
+		m.SourceLineCursor = offset
+	}
+	m.snapSourceLine()
+	m.Status = "diff mode: " + m.DiffRegime.String()
+	return m
+}
+
+func memberPairIndexForLine(review *diffreview.Review, members []int, oldLine, newLine int, preferOld bool) int {
+	if review == nil {
+		return -1
+	}
+	if preferOld {
+		if idx := memberPairIndexForSideLine(review, members, oldLine, true); idx >= 0 {
+			return idx
+		}
+	}
+	if idx := memberPairIndexForSideLine(review, members, newLine, false); idx >= 0 {
+		return idx
+	}
+	return memberPairIndexForSideLine(review, members, oldLine, true)
+}
+
+func memberPairIndexForSideLine(review *diffreview.Review, members []int, line int, oldSide bool) int {
+	if line < 1 {
+		return -1
+	}
+	for _, idx := range members {
+		if idx < 0 || idx >= len(review.Pairs) {
+			continue
+		}
+		block := review.Pairs[idx].New
+		if oldSide {
+			block = review.Pairs[idx].Old
+		}
+		if block != nil && block.StartLine <= line && (block.EndLine == 0 || line <= block.EndLine) {
+			return idx
+		}
+	}
+	return -1
+}
+
+func displayPairOffsetForLine(pair *diffreview.Pair, oldLine, newLine int, preferOld bool) int {
+	if pair == nil {
+		return 0
+	}
+	if preferOld {
+		if offset := blockOffsetForLine(pair.Old, oldLine); offset > 0 {
+			return offset
+		}
+	}
+	if offset := blockOffsetForLine(pair.New, newLine); offset > 0 {
+		return offset
+	}
+	if offset := blockOffsetForLine(pair.Old, oldLine); offset > 0 {
+		return offset
+	}
+	return 0
+}
+
+func blockOffsetForLine(block *parser.Block, line int) int {
+	if block == nil || line < 1 || block.StartLine < 1 {
+		return 0
+	}
+	if line < block.StartLine {
+		return 0
+	}
+	if block.EndLine > 0 && line > block.EndLine {
+		return 0
+	}
+	offset := line - block.StartLine + 1
+	if count := len(blockSourceLines(block)); count > 0 && offset > count {
+		offset = count
+	}
+	return offset
+}
+
 func (m Model) toggleReviewed() Model {
 	pair := m.CurrentPair()
 	if pair == nil {
 		m.Status = "no pair selected"
 		return m
 	}
-	visibleBefore := m.visibleIndices()
-	posBefore := m.visiblePosition(visibleBefore)
-	was := m.Reviewed[pair.ID]
+	targetsBefore := m.visibleTargets()
+	visibleBefore := make([]int, 0, len(targetsBefore))
+	for _, target := range targetsBefore {
+		visibleBefore = append(visibleBefore, target.PairIndex)
+	}
+	posBefore := m.visibleTargetPosition(targetsBefore)
+	members := m.currentMemberPairIndices()
+	if len(members) == 0 {
+		members = []int{m.Cursor}
+	}
+	was := true
+	for _, idx := range members {
+		if idx < 0 || m.Review == nil || idx >= len(m.Review.Pairs) {
+			continue
+		}
+		if !m.Reviewed[m.Review.Pairs[idx].ID] {
+			was = false
+			break
+		}
+	}
 	now := !was
-	m.Reviewed[pair.ID] = now
-	m.ensureSidecar().SetReviewed(pair.ID, now)
+	for _, idx := range members {
+		if idx < 0 || m.Review == nil || idx >= len(m.Review.Pairs) {
+			continue
+		}
+		id := m.Review.Pairs[idx].ID
+		m.Reviewed[id] = now
+		m.ensureSidecar().SetReviewed(id, now)
+	}
 	m.Status = ""
 	if now && (m.Filter == FilterChanged || m.Filter == FilterUnreviewed) {
 		m.advanceAfterReviewed(visibleBefore, posBefore)
@@ -380,7 +495,7 @@ func (m *Model) moveDiffChunkOrPair(delta int) {
 }
 
 func (m *Model) moveWithinPairDiffHunks(delta int) bool {
-	anchors := diffHunkAnchorOffsets(m.CurrentPair())
+	anchors := diffHunkAnchorOffsets(m.CurrentDisplayPair())
 	if len(anchors) <= 1 {
 		return false
 	}
@@ -493,7 +608,7 @@ func (m *Model) moveSection(direction int) {
 }
 
 func (m *Model) moveSourceLine(delta int) {
-	count, startLine, side := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+	count, startLine, side := sourceLineTarget(m.CurrentDisplayPair(), m.Focus == PaneOldSource)
 	if count == 0 {
 		m.Status = "no source line for current pair"
 		return
@@ -512,7 +627,7 @@ func (m *Model) moveSourceLine(delta int) {
 }
 
 func (m *Model) snapSourceLine() {
-	count, _, _ := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+	count, _, _ := sourceLineTarget(m.CurrentDisplayPair(), m.Focus == PaneOldSource)
 	if count < 1 {
 		m.SourceLineCursor = 1
 		return

@@ -60,6 +60,32 @@ func CycleFilter(f Filter) Filter {
 	}
 }
 
+// DiffRegime selects how the diff outline groups semantic pairs.
+type DiffRegime int
+
+const (
+	// DiffRegimeSemantic shows the raw semantic block pairs.
+	DiffRegimeSemantic DiffRegime = iota
+	// DiffRegimeCoalesced groups adjacent added/deleted prose into rewrite hunks.
+	DiffRegimeCoalesced
+)
+
+func (r DiffRegime) String() string {
+	switch r {
+	case DiffRegimeCoalesced:
+		return "coalesced"
+	default:
+		return "semantic"
+	}
+}
+
+func CycleDiffRegime(r DiffRegime) DiffRegime {
+	if r == DiffRegimeCoalesced {
+		return DiffRegimeSemantic
+	}
+	return DiffRegimeCoalesced
+}
+
 // Pane identifies a focusable diff pane. Focus drives pane resizing with
 // < and >, and is shown by a brighter border when styles provide one.
 type Pane int
@@ -105,6 +131,7 @@ type Options struct {
 	Config             *ui.Config
 	Styles             ui.Styles
 	Filter             Filter
+	DiffRegime         DiffRegime
 	Sidecar            *diffreview.Sidecar
 	SidecarBase        *diffreview.Sidecar
 	Reviewed           map[string]bool
@@ -131,8 +158,9 @@ type Model struct {
 	Review *diffreview.Review
 	Config *ui.Config
 
-	Cursor int
-	Filter Filter
+	Cursor     int
+	Filter     Filter
+	DiffRegime DiffRegime
 	// SourceLineCursor is 1-based within the selected new block. The current
 	// diff skeleton does not expose source-line navigation yet, so it defaults
 	// to the first line and is kept here for edit anchoring.
@@ -219,6 +247,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		Review:             review,
 		Config:             opts.Config,
 		Filter:             opts.Filter,
+		DiffRegime:         opts.DiffRegime,
 		Status:             opts.Status,
 		Styles:             opts.Styles,
 		Sidecar:            side,
@@ -331,15 +360,16 @@ func (m Model) FinalSidecar() *diffreview.Sidecar {
 }
 
 type outlineTarget struct {
-	PairIndex  int
-	AnchorLine int
+	PairIndex         int
+	MemberPairIndices []int
+	AnchorLine        int
 }
 
 func (m Model) visibleTargets() []outlineTarget {
 	if m.Review == nil {
 		return nil
 	}
-	rows := BuildOutline(m.Review, m.Filter, m.Reviewed, m.Annotations, m.Issues)
+	rows := m.outlineRows()
 	targets := make([]outlineTarget, 0, len(rows))
 	for _, row := range rows {
 		if row.Group || row.PairIndex < 0 {
@@ -349,7 +379,7 @@ func (m Model) visibleTargets() []outlineTarget {
 		if anchor < 1 {
 			anchor = 1
 		}
-		targets = append(targets, outlineTarget{PairIndex: row.PairIndex, AnchorLine: anchor})
+		targets = append(targets, outlineTarget{PairIndex: row.PairIndex, MemberPairIndices: append([]int(nil), row.MemberPairIndices...), AnchorLine: anchor})
 	}
 	return targets
 }
@@ -380,7 +410,7 @@ func (m Model) visibleTargetPosition(targets []outlineTarget) int {
 	best := -1
 	bestAnchor := -1
 	for i, target := range targets {
-		if target.PairIndex != m.Cursor {
+		if !outlineTargetContainsPair(target, m.Cursor) {
 			continue
 		}
 		if fallback < 0 {
@@ -407,6 +437,18 @@ func (m Model) visibleTargetPosition(targets []outlineTarget) int {
 		}
 	}
 	return len(targets) - 1
+}
+
+func outlineTargetContainsPair(target outlineTarget, pairIndex int) bool {
+	if target.PairIndex == pairIndex {
+		return true
+	}
+	for _, idx := range target.MemberPairIndices {
+		if idx == pairIndex {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) snapCursor() {
@@ -438,8 +480,9 @@ func (m Model) statusText() string {
 	}
 	stats := reviewStats(m.Review)
 	base := fmt.Sprintf(
-		"filter:%s pair:%s total:%d ~%d +%d -%d fmt%d %s%d",
+		"filter:%s mode:%s pair:%s total:%d ~%d +%d -%d fmt%d %s%d",
 		m.Filter.String(),
+		m.DiffRegime.String(),
 		selected,
 		stats.Total,
 		stats.Changed,

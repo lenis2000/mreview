@@ -63,6 +63,7 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 	help := RenderHelpBody(120, false)
 	for _, needle := range []string{
 		"e/E edit new file only when --allow-modifications is supplied",
+		"m toggle semantic/coalesced diff mode",
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"Z opens old+new in Zed",
@@ -105,6 +106,72 @@ func TestPairNavigationStopsAtInternalDiffHunks(t *testing.T) {
 	m = pressKey(t, m, "j")
 	if currentID(m) != "next" {
 		t.Fatalf("second j should advance to next pair, got %s", currentID(m))
+	}
+}
+
+func TestToggleDiffRegimeKeepsCurrentSourceLine(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{
+		{
+			ID:             "added-rewrite",
+			Status:         diffreview.Added,
+			New:            fixtureBlock("new-added-rewrite", 10, "The new coherent replacement paragraph."),
+			OldIndex:       -1,
+			NewIndex:       0,
+			SectionPathNew: []string{"Intro"},
+		},
+		{
+			ID:             "deleted-rewrite-1",
+			Status:         diffreview.Deleted,
+			Old:            fixtureBlock("old-deleted-rewrite-1", 20, "Old paragraph one."),
+			OldIndex:       0,
+			NewIndex:       -1,
+			SectionPathOld: []string{"Intro"},
+		},
+		{
+			ID:             "deleted-rewrite-2",
+			Status:         diffreview.Deleted,
+			Old:            fixtureBlock("old-deleted-rewrite-2", 21, "Old paragraph two."),
+			OldIndex:       1,
+			NewIndex:       -1,
+			SectionPathOld: []string{"Intro"},
+		},
+	}}
+	m := New(review, Options{})
+	m.Cursor = 1
+	m.Focus = PaneOldSource
+	m.SourceLineCursor = 1
+	oldLineBefore, _ := m.sourceAnchorLines()
+	if oldLineBefore != 20 {
+		t.Fatalf("old anchor before toggle = %d, want 20", oldLineBefore)
+	}
+
+	m = pressKey(t, m, "m")
+	if m.DiffRegime != DiffRegimeCoalesced {
+		t.Fatalf("diff regime = %s, want coalesced", m.DiffRegime)
+	}
+	if m.Cursor != 1 {
+		t.Fatalf("cursor moved to %d, want same hidden member pair 1", m.Cursor)
+	}
+	oldLineAfter, _ := m.sourceAnchorLines()
+	if oldLineAfter != oldLineBefore {
+		t.Fatalf("old anchor after toggle = %d, want %d", oldLineAfter, oldLineBefore)
+	}
+
+	m.SourceLineCursor = 2
+	oldLineBefore, _ = m.sourceAnchorLines()
+	if oldLineBefore != 21 {
+		t.Fatalf("old anchor before toggling back = %d, want 21", oldLineBefore)
+	}
+	m = pressKey(t, m, "m")
+	if m.DiffRegime != DiffRegimeSemantic {
+		t.Fatalf("diff regime = %s, want semantic", m.DiffRegime)
+	}
+	if m.Cursor != 2 {
+		t.Fatalf("cursor after toggling back = %d, want member pair 2", m.Cursor)
+	}
+	oldLineAfter, _ = m.sourceAnchorLines()
+	if oldLineAfter != oldLineBefore {
+		t.Fatalf("old anchor after toggling back = %d, want %d", oldLineAfter, oldLineBefore)
 	}
 }
 

@@ -48,7 +48,7 @@ func (m Model) scrollFocusedSource(delta int) Model {
 	if delta == 0 {
 		return m
 	}
-	count, startLine, side := sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+	count, startLine, side := sourceLineTarget(m.CurrentDisplayPair(), m.Focus == PaneOldSource)
 	if count == 0 {
 		m.Status = "no source line for current pair"
 		return m
@@ -60,7 +60,7 @@ func (m Model) scrollFocusedSource(delta int) Model {
 		oldCursor := m.Cursor
 		m.moveDiffChunkOrPair(-1)
 		if m.Cursor != oldCursor {
-			count, startLine, side = sourceLineTarget(m.CurrentPair(), m.Focus == PaneOldSource)
+			count, startLine, side = sourceLineTarget(m.CurrentDisplayPair(), m.Focus == PaneOldSource)
 			if count > 0 {
 				m.SourceLineCursor = count
 				m.Status = fmtSourceLineStatus(side, startLine+m.SourceLineCursor-1)
