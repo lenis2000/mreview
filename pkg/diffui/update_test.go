@@ -396,6 +396,15 @@ func TestMouseWheelScrollsPanesUnderPointer(t *testing.T) {
 	if m.SourceLineCursor != 2 {
 		t.Fatalf("source wheel should scroll source line to 2, got %d", m.SourceLineCursor)
 	}
+	m = mouseWheel(t, m, 45, 3, tea.MouseButtonWheelDown)
+	if currentID(m) != "changed" || m.SourceLineCursor != 2 {
+		t.Fatalf("source wheel at block end must clamp, not jump changes; pair=%s line=%d", currentID(m), m.SourceLineCursor)
+	}
+	m = mouseWheel(t, m, 45, 3, tea.MouseButtonWheelUp)
+	m = mouseWheel(t, m, 45, 3, tea.MouseButtonWheelUp)
+	if currentID(m) != "changed" || m.SourceLineCursor != 1 {
+		t.Fatalf("source wheel at block start must clamp, not jump changes; pair=%s line=%d", currentID(m), m.SourceLineCursor)
+	}
 
 	m = mouseWheel(t, m, 120, 3, tea.MouseButtonWheelDown)
 	if currentID(m) != "added" {
@@ -413,6 +422,15 @@ func TestFocusedSourcePaneScrollsWithinChunk(t *testing.T) {
 	}
 	if currentID(m) != "changed" {
 		t.Fatalf("source scroll should not move semantic pair, got %s", currentID(m))
+	}
+	m = pressKey(t, m, "j")
+	if currentID(m) != "changed" || m.SourceLineCursor != 2 {
+		t.Fatalf("source j at block end must clamp, not jump changes; pair=%s line=%d", currentID(m), m.SourceLineCursor)
+	}
+	m = pressKey(t, m, "k")
+	m = pressKey(t, m, "k")
+	if currentID(m) != "changed" || m.SourceLineCursor != 1 {
+		t.Fatalf("source k at block start must clamp, not jump changes; pair=%s line=%d", currentID(m), m.SourceLineCursor)
 	}
 }
 

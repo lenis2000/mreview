@@ -3,9 +3,8 @@ package diffui
 import tea "github.com/charmbracelet/bubbletea"
 
 // handleMouse maps mouse wheel events to the pane under the pointer. Outline
-// and PDF wheel move between semantic pairs; old/new source wheel scrolls
-// within the selected pair, crossing pair boundaries at the ends. Left clicks
-// only update focus for now.
+// and PDF wheel move between semantic pairs; old/new source wheel scrolls only
+// within the selected pair. Left clicks only update focus for now.
 func (m Model) handleMouse(msg tea.MouseMsg) (Model, tea.Cmd) {
 	if m.Width <= 0 || m.Height <= 0 {
 		return m, nil
@@ -55,22 +54,6 @@ func (m Model) scrollFocusedSource(delta int) Model {
 	}
 	if m.SourceLineCursor < 1 {
 		m.SourceLineCursor = 1
-	}
-	if delta < 0 && m.SourceLineCursor <= 1 {
-		oldCursor := m.Cursor
-		m.moveDiffChunkOrPair(-1)
-		if m.Cursor != oldCursor {
-			count, startLine, side = sourceLineTarget(m.CurrentDisplayPair(), m.Focus == PaneOldSource)
-			if count > 0 {
-				m.SourceLineCursor = count
-				m.Status = fmtSourceLineStatus(side, startLine+m.SourceLineCursor-1)
-			}
-		}
-		return m
-	}
-	if delta > 0 && m.SourceLineCursor >= count {
-		m.moveDiffChunkOrPair(1)
-		return m
 	}
 	m.SourceLineCursor += delta
 	if m.SourceLineCursor < 1 {

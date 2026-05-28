@@ -94,8 +94,11 @@ func (m Model) renderComparisonArea(width, height int) string {
 		return m.renderPaneRaw("Source", body, width, height, m.Focus == PaneOldSource || m.Focus == PaneNewSource)
 	}
 	oldW, newW := m.sourcePaneWidths(width)
-	oldBody := RenderPairSourceSideHighlighted(pair, true, oldW-2, height-2, oldAnchor, newAnchor)
-	newBody := RenderPairSourceSideHighlighted(pair, false, newW-2, height-2, oldAnchor, newAnchor)
+	// In split panes, each side owns its own scroll anchor. Passing the new
+	// anchor into the old pane (or conversely) lets inserted/deleted placeholder
+	// rows steal the match and makes the visible source window jump around.
+	oldBody := RenderPairSourceSideHighlighted(pair, true, oldW-2, height-2, oldAnchor, 0)
+	newBody := RenderPairSourceSideHighlighted(pair, false, newW-2, height-2, 0, newAnchor)
 	oldSource := m.renderPaneRaw("Old source", oldBody, oldW, height, m.Focus == PaneOldSource)
 	newSource := m.renderPaneRaw("New source", newBody, newW, height, m.Focus == PaneNewSource)
 	return lipgloss.JoinHorizontal(lipgloss.Top, oldSource, newSource)
@@ -165,7 +168,12 @@ func (m Model) renderPaneRaw(title, body string, width, height int, focused bool
 	}
 	content := title
 	if body != "" {
-		content += "\n" + body
+		// Source panes pre-wrap and ANSI-style their rows before they get here.
+		// Do not horizontally clip them (that can split escape sequences), but do
+		// cap the row count to the pane body below the title. Otherwise lipgloss
+		// expands the pane to fit overlong content and the bottom borders of old
+		// and new panes visibly drift apart while scrolling.
+		content += "\n" + fitRawLines(body, innerH-1)
 	}
 	style := m.Styles.Pane
 	if focused {
@@ -506,6 +514,17 @@ func fitLines(text string, width, height int) string {
 	}
 	for i, line := range lines {
 		lines[i] = clipLine(line, width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fitRawLines(text string, height int) string {
+	if height < 1 {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
 	}
 	return strings.Join(lines, "\n")
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"mreview/pkg/diffreview"
 	"mreview/pkg/pdf"
 )
 
@@ -37,6 +38,37 @@ func TestNoPDFLayoutHidesPDFPaneOnly(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("no-PDF view missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestSplitSourcePanesUseSideSpecificAnchors(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{{
+		ID:     "insert-before",
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-insert-before", 10, "before\nafter"),
+		New:    fixtureBlock("new-insert-before", 100, "inserted\nbefore\nafter"),
+	}}}
+	m := New(review, Options{})
+	m.Focus = PaneOldSource
+	m.SourceLineCursor = 1
+
+	view := m.renderComparisonArea(100, 5)
+	if !strings.Contains(view, ">  10 before") {
+		t.Fatalf("old pane should anchor on old line, not new-only placeholder:\n%s", view)
+	}
+}
+
+func TestSplitSourcePaneBordersStayAlignedWhenContentHeightsDiffer(t *testing.T) {
+	review := &diffreview.Review{Pairs: []diffreview.Pair{{
+		ID:     "uneven",
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-uneven", 1, "old one"),
+		New:    fixtureBlock("new-uneven", 1, strings.Join([]string{"new one", "new two", "new three", "new four", "new five", "new six"}, "\n")),
+	}}}
+	m := New(review, Options{})
+	view := m.renderComparisonArea(100, 8)
+	if got := strings.Count(view, "\n") + 1; got != 8 {
+		t.Fatalf("comparison area height = %d, want 8; borders may drift:\n%s", got, view)
 	}
 }
 
