@@ -280,7 +280,18 @@ func repoInfoForPath(ctx context.Context, dir, absPath string) (repoRoot, relPat
 	if err != nil {
 		return "", filepath.Base(absPath)
 	}
-	rel, err := filepath.Rel(root, absPath)
+	relRoot := root
+	relPathBase := absPath
+	// On macOS, git may report /private/var/... while t.TempDir (and user
+	// paths) use /var/.... Canonicalize only for the Rel calculation so
+	// --base from a symlinked temp/root still gets a repository-relative path.
+	if realRoot, err := filepath.EvalSymlinks(root); err == nil {
+		relRoot = realRoot
+	}
+	if realAbs, err := filepath.EvalSymlinks(absPath); err == nil {
+		relPathBase = realAbs
+	}
+	rel, err := filepath.Rel(relRoot, relPathBase)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
 		return root, filepath.Base(absPath)
 	}

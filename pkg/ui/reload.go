@@ -398,25 +398,18 @@ func performBuildAndReopen(path string, gen int, oldPDF *pdf.Doc, buildCmd strin
 		// lmkf finishes leaves the model with a stale PDF + new doc
 		// pair, which the user reads as "PDF didn't reload after vim".
 		// Two minutes is long enough for any paper that builds at all.
-		logPath, _ := lmkfLogPath(path)
-		result, errLine := waitForLmkfComplete(logPath, editTime, 2*time.Minute)
-		switch result {
-		case "ok":
-			// lmkf wrote the log marker, but on slower volumes the PDF
-			// and synctex may not have hit disk visibly yet (latexmk
-			// uses an atomic rename — between log flush and rename the
-			// PDFPath is the OLD file). Briefly wait for both artefacts
-			// to be at least as new as the edit before we hand them to
-			// pdf.Open / synctex.Open — otherwise we'd open the stale
-			// pre-edit copies and present them as the rebuild output.
-			waitForArtefactsFresh(buildRes.PDFPath, buildRes.SyncTeXPath, editTime, 5*time.Second)
-			status = "lmkf rebuild ok"
-		case "error":
-			status = "lmkf rebuild error — " + errLine
-			rebuildOK = false
-		default:
-			status = "lmkf didn't finish in time (edit saved anyway)"
-			rebuildOK = false
+		if res, lmkf := AwaitLmkfRebuild(path, editTime, 2*time.Minute); res != nil {
+			buildRes = res
+			switch lmkf.Status {
+			case LmkfRebuildOK:
+				status = "lmkf rebuild ok"
+			case LmkfRebuildError:
+				status = "lmkf rebuild error — " + lmkf.ErrorLine
+				rebuildOK = false
+			default:
+				status = "lmkf didn't finish in time (edit saved anyway)"
+				rebuildOK = false
+			}
 		}
 	case shouldRebuild(path, buildRes.PDFPath):
 		res, berr := build.RunWith(build.Options{
@@ -596,6 +589,51 @@ func shortBuildErr(err error) string {
 		}
 	}
 	return msg
+}
+
+// LmkfRebuildStatus is the outcome of waiting for LP's lmkf wrapper
+// to finish the latexmk pass triggered by a source edit.
+type LmkfRebuildStatus int
+
+const (
+	LmkfRebuildNotWatching LmkfRebuildStatus = iota
+	LmkfRebuildOK
+	LmkfRebuildError
+	LmkfRebuildTimeout
+)
+
+// LmkfRebuildResult records the lmkf log-path handshake outcome.
+type LmkfRebuildResult struct {
+	Status    LmkfRebuildStatus
+	LogPath   string
+	ErrorLine string
+}
+
+// AwaitLmkfRebuild waits for lmkf's latexmk -pvc pass to finish and
+// returns freshly rediscovered build artefact paths. It uses the same
+// log-marker and error scanning policy as normal review reloads, and on
+// success waits briefly for the PDF/SyncTeX files to become visible so
+// callers do not open a stale pre-edit pair.
+func AwaitLmkfRebuild(texPath string, editTime time.Time, timeout time.Duration) (*build.Result, LmkfRebuildResult) {
+	res := build.ResolveBuildOutputsOnDisk(texPath)
+	logPath, ok := lmkfLogPath(texPath)
+	if !ok {
+		return res, LmkfRebuildResult{Status: LmkfRebuildNotWatching}
+	}
+	result, errLine := waitForLmkfComplete(logPath, editTime, timeout)
+	switch result {
+	case "ok":
+		res = build.ResolveBuildOutputsOnDisk(texPath)
+		waitForArtefactsFresh(res.PDFPath, res.SyncTeXPath, editTime, 5*time.Second)
+		res = build.ResolveBuildOutputsOnDisk(texPath)
+		return res, LmkfRebuildResult{Status: LmkfRebuildOK, LogPath: logPath}
+	case "error":
+		res = build.ResolveBuildOutputsOnDisk(texPath)
+		return res, LmkfRebuildResult{Status: LmkfRebuildError, LogPath: logPath, ErrorLine: errLine}
+	default:
+		res = build.ResolveBuildOutputsOnDisk(texPath)
+		return res, LmkfRebuildResult{Status: LmkfRebuildTimeout, LogPath: logPath}
+	}
 }
 
 // lmkfLogPath returns the absolute .log path lmkf is watching for

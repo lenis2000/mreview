@@ -225,7 +225,9 @@ Zed. `--open-zed` runs the same comparison action once after startup.
 Comparison uses `MREVIEW_COMPARE_EDITOR` when set, then `zed`; this is separate
 from `$EDITOR`, which `E` uses to edit the new file only. Diff sidecars default
 to `<new-file>.mreview-diff.<base>.md`, for example
-`paper.tex.mreview-diff.master.md`.
+`paper.tex.mreview-diff.master.md`. The diff `B` rebuild path and post-edit
+reloads are lmkf-aware: they wait for lmkf's latexmk pass instead of forking a
+competing latexmk.
 
 Diff flags:
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mreview/pkg/diffreview"
 	"mreview/pkg/pdf"
@@ -48,7 +49,7 @@ func TestPrepareNewPDFUsesNewFilesystemEndpoint(t *testing.T) {
 		t.Fatalf("read marker: %v", err)
 	}
 	want := filepath.Join(newDir, "paper")
-	if got := string(data); got != want {
+	if got := string(data); !samePath(got, want) {
 		t.Fatalf("build ran for %q, want new endpoint %q", got, want)
 	}
 }
@@ -207,6 +208,49 @@ func TestPrepareNewPDFSkipsBuildWhenLmkfIsWatching(t *testing.T) {
 	}
 }
 
+func TestDiffPDFReloadWaitsForLmkfAndOpensFreshArtifacts(t *testing.T) {
+	_, _, newPath := pdfReviewFixture(t)
+	statusFile := writeLmkfStatus(t, newPath)
+	t.Cleanup(func() { _ = os.Remove(statusFile) })
+	installSampleArtifacts(t, newPath)
+	writeLmkfLog(t, newPath, "Here is how much of TeX's memory you used")
+	markLmkfFilesFresh(t, newPath)
+
+	msg := performDiffPDFReload(newPath, 1, nil, `printf should-not-run > forbidden`, true)
+	if msg.NewPDF != nil {
+		defer func() { _ = msg.NewPDF.Close() }()
+	}
+	if msg.BuildStale {
+		t.Fatalf("lmkf-fresh reload was marked stale: %#v", msg)
+	}
+	if msg.NewPDF == nil || msg.NewSyncTeX == nil {
+		t.Fatalf("lmkf-fresh artifacts were not opened: %#v", msg)
+	}
+	if msg.Status != "lmkf rebuild ok" {
+		t.Fatalf("status = %q, want lmkf rebuild ok", msg.Status)
+	}
+}
+
+func TestDiffPDFReloadReportsLmkfErrors(t *testing.T) {
+	_, _, newPath := pdfReviewFixture(t)
+	statusFile := writeLmkfStatus(t, newPath)
+	t.Cleanup(func() { _ = os.Remove(statusFile) })
+	installSampleArtifacts(t, newPath)
+	writeLmkfLog(t, newPath, "! Undefined control sequence\nHere is how much of TeX's memory you used")
+	markLmkfFilesFresh(t, newPath)
+
+	msg := performDiffPDFReload(newPath, 1, nil, "true", true)
+	if msg.NewPDF != nil {
+		defer func() { _ = msg.NewPDF.Close() }()
+	}
+	if !msg.BuildStale {
+		t.Fatalf("lmkf error should mark build stale: %#v", msg)
+	}
+	if !strings.Contains(msg.Status, "lmkf rebuild error") || !strings.Contains(msg.Status, "Undefined control sequence") {
+		t.Fatalf("expected lmkf error status, got %q", msg.Status)
+	}
+}
+
 func TestNewEndpointBuildPathRejectsGitBlob(t *testing.T) {
 	review := &diffreview.Review{
 		New: diffreview.Endpoint{Kind: diffreview.GitBlob, Path: "/tmp/materialized.tex"},
@@ -228,6 +272,65 @@ func TestPDFPaneDeletedPairShowsPlaceholder(t *testing.T) {
 	}
 	if strings.Contains(body, "stale-image") {
 		t.Fatalf("deleted pair should clear stale image, got %q", body)
+	}
+}
+
+func samePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	adir, aerr := filepath.EvalSymlinks(filepath.Dir(a))
+	bdir, berr := filepath.EvalSymlinks(filepath.Dir(b))
+	return aerr == nil && berr == nil && adir == bdir && filepath.Base(a) == filepath.Base(b)
+}
+
+func installSampleArtifacts(t *testing.T, texPath string) {
+	t.Helper()
+	samplePDF, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.pdf"))
+	if err != nil {
+		t.Fatalf("sample pdf path: %v", err)
+	}
+	sampleSyncTeX, err := filepath.Abs(filepath.Join("..", "..", "testdata", "sample.synctex.gz"))
+	if err != nil {
+		t.Fatalf("sample synctex path: %v", err)
+	}
+	base := strings.TrimSuffix(texPath, filepath.Ext(texPath))
+	pdfData, err := os.ReadFile(samplePDF)
+	if err != nil {
+		t.Fatalf("read sample pdf: %v", err)
+	}
+	if err := os.WriteFile(base+".pdf", pdfData, 0o600); err != nil {
+		t.Fatalf("write sample pdf: %v", err)
+	}
+	sxData, err := os.ReadFile(sampleSyncTeX)
+	if err != nil {
+		t.Fatalf("read sample synctex: %v", err)
+	}
+	if err := os.WriteFile(base+".synctex.gz", sxData, 0o600); err != nil {
+		t.Fatalf("write sample synctex: %v", err)
+	}
+}
+
+func writeLmkfLog(t *testing.T, texPath, body string) {
+	t.Helper()
+	logPath := strings.TrimSuffix(texPath, filepath.Ext(texPath)) + ".log"
+	if err := os.WriteFile(logPath, []byte(body+"\n"), 0o600); err != nil {
+		t.Fatalf("write lmkf log: %v", err)
+	}
+}
+
+func markLmkfFilesFresh(t *testing.T, texPath string) {
+	t.Helper()
+	base := strings.TrimSuffix(texPath, filepath.Ext(texPath))
+	old := time.Now().Add(-10 * time.Second)
+	fresh := time.Now().Add(10 * time.Second)
+	if err := os.Chtimes(texPath, old, old); err != nil {
+		t.Fatalf("chtimes tex: %v", err)
+	}
+	for _, path := range []string{base + ".log", base + ".pdf", base + ".synctex.gz"} {
+		if err := os.Chtimes(path, fresh, fresh); err != nil {
+			t.Fatalf("chtimes %s: %v", path, err)
+		}
 	}
 }
 
@@ -260,7 +363,7 @@ func writeLmkfStatus(t *testing.T, texPath string) string {
 	if err != nil {
 		t.Fatalf("abs tex path: %v", err)
 	}
-	statusDir := filepath.Join(os.TempDir(), "lmkf-status")
+	statusDir := "/tmp/lmkf-status"
 	if err := os.MkdirAll(statusDir, 0o755); err != nil {
 		t.Fatalf("mkdir lmkf status: %v", err)
 	}

@@ -29,7 +29,7 @@ func TestResolveBaseMaterializesOldAndReadsDirtyWorkingTree(t *testing.T) {
 	assert.Equal(t, GitBlob, oldEndpoint.Kind)
 	assert.Equal(t, "HEAD:paper.tex", oldEndpoint.Spec)
 	assert.Equal(t, "HEAD:paper.tex", oldEndpoint.Label)
-	assert.Equal(t, repo, oldEndpoint.RepoRoot)
+	assertSamePath(t, repo, oldEndpoint.RepoRoot)
 	assert.Equal(t, "paper.tex", oldEndpoint.RelPath)
 	assert.False(t, oldEndpoint.Editable)
 	assert.True(t, oldEndpoint.Materialized)
@@ -50,7 +50,7 @@ func TestResolveBaseMaterializesOldAndReadsDirtyWorkingTree(t *testing.T) {
 	assert.Equal(t, WorkingFile, newEndpoint.Kind)
 	assert.Equal(t, "working tree", newEndpoint.Label)
 	assert.Equal(t, "paper.tex", newEndpoint.Spec)
-	assert.Equal(t, repo, newEndpoint.RepoRoot)
+	assertSamePath(t, repo, newEndpoint.RepoRoot)
 	assert.Equal(t, "paper.tex", newEndpoint.RelPath)
 	assert.Equal(t, filepath.Join(repo, "paper.tex"), newEndpoint.Path)
 	assert.True(t, newEndpoint.Editable)
@@ -191,6 +191,19 @@ func initRepo(t *testing.T) string {
 	git(t, dir, "config", "user.email", "test@example.com")
 	git(t, dir, "config", "commit.gpgsign", "false")
 	return dir
+}
+
+func assertSamePath(t *testing.T, expected, actual string) {
+	t.Helper()
+	if expected == actual {
+		return
+	}
+	exp, expErr := filepath.EvalSymlinks(expected)
+	act, actErr := filepath.EvalSymlinks(actual)
+	if expErr == nil && actErr == nil && exp == act {
+		return
+	}
+	assert.Equal(t, expected, actual)
 }
 
 func writeFile(t *testing.T, repo, relPath, content string) {

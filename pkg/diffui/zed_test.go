@@ -80,7 +80,11 @@ func TestOpenCompareEditorMissingZedGivesStatus(t *testing.T) {
 }
 
 func TestOpenZedInitSchedulesOneOpenCommand(t *testing.T) {
-	t.Setenv("MREVIEW_COMPARE_EDITOR", "/bin/true")
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatalf("true not found: %v", err)
+	}
+	t.Setenv("MREVIEW_COMPARE_EDITOR", truePath)
 	m := New(fixtureReviewWithPaths(), Options{OpenZed: true})
 
 	saved := runDiffCompareProcess
@@ -100,7 +104,7 @@ func TestOpenZedInitSchedulesOneOpenCommand(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("scheduled compare commands = %d, want 1", calls)
 	}
-	if len(gotArgs) != 3 || gotArgs[0] != "/bin/true" ||
+	if len(gotArgs) != 3 || gotArgs[0] != truePath ||
 		gotArgs[1] != "/repo/.mreview-diff/session/paper.old.tex" ||
 		gotArgs[2] != "/repo/paper.tex" {
 		t.Fatalf("unexpected command args: %#v", gotArgs)

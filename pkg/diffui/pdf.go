@@ -156,9 +156,19 @@ func performDiffPDFReload(path string, gen int, oldPDF *pdf.Doc, buildCmd string
 	status := ""
 	buildStale := false
 	if runBuild {
-		if ui.LmkfWatching(path) {
-			status = "lmkf is building this paper — skipped own latexmk"
-			if diffStartupArtifactsStale(path, res.PDFPath, res.SyncTeXPath) {
+		editTime := diffSourceMTime(path)
+		if waitRes, lmkf := ui.AwaitLmkfRebuild(path, editTime, 2*time.Minute); lmkf.Status != ui.LmkfRebuildNotWatching {
+			if waitRes != nil {
+				res = waitRes
+			}
+			switch lmkf.Status {
+			case ui.LmkfRebuildOK:
+				status = "lmkf rebuild ok"
+			case ui.LmkfRebuildError:
+				status = "lmkf rebuild error — " + lmkf.ErrorLine
+				buildStale = true
+			default:
+				status = "lmkf didn't finish in time (edit saved anyway)"
 				buildStale = true
 			}
 		} else {
@@ -462,6 +472,13 @@ func populateNewPDFRegions(review *diffreview.Review, idx *synctex.Index) {
 		}
 		b.PDFRegion = &parser.Region{Page: r.Page, X: r.X, Y: r.Y, W: r.W, H: r.H}
 	}
+}
+
+func diffSourceMTime(texPath string) time.Time {
+	if st, err := os.Stat(texPath); err == nil {
+		return st.ModTime()
+	}
+	return time.Now()
 }
 
 func diffStartupArtifactsStale(texPath, pdfPath, synctexPath string) bool {

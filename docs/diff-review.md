@@ -95,7 +95,9 @@ real filesystem path:
 
 After an edit, the new file is reread, reparsed, realigned against the unchanged
 old source, and the diff sidecar is remapped so reviewed state and annotations
-stay attached where possible.
+stay attached where possible. If `lmkf` is watching the new file, diff mode waits
+for lmkf's latexmk completion marker and fresh PDF/SyncTeX artifacts instead of
+starting its own latexmk.
 
 When the new endpoint is read-only and you need to edit it, switch to the branch
 or worktree that owns the file and use the `--base` form:
@@ -236,7 +238,7 @@ e                 inline edit new file only, when allowed
 E                 open new file only, when allowed
 u                 undo last diff-mode edit to the new file
 ctrl+r            redo undone diff-mode edit
-B                 rebuild/reload the new endpoint
+B                 rebuild/reload the new endpoint (lmkf-aware)
 Z                 open old snapshot and new file in Zed
 ?                 help
 q                 quit, save sidecar, emit stdout
@@ -268,8 +270,10 @@ git object such as `branch:paper.tex`. Run from the branch or worktree you want
 to edit and compare against the old revision with `--base`.
 
 If the PDF pane is stale or unavailable, use `B` to rebuild/reload the new
-endpoint. If the project already has build artifacts and TeX is not installed
-in the current environment, use `--no-build`.
+endpoint. `B` is lmkf-aware: when lmkf is watching the new file, mreview waits
+for lmkf to finish and then reopens the fresh artifacts. If the project already
+has build artifacts and TeX is not installed in the current environment, use
+`--no-build`.
 
 If `Z` cannot open Zed, install the `zed` CLI or point comparison at another
 command for smoke testing:
