@@ -12,11 +12,11 @@ import (
 
 // TestPDFPaneBody_ShowsImageVerbatim: when PDFImage is set, the
 // body just returns the escape as-is — RenderKitty already prepends
-// its own a=d so we must not double-wrap or otherwise transform it.
+// its own kitty-delete sequence so we must not double-wrap or otherwise transform it.
 func TestPDFPaneBody_ShowsImageVerbatim(t *testing.T) {
 	m := New(parsedSample(t), &persist.Sidecar{})
 	m.KittyAvailable = true
-	const img = "\x1b_Ga=d\x1b\\\x1b_Ga=T,...;AAAA\x1b\\"
+	img := pdf.KittyDeleteAll + "\x1b_Ga=T,...;AAAA\x1b\\"
 	m.PDFImage = img
 	assert.Equal(t, img, m.pdfPaneBody())
 }

@@ -459,7 +459,7 @@ func clampFloat(v, lo, hi float64) float64 {
 // RenderHelpBody returns the diff-specific help text.
 func RenderHelpBody(width int, allowModifications bool) string {
 	lines := []string{
-		"j/k, ↑/↓ move by diff chunk; source panes scroll; counts work (10j/5k)",
+		"j/k, ↑/↓ move by change pair; source panes scroll; counts work (10j/5k)",
 		"J/K jump 10 down / 5 up pairs",
 		"gg/G first/last pair",
 		"{/} previous/next section",
@@ -469,7 +469,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"a annotate pair",
 		"ctrl+a edit annotation",
 		"d delete annotation",
-		"y copy selected chunk (old/new side follows focus)",
+		"y copy selected change (old/new side follows focus)",
 		"e/E edit new file only when --allow-modifications is supplied",
 		"[/] select previous/next source line (PDF anchor)",
 		"h/l or ←/→ focus pane",
@@ -477,9 +477,10 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"\\ cycle PDF layout: side pane / below / hidden",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",
-		"B rebuild/reload new PDF; use after Zed edits",
+		"B rebuild/reload new PDF; use after external edits",
+		"s open new PDF in Skim at selected line",
 		"P open new PDF in Preview",
-		"Z opens old+new in Zed",
+		"C opens old+new in external compare",
 		"? close help",
 		"q quit",
 	}

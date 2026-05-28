@@ -16,13 +16,13 @@ import (
 // chars is the standard safe ceiling that all kitty implementations accept.
 const kittyChunkSize = 4096
 
-// KittyDeleteAll is the APC sequence that removes every kitty graphics image
-// from the terminal. It's idempotent (safe to emit when no image exists) and
-// is exported so UI transitions away from an image (to status text, to a
-// placeholder, to quit) can explicitly retire the bitmap — without this, the
-// previous crop stays painted because the kitty plane is independent of
-// Bubble Tea's text buffer.
-const KittyDeleteAll = "\x1b_Ga=d\x1b\\"
+// KittyDeleteAll is the APC sequence that removes every visible kitty graphics
+// placement from the terminal and frees its backing image data. It's idempotent
+// (safe to emit when no image exists) and is exported so UI transitions away
+// from an image (to status text, to a placeholder, to quit) can explicitly
+// retire the bitmap — without this, the previous crop stays painted because
+// the kitty plane is independent of Bubble Tea's text buffer.
+const KittyDeleteAll = "\x1b_Ga=d,d=A\x1b\\"
 
 // RenderKitty converts PNG bytes into a kitty-graphics escape sequence sized
 // to fit inside a (widthCells × heightCells) terminal cell region.

@@ -56,6 +56,24 @@ func TestRenderPairSourceShowsAnchorCursor(t *testing.T) {
 	}
 }
 
+func TestRenderPairSourceSideCompactsOppositeOnlyRuns(t *testing.T) {
+	pair := &diffreview.Pair{
+		Status: diffreview.Changed,
+		Old:    fixtureBlock("old-insert", 10, "before\nafter"),
+		New:    fixtureBlock("new-insert", 10, "before\ninsert one\ninsert two\nafter"),
+	}
+	oldSide := RenderPairSourceSide(pair, true, 80, 8)
+	if !strings.Contains(oldSide, "before") || !strings.Contains(oldSide, "after") {
+		t.Fatalf("old side lost context:\n%s", oldSide)
+	}
+	if !strings.Contains(oldSide, "(2 lines added in new)") {
+		t.Fatalf("old side should summarize inserted run, not show a visual gap:\n%s", oldSide)
+	}
+	if strings.Contains(oldSide, "insert one") || strings.Contains(oldSide, "insert two") {
+		t.Fatalf("old side should not render new-only lines:\n%s", oldSide)
+	}
+}
+
 func TestRenderPairSourceHighlightsChangedLines(t *testing.T) {
 	review := fixtureReview()
 	highlighted := RenderPairSourceSideHighlighted(pairByID(t, review, "changed"), false, 80, 8, 0, 0)

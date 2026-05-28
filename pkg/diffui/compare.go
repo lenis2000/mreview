@@ -15,7 +15,7 @@ import (
 	"mreview/pkg/ui"
 )
 
-var compareEditorCandidates = []string{"zed"}
+var compareEditorCandidates = []string{"opendiff", "zed"}
 
 var runDiffCompareProcess = func(cmd *exec.Cmd) tea.Cmd {
 	return func() tea.Msg {
@@ -44,7 +44,7 @@ func (m Model) openCompareEditor() (tea.Model, tea.Cmd) {
 		m.Status = compareStatus(err)
 		return m, nil
 	}
-	m.Status = "opening old+new in Zed"
+	m.Status = "opening external compare"
 	return m, runDiffCompareProcess(cmd)
 }
 
@@ -59,7 +59,7 @@ func (m Model) compareEditorCmd() tea.Cmd {
 func (m Model) compareEditorExec() (*exec.Cmd, error) {
 	head, userArgs, ok := resolveCompareEditor()
 	if !ok {
-		return nil, errors.New("no compare editor found (set MREVIEW_COMPARE_EDITOR or install zed)")
+		return nil, errors.New("no compare editor found (set MREVIEW_COMPARE_EDITOR or install opendiff/zed)")
 	}
 	target, err := m.compareTarget()
 	if err != nil {
@@ -74,7 +74,7 @@ func (m Model) applyCompareFinished(msg diffCompareFinishedMsg) (tea.Model, tea.
 		m.Status = compareStatus(msg.err)
 		return m, nil
 	}
-	m.Status = "opened old+new in Zed"
+	m.Status = "opened external compare"
 	return m, nil
 }
 
@@ -82,7 +82,7 @@ func compareStatus(err error) string {
 	if err == nil {
 		return ""
 	}
-	return "Z: " + err.Error()
+	return "C: " + err.Error()
 }
 
 func resolveCompareEditor() (string, []string, bool) {

@@ -199,7 +199,7 @@ On startup mreview:
 Compare a base revision against the current working tree with:
 
 ```
-mreview diff --base master --open-zed --allow-modifications paper.tex
+mreview diff --base master --open-compare --allow-modifications paper.tex
 ```
 
 This resolves the old endpoint as `master:<repo-relative paper.tex>` and the
@@ -220,10 +220,12 @@ Endpoint specs are either filesystem paths or `REV:path` git objects. A
 `REV:path` new endpoint is read-only; run from the branch you want to edit and
 use `--base REV paper.tex` if you need `e`/`E`.
 
-In the diff TUI, `Z` opens the materialized old snapshot and the new file in
-Zed. `--open-zed` runs the same comparison action once after startup.
-Comparison uses `MREVIEW_COMPARE_EDITOR` when set, then `zed`; this is separate
-from `$EDITOR`, which `E` uses to edit the new file only. Diff sidecars default
+In the diff TUI, `s` forward-searches the selected new source line in Skim, and
+`C` opens the materialized old snapshot and the new file in an external compare
+tool. `--open-compare` runs the same comparison action once after startup.
+Comparison uses `MREVIEW_COMPARE_EDITOR` when set, then `opendiff`/FileMerge or
+`zed` when available; this is separate from `$EDITOR`, which `E` uses to edit
+the new file only. Diff sidecars default
 to `<new-file>.mreview-diff.<base>.md`, for example
 `paper.tex.mreview-diff.master.md`. The diff `B` rebuild path and post-edit
 reloads are lmkf-aware: they wait for lmkf's latexmk pass instead of forking a
@@ -240,7 +242,8 @@ Diff flags:
 --stdout FMT        md | json | none (default: md)
 --config PATH       config file
 --noconfig          ignore config files
---open-zed          open old+new comparison once after startup
+--open-compare      open old+new comparison once after startup
+--open-zed          deprecated alias for --open-compare
 --allow-modifications  enable e/E edits to the new endpoint only
 ```
 

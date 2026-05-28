@@ -104,7 +104,8 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 		"m toggle semantic/coalesced diff mode",
 		"ctrl+a edit annotation",
 		"d delete annotation",
-		"Z opens old+new in Zed",
+		"s open new PDF in Skim at selected line",
+		"C opens old+new in external compare",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",
 		"[/] select previous/next source line (PDF anchor)",
@@ -115,7 +116,7 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 	}
 }
 
-func TestPairNavigationStopsAtInternalDiffHunks(t *testing.T) {
+func TestPairNavigationIgnoresInternalDiffHunks(t *testing.T) {
 	review := &diffreview.Review{Pairs: []diffreview.Pair{
 		{
 			ID:       "multi",
@@ -138,12 +139,8 @@ func TestPairNavigationStopsAtInternalDiffHunks(t *testing.T) {
 		t.Fatalf("initial cursor = %s", currentID(m))
 	}
 	m = pressKey(t, m, "j")
-	if currentID(m) != "multi" || m.SourceLineCursor != 3 {
-		t.Fatalf("first j should stop at second hunk, got pair=%s line=%d", currentID(m), m.SourceLineCursor)
-	}
-	m = pressKey(t, m, "j")
 	if currentID(m) != "next" {
-		t.Fatalf("second j should advance to next pair, got %s", currentID(m))
+		t.Fatalf("j should advance to next pair, ignoring internal hunks; got %s line=%d", currentID(m), m.SourceLineCursor)
 	}
 }
 

@@ -75,25 +75,22 @@ func BuildOutlineWithRegime(
 		}
 		path := outlinePairPath(pair)
 		rows, currentPath = appendOutlineGroups(rows, currentPath, path)
-		infos := outlineHunkInfos(pair)
-		depth := len(path)
-		for h, info := range infos {
-			rows = append(rows, OutlineRow{
-				PairID:            pair.ID,
-				PairIndex:         i,
-				MemberPairIndices: []int{i},
-				AnchorLine:        info.AnchorLine,
-				HunkIndex:         h + 1,
-				HunkCount:         len(infos),
-				Marker:            StatusMarker(pair.Status),
-				Status:            pair.Status,
-				Title:             outlineHunkTitle(pair, info, h+1, len(infos)),
-				Reviewed:          reviewed[pair.ID],
-				Annotated:         annotations[pair.ID] != "",
-				Issues:            len(issues[pair.ID]) > 0,
-				Depth:             depth,
-			})
-		}
+		info := outlinePairInfo(pair)
+		rows = append(rows, OutlineRow{
+			PairID:            pair.ID,
+			PairIndex:         i,
+			MemberPairIndices: []int{i},
+			AnchorLine:        info.AnchorLine,
+			HunkIndex:         1,
+			HunkCount:         info.HunkCount,
+			Marker:            StatusMarker(pair.Status),
+			Status:            pair.Status,
+			Title:             pairTitle(pair),
+			Reviewed:          reviewed[pair.ID],
+			Annotated:         annotations[pair.ID] != "",
+			Issues:            len(issues[pair.ID]) > 0,
+			Depth:             len(path),
+		})
 	}
 	return rows
 }
@@ -274,9 +271,8 @@ func RenderOutline(rows []OutlineRow, cursorPairIndex int, width, height int) st
 	return RenderOutlineAt(rows, cursorPairIndex, 1, width, height)
 }
 
-// RenderOutlineAt also receives the current source-line cursor so the outline
-// can show the active internal diff hunk when a semantic pair contains several
-// independent change groups.
+// RenderOutlineAt also receives the current source-line cursor for compatibility
+// with callers that keep source-line state; the outline itself stays pair-based.
 func RenderOutlineAt(rows []OutlineRow, cursorPairIndex, sourceLineCursor int, width, height int) string {
 	if height < 1 {
 		height = 1
@@ -437,31 +433,21 @@ func outlineSectionPairPath(pair diffreview.Pair) []string {
 	return path
 }
 
-func outlineHunkInfos(pair diffreview.Pair) []diffHunkInfo {
-	infos := diffHunkInfos(&pair)
-	if len(infos) == 0 {
-		return []diffHunkInfo{{AnchorLine: 1, Title: pairTitle(pair)}}
-	}
-	for i := range infos {
-		if infos[i].AnchorLine < 1 {
-			infos[i].AnchorLine = 1
-		}
-		if strings.TrimSpace(infos[i].Title) == "" {
-			infos[i].Title = pairTitle(pair)
-		}
-	}
-	return infos
+type outlinePairInfoResult struct {
+	AnchorLine int
+	HunkCount  int
 }
 
-func outlineHunkTitle(pair diffreview.Pair, info diffHunkInfo, index, total int) string {
-	title := strings.TrimSpace(info.Title)
-	if title == "" {
-		title = pairTitle(pair)
+func outlinePairInfo(pair diffreview.Pair) outlinePairInfoResult {
+	infos := diffHunkInfos(&pair)
+	if len(infos) == 0 {
+		return outlinePairInfoResult{AnchorLine: 1, HunkCount: 1}
 	}
-	if total > 1 {
-		return fmt.Sprintf("chunk %d/%d: %s", index, total, title)
+	anchor := infos[0].AnchorLine
+	if anchor < 1 {
+		anchor = 1
 	}
-	return title
+	return outlinePairInfoResult{AnchorLine: anchor, HunkCount: len(infos)}
 }
 
 func isSectionPair(pair diffreview.Pair) bool {

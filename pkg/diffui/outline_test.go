@@ -106,7 +106,7 @@ func TestCoalescedOutlineGroupsAdjacentAddDeleteRewrite(t *testing.T) {
 	}
 }
 
-func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
+func TestOutlineGroupsSectionsWithoutSplittingInternalHunks(t *testing.T) {
 	review := &diffreview.Review{Pairs: []diffreview.Pair{
 		{
 			ID:     "intro-section",
@@ -132,8 +132,8 @@ func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
 		},
 	}}
 	rows := BuildOutline(review, FilterChanged, nil, nil, nil)
-	if len(rows) != 4 {
-		t.Fatalf("rows = %#v, want two section groups plus two chunks", rows)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %#v, want two section groups plus one changed-pair row", rows)
 	}
 	if !rows[0].Group || rows[0].Title != "Introduction" || rows[0].Depth != 0 {
 		t.Fatalf("first row = %#v, want top-level Introduction group", rows[0])
@@ -153,13 +153,13 @@ func TestOutlineGroupsSectionsAndSplitsInternalHunks(t *testing.T) {
 	if introGroups != 1 {
 		t.Fatalf("Introduction group should appear once, got %d rows=%#v", introGroups, rows)
 	}
-	if rows[2].PairID != "intro-para" || rows[2].HunkIndex != 1 || rows[3].HunkIndex != 2 {
-		t.Fatalf("paragraph rows should be split hunks: %#v", rows)
+	if rows[2].PairID != "intro-para" || strings.Contains(rows[2].Title, "chunk") {
+		t.Fatalf("paragraph should be one pair row, not split into chunks: %#v", rows)
 	}
 	outline := RenderOutlineAt(rows, 2, 3, 100, 10)
 	if !strings.Contains(outline, "▾ Introduction") || !strings.Contains(outline, "▾ Overview") ||
-		!strings.Contains(outline, ">") || !strings.Contains(outline, "chunk 2/2") {
-		t.Fatalf("outline should show nested groups and cursor on second hunk:\n%s", outline)
+		!strings.Contains(outline, ">") || strings.Contains(outline, "chunk") {
+		t.Fatalf("outline should show nested groups and one pair row, not chunks:\n%s", outline)
 	}
 }
 

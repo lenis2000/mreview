@@ -10,7 +10,7 @@ to a diff sidecar.
 Run from the branch or working tree you want to review and edit:
 
 ```bash
-mreview diff --base master --open-zed --allow-modifications paper.tex
+mreview diff --base master --open-compare --allow-modifications paper.tex
 ```
 
 This means:
@@ -20,13 +20,13 @@ This means:
 - old source: materialized under `.mreview-diff/` as a read-only snapshot
 - new source: the file shown in the new pane and, when allowed, the only file
   edited by `e` or `E`
-- Zed comparison: opened once at startup because `--open-zed` was supplied
+- external comparison: opened once at startup because `--open-compare` was supplied
 
 Use `--no-build` when a PDF, SyncTeX, aux, and bbl already exist and you do not
 want `mreview diff` to run latexmk:
 
 ```bash
-mreview diff --base master --no-build --open-zed --allow-modifications paper.tex
+mreview diff --base master --no-build --open-compare --allow-modifications paper.tex
 ```
 
 Use `--draft` to open the TUI with a warning when the new PDF build fails. The
@@ -44,7 +44,8 @@ until a successful rebuild.
 --stdout FMT        md | json | none (default: md)
 --config PATH       config file
 --noconfig          ignore config files
---open-zed          open old+new comparison once after startup
+--open-compare      open old+new comparison once after startup
+--open-zed          deprecated alias for --open-compare
 --allow-modifications  enable e/E edits to the new endpoint only
 ```
 
@@ -81,7 +82,7 @@ or mutates git refs. It may read git objects, but git state is left alone.
 ## Editing rules
 
 Diff review starts in read-only comparison mode. Annotations, reviewed toggles,
-navigation, filtering, rebuilds, and Zed comparison are still available.
+navigation, filtering, rebuilds, and external comparison are still available.
 
 `--allow-modifications` enables edit commands only when the new endpoint is a
 real filesystem path:
@@ -107,32 +108,36 @@ git switch branch-to-edit
 mreview diff --base master --allow-modifications paper.tex
 ```
 
-## Zed comparison
+## External comparison
 
-Press `Z` in the diff TUI to open the old snapshot and new file in Zed:
+Press `C` in the diff TUI to open the old snapshot and new file in an external
+comparison tool:
 
 ```bash
-zed <old-snapshot> <new-file>
+opendiff <old-snapshot> <new-file>
 ```
 
-`--open-zed` runs the same action once after startup. The old snapshot is a
-stable file under `.mreview-diff/`, so Zed can keep it open after the command
-returns.
+`--open-compare` runs the same action once after startup. `--open-zed` remains a
+deprecated alias. The old snapshot is a stable file under `.mreview-diff/`, so
+the external tool can keep it open after the command returns.
 
 The compare editor is resolved in this order:
 
 - `MREVIEW_COMPARE_EDITOR`
+- `opendiff`
 - `zed`
 
-There is no fallback to `$EDITOR` for comparison. If neither command is
+There is no fallback to `$EDITOR` for comparison. If none of these commands is
 available, the TUI shows a status message and keeps running.
 
 For matched rows, mreview passes line-suffixed paths when supported by the Zed
-helper. For added or deleted rows, it opens both files and chooses the nearest
-useful line on the side that has no corresponding block.
+helper. FileMerge/`opendiff` receives plain paths because it has no reliable
+command-line line-jump support. For added or deleted rows, mreview opens both
+files and chooses the nearest useful line on the side that has no corresponding
+block.
 
-Zed comparison is not the `E` edit command. If you edit the new file from Zed,
-use `B` in the TUI to rebuild and reload in this first implementation.
+External comparison is not the `E` edit command. If you edit the new file from
+an external compare tool, use `B` in the TUI to rebuild and reload.
 
 ## Sidecars and stdout
 
@@ -239,7 +244,8 @@ E                 open new file only, when allowed
 u                 undo last diff-mode edit to the new file
 ctrl+r            redo undone diff-mode edit
 B                 rebuild/reload the new endpoint (lmkf-aware)
-Z                 open old snapshot and new file in Zed
+s                 open new PDF in Skim at the selected new source line
+C                 open old snapshot and new file in external compare tool
 ?                 help
 q                 quit, save sidecar, emit stdout
 ```
@@ -275,9 +281,9 @@ for lmkf to finish and then reopens the fresh artifacts. If the project already
 has build artifacts and TeX is not installed in the current environment, use
 `--no-build`.
 
-If `Z` cannot open Zed, install the `zed` CLI or point comparison at another
-command for smoke testing:
+If `C` cannot open an external compare tool, install Xcode's `opendiff`, install
+the `zed` CLI, or point comparison at another command for smoke testing:
 
 ```bash
-MREVIEW_COMPARE_EDITOR=/bin/true mreview diff --base master --open-zed --no-build paper.tex
+MREVIEW_COMPARE_EDITOR=/bin/true mreview diff --base master --open-compare --no-build paper.tex
 ```

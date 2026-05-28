@@ -76,7 +76,8 @@ _mreview_diff() {
     '--stdout=[format for diff annotations emitted on quit]:format:(md json none)' \
     '--config=[path to config file]:config file:_files -g "*.toml"' \
     '--noconfig[ignore config files; use built-in defaults]' \
-    '--open-zed[open old+new in Zed after startup]' \
+    '--open-compare[open old+new in external compare editor after startup]' \
+    '--open-zed[deprecated alias for --open-compare]' \
     '--allow-modifications[allow e/E edits to the new endpoint when it is a real file]' \
     '*:endpoint/file:_files'
 }

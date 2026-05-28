@@ -145,7 +145,7 @@ type Options struct {
 	BuildCmd           string
 	SidecarPath        string
 	StdoutFormat       string
-	OpenZed            bool
+	OpenCompare        bool
 	PDF                *pdf.Doc
 	Synctex            *synctex.Index
 	KittyAvailable     bool
@@ -189,7 +189,7 @@ type Model struct {
 	BuildCmd       string
 	SidecarPath    string
 	StdoutFormat   string
-	OpenZed        bool
+	OpenCompare    bool
 	PDF            *pdf.Doc
 	Synctex        *synctex.Index
 	BuildStale     bool
@@ -264,7 +264,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		BuildCmd:           opts.BuildCmd,
 		SidecarPath:        opts.SidecarPath,
 		StdoutFormat:       opts.StdoutFormat,
-		OpenZed:            opts.OpenZed,
+		OpenCompare:        opts.OpenCompare,
 		PDF:                opts.PDF,
 		Synctex:            opts.Synctex,
 		BuildStale:         opts.BuildStale,
@@ -331,7 +331,7 @@ func (m *Model) pushEditSnapshot(label string) error {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	if m.OpenZed {
+	if m.OpenCompare {
 		return m.compareEditorCmd()
 	}
 	return nil

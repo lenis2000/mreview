@@ -31,7 +31,8 @@ type diffOpts struct {
 	Config   string `long:"config" description:"path to config file"`
 	NoConfig bool   `long:"noconfig" description:"ignore config files; use built-in defaults"`
 
-	OpenZed            bool `long:"open-zed" description:"open old and new sources in Zed after startup"`
+	OpenCompare        bool `long:"open-compare" description:"open old and new sources in external compare editor after startup"`
+	OpenZed            bool `long:"open-zed" description:"deprecated alias for --open-compare"`
 	AllowModifications bool `long:"allow-modifications" description:"allow e/E edits to the new endpoint when it is a real file"`
 }
 
@@ -147,7 +148,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 		SidecarPath:        sidecarPath,
 		StdoutFormat:       o.Stdout,
 		Issues:             issues,
-		OpenZed:            o.OpenZed,
+		OpenCompare:        o.OpenCompare || o.OpenZed,
 		PDF:                pdfArtifacts.PDF,
 		Synctex:            pdfArtifacts.Synctex,
 		BuildStale:         pdfArtifacts.BuildStale,

@@ -1,7 +1,9 @@
 package diffui
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,12 +63,32 @@ func TestCompareEditorArgvDefaultsToPlainPathsForNonZedCommand(t *testing.T) {
 	})
 }
 
-func TestOpenCompareEditorMissingZedGivesStatus(t *testing.T) {
+func TestResolveCompareEditorPrefersOpendiffFallback(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"opendiff", "zed"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+	t.Setenv("MREVIEW_COMPARE_EDITOR", "")
+	t.Setenv("PATH", dir)
+
+	head, _, ok := resolveCompareEditor()
+	if !ok {
+		t.Fatalf("expected fake compare editor to resolve")
+	}
+	if filepath.Base(head) != "opendiff" {
+		t.Fatalf("compare editor = %q, want opendiff", head)
+	}
+}
+
+func TestOpenCompareEditorMissingCompareEditorGivesStatus(t *testing.T) {
 	t.Setenv("MREVIEW_COMPARE_EDITOR", "")
 	t.Setenv("PATH", t.TempDir())
 
 	m := New(fixtureReviewWithPaths(), Options{})
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Z")})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	if cmd != nil {
 		t.Fatalf("expected no command when compare editor is missing")
 	}
@@ -79,13 +101,34 @@ func TestOpenCompareEditorMissingZedGivesStatus(t *testing.T) {
 	}
 }
 
-func TestOpenZedInitSchedulesOneOpenCommand(t *testing.T) {
+func TestZDoesNotOpenCompareEditor(t *testing.T) {
 	truePath, err := exec.LookPath("true")
 	if err != nil {
 		t.Fatalf("true not found: %v", err)
 	}
 	t.Setenv("MREVIEW_COMPARE_EDITOR", truePath)
-	m := New(fixtureReviewWithPaths(), Options{OpenZed: true})
+
+	m := New(fixtureReviewWithPaths(), Options{})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Z")})
+	if cmd != nil {
+		t.Fatalf("expected Z to be unbound, got command")
+	}
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	if nm.Status != "" {
+		t.Fatalf("expected Z to leave status alone, got %q", nm.Status)
+	}
+}
+
+func TestOpenCompareInitSchedulesOneOpenCommand(t *testing.T) {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatalf("true not found: %v", err)
+	}
+	t.Setenv("MREVIEW_COMPARE_EDITOR", truePath)
+	m := New(fixtureReviewWithPaths(), Options{OpenCompare: true})
 
 	saved := runDiffCompareProcess
 	var calls int
@@ -99,7 +142,7 @@ func TestOpenZedInitSchedulesOneOpenCommand(t *testing.T) {
 
 	cmd := m.Init()
 	if cmd == nil {
-		t.Fatalf("expected --open-zed to schedule a command")
+		t.Fatalf("expected --open-compare to schedule a command")
 	}
 	if calls != 1 {
 		t.Fatalf("scheduled compare commands = %d, want 1", calls)
@@ -115,7 +158,7 @@ func TestOpenZedInitSchedulesOneOpenCommand(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", next)
 	}
-	if nm.Status != "opened old+new in Zed" {
+	if nm.Status != "opened external compare" {
 		t.Fatalf("status after command = %q", nm.Status)
 	}
 }

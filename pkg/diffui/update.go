@@ -33,6 +33,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyPDFReload(msg)
 	case diffPDFOpenFinishedMsg:
 		return m.applyPDFOpenFinished(msg)
+	case diffSkimOpenFinishedMsg:
+		return m.applySkimOpenFinished(msg)
 	case tea.MouseMsg:
 		if m.LineEdit != nil || m.Popup != nil {
 			return m, nil
@@ -119,10 +121,12 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.editInExternalEditor()
 	case "e":
 		return m.startLineEdit()
-	case "Z":
+	case "C":
 		return m.openCompareEditor()
 	case "P":
 		return m.openPreviewPDF()
+	case "s":
+		return m.openSkimAtLine()
 	case "\\":
 		m.cycleLayout()
 		m.PDFImage = ""
@@ -524,9 +528,6 @@ func (m *Model) moveDiffChunkOrPair(delta int) {
 	if delta == 0 {
 		return
 	}
-	if m.moveWithinPairDiffHunks(delta) {
-		return
-	}
 	m.moveVisible(delta)
 }
 
@@ -546,48 +547,6 @@ func (m *Model) moveDiffChunkOrPairRepeat(delta, count int) {
 			return
 		}
 	}
-}
-
-func (m *Model) moveWithinPairDiffHunks(delta int) bool {
-	anchors := diffHunkAnchorOffsets(m.CurrentDisplayPair())
-	if len(anchors) <= 1 {
-		return false
-	}
-	cur := m.SourceLineCursor
-	if cur < 1 {
-		cur = 1
-	}
-	idx := 0
-	for i, anchor := range anchors {
-		if anchor <= cur {
-			idx = i
-		}
-	}
-	if delta > 0 {
-		if idx+1 >= len(anchors) {
-			return false
-		}
-		m.SourceLineCursor = anchors[idx+1]
-		m.Status = fmtDiffChunkStatus(idx+2, len(anchors))
-		return true
-	}
-	// If we are below an anchor in the current hunk, first jump back to
-	// that hunk's start; otherwise go to the previous hunk.
-	if cur > anchors[idx] {
-		m.SourceLineCursor = anchors[idx]
-		m.Status = fmtDiffChunkStatus(idx+1, len(anchors))
-		return true
-	}
-	if idx-1 < 0 {
-		return false
-	}
-	m.SourceLineCursor = anchors[idx-1]
-	m.Status = fmtDiffChunkStatus(idx, len(anchors))
-	return true
-}
-
-func fmtDiffChunkStatus(idx, total int) string {
-	return "diff chunk " + strconv.Itoa(idx) + "/" + strconv.Itoa(total)
 }
 
 func (m *Model) moveToFirst() {

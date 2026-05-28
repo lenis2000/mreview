@@ -446,14 +446,38 @@ func TestRunDiffReadOnlyNewEndpointDisablesEditPermission(t *testing.T) {
 	}
 }
 
-func TestRunDiffOpenZedFlagIsCaptured(t *testing.T) {
+func TestRunDiffOpenCompareFlagIsCaptured(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old.tex")
 	newPath := filepath.Join(dir, "new.tex")
-	if err := os.WriteFile(oldPath, []byte(diffFixture("Old open zed endpoint paragraph.")), 0o600); err != nil {
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Old open compare endpoint paragraph.")), 0o600); err != nil {
 		t.Fatalf("write old: %v", err)
 	}
-	if err := os.WriteFile(newPath, []byte(diffFixture("New open zed endpoint paragraph.")), 0o600); err != nil {
+	if err := os.WriteFile(newPath, []byte(diffFixture("New open compare endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write new: %v", err)
+	}
+
+	captured := withStubDiffTUI(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"diff", "--open-compare", "--no-build", "--noconfig", "--stdout=none", oldPath, newPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d (stderr=%q)", code, stderr.String())
+	}
+
+	m := capturedDiffModel(t, captured)
+	if !m.OpenCompare {
+		t.Fatalf("expected --open-compare to be captured in the diff model")
+	}
+}
+
+func TestRunDiffOpenZedAliasIsCaptured(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.tex")
+	newPath := filepath.Join(dir, "new.tex")
+	if err := os.WriteFile(oldPath, []byte(diffFixture("Old open zed alias endpoint paragraph.")), 0o600); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte(diffFixture("New open zed alias endpoint paragraph.")), 0o600); err != nil {
 		t.Fatalf("write new: %v", err)
 	}
 
@@ -465,8 +489,8 @@ func TestRunDiffOpenZedFlagIsCaptured(t *testing.T) {
 	}
 
 	m := capturedDiffModel(t, captured)
-	if !m.OpenZed {
-		t.Fatalf("expected --open-zed to be captured in the diff model")
+	if !m.OpenCompare {
+		t.Fatalf("expected --open-zed alias to enable external compare in the diff model")
 	}
 }
 

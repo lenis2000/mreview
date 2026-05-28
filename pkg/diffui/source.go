@@ -147,7 +147,7 @@ func renderPairSourceSide(pair *diffreview.Pair, oldSide bool, width, height, ol
 	if height < 1 {
 		height = 1
 	}
-	rows := sourceRows(pair)
+	rows := compactSourceRowsForSide(sourceRows(pair), oldSide)
 	if len(rows) == 0 {
 		return "(no source)"
 	}
@@ -187,6 +187,65 @@ func sourceRows(pair *diffreview.Pair) []sourceRow {
 	default:
 		return rowsForMatched(pair.Old, pair.New)
 	}
+}
+
+func compactSourceRowsForSide(rows []sourceRow, oldSide bool) []sourceRow {
+	out := make([]sourceRow, 0, len(rows))
+	for i := 0; i < len(rows); {
+		row := rows[i]
+		if row.separator || sourceRowHasSideContent(row, oldSide) {
+			out = append(out, row)
+			i++
+			continue
+		}
+		if !sourceRowChanged(row) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(rows) && !rows[i].separator && sourceRowChanged(rows[i]) && !sourceRowHasSideContent(rows[i], oldSide) {
+			i++
+		}
+		out = append(out, oppositeSidePlaceholderRow(rows[start:i], oldSide))
+	}
+	return out
+}
+
+func sourceRowHasSideContent(row sourceRow, oldSide bool) bool {
+	if oldSide {
+		return row.oldLine > 0 || row.oldMark != "" || row.oldText != "" || len(row.oldParts) > 0
+	}
+	return row.newLine > 0 || row.newMark != "" || row.newText != "" || len(row.newParts) > 0
+}
+
+func oppositeSidePlaceholderRow(rows []sourceRow, oldSide bool) sourceRow {
+	if len(rows) == 0 {
+		return sourceRow{}
+	}
+	text := oppositeSidePlaceholderText(len(rows), oldSide)
+	row := sourceRow{}
+	if oldSide {
+		row.oldText = text
+		row.newLine = rows[0].newLine
+	} else {
+		row.newText = text
+		row.oldLine = rows[0].oldLine
+	}
+	return row
+}
+
+func oppositeSidePlaceholderText(n int, oldSide bool) string {
+	if n < 1 {
+		n = 1
+	}
+	lineWord := "lines"
+	if n == 1 {
+		lineWord = "line"
+	}
+	if oldSide {
+		return fmt.Sprintf("(%d %s added in new)", n, lineWord)
+	}
+	return fmt.Sprintf("(%d %s deleted from new)", n, lineWord)
 }
 
 func rowsForAdded(newBlock *parser.Block) []sourceRow {
@@ -578,15 +637,6 @@ func diffHunkInfos(pair *diffreview.Pair) []diffHunkInfo {
 		}
 	}
 	return infos
-}
-
-func diffHunkAnchorOffsets(pair *diffreview.Pair) []int {
-	infos := diffHunkInfos(pair)
-	anchors := make([]int, 0, len(infos))
-	for _, info := range infos {
-		anchors = append(anchors, info.AnchorLine)
-	}
-	return anchors
 }
 
 func sourceRowSummary(row sourceRow) string {
