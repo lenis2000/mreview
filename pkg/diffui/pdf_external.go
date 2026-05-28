@@ -61,17 +61,17 @@ func (m Model) applyPDFOpenFinished(msg diffPDFOpenFinishedMsg) (tea.Model, tea.
 func (m Model) openSkimAtLine() (tea.Model, tea.Cmd) {
 	texPath, ok := newEndpointBuildPath(m.Review)
 	if !ok {
-		m.Status = "s: new endpoint is not a filesystem file"
+		m.Status = "S: new endpoint is not a filesystem file"
 		return m, nil
 	}
 	line := m.currentNewLine()
 	if line < 1 {
-		m.Status = "s: cursor has no resolvable new source line"
+		m.Status = "S: cursor has no resolvable new source line"
 		return m, nil
 	}
 	pdfPath, err := m.newPDFPath()
 	if err != nil {
-		m.Status = "s: " + err.Error()
+		m.Status = "S: " + err.Error()
 		return m, nil
 	}
 	m.Status = "opening new PDF in Skim"
@@ -80,7 +80,7 @@ func (m Model) openSkimAtLine() (tea.Model, tea.Cmd) {
 
 func (m Model) applySkimOpenFinished(msg diffSkimOpenFinishedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.Status = "s: " + msg.err.Error()
+		m.Status = "S: " + msg.err.Error()
 		return m, nil
 	}
 	m.Status = "opened new PDF in Skim"

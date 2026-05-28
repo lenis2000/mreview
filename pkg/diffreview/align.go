@@ -158,17 +158,65 @@ type blockMatch struct {
 }
 
 func reviewBlocks(doc *parser.Document) []*parser.Block {
-	if doc == nil {
+	if doc == nil || doc.Root == nil {
 		return nil
 	}
 	out := make([]*parser.Block, 0, len(doc.Blocks))
-	for _, b := range doc.Blocks {
+	var walk func(*parser.Block)
+	walk = func(b *parser.Block) {
 		if b == nil || b == doc.Root || b.ID == "root" {
-			continue
+			for _, child := range sortedChildren(doc, b) {
+				walk(child)
+			}
+			return
 		}
-		out = append(out, b)
+		if b.Kind == parser.KindSection {
+			for _, child := range sortedChildren(doc, b) {
+				walk(child)
+			}
+			return
+		}
+		if reviewBlockIsAtomic(b) || len(b.ChildIDs) == 0 {
+			out = append(out, b)
+			return
+		}
+		for _, child := range sortedChildren(doc, b) {
+			walk(child)
+		}
 	}
+	walk(doc.Root)
 	return out
+}
+
+func reviewBlockIsAtomic(b *parser.Block) bool {
+	if b == nil {
+		return false
+	}
+	switch b.Kind {
+	case parser.KindTheoremLike, parser.KindProof, parser.KindDisplay, parser.KindFigure, parser.KindAbstract, parser.KindBibliography, parser.KindProofStep:
+		return true
+	default:
+		return false
+	}
+}
+
+func sortedChildren(doc *parser.Document, b *parser.Block) []*parser.Block {
+	if doc == nil || b == nil || len(b.ChildIDs) == 0 {
+		return nil
+	}
+	children := make([]*parser.Block, 0, len(b.ChildIDs))
+	for _, id := range b.ChildIDs {
+		if child := doc.ByID[id]; child != nil {
+			children = append(children, child)
+		}
+	}
+	sort.SliceStable(children, func(i, j int) bool {
+		if children[i].StartLine != children[j].StartLine {
+			return children[i].StartLine < children[j].StartLine
+		}
+		return children[i].EndLine < children[j].EndLine
+	})
+	return children
 }
 
 func buildBlockMeta(doc *parser.Document, blocks []*parser.Block) []blockMeta {

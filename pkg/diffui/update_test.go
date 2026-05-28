@@ -106,7 +106,7 @@ func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 		"m toggle semantic/coalesced diff mode",
 		"ctrl+a edit annotation",
 		"d delete annotation",
-		"s open new PDF in Skim at selected line",
+		"S sync/open new PDF in Skim at selected line (s also works)",
 		"C opens old+new in external compare",
 		"u undo last diff-mode edit",
 		"ctrl+r redo undone diff-mode edit",

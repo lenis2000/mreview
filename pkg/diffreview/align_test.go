@@ -225,6 +225,104 @@ Repeated generic text.
 	assert.Equal(t, 2, deletedRepeated)
 }
 
+func TestAlignReviewBlocksDoNotDuplicateContainerDescendants(t *testing.T) {
+	oldSrc := `\section{Intro}
+
+\begin{lemma}
+\label{lem:nested}
+Statement before the display.
+\begin{equation}
+x=1
+\end{equation}
+Statement after the display.
+\end{lemma}
+
+\begin{proof}
+First proof sentence.
+\begin{equation}
+y=1
+\end{equation}
+Second proof sentence.
+\end{proof}
+`
+	newSrc := `\section{Intro}
+
+\begin{lemma}
+\label{lem:nested}
+Statement before the display.
+\begin{equation}
+x=1
+\end{equation}
+Statement after the display.
+\end{lemma}
+
+\begin{proof}
+First proof sentence.
+\begin{equation}
+y=2
+\end{equation}
+Second proof sentence.
+\end{proof}
+`
+	review := buildReviewForTest(t, oldSrc, newSrc)
+
+	var changedProofs int
+	for _, pair := range review.Pairs {
+		for _, block := range []*parser.Block{pair.Old, pair.New} {
+			if block == nil {
+				continue
+			}
+			if block.Kind == parser.KindProofStep {
+				t.Fatalf("proof step %q was emitted alongside its proof container", block.ID)
+			}
+			if block.Kind == parser.KindDisplay && hasAncestorKind(block, review.OldDoc, parser.KindProof, parser.KindTheoremLike) {
+				t.Fatalf("nested display %q was emitted alongside its container", block.ID)
+			}
+			if block.Kind == parser.KindDisplay && hasAncestorKind(block, review.NewDoc, parser.KindProof, parser.KindTheoremLike) {
+				t.Fatalf("nested display %q was emitted alongside its container", block.ID)
+			}
+		}
+		if pair.New != nil && pair.New.Kind == parser.KindProof {
+			changedProofs++
+			assert.Equal(t, Changed, pair.Status)
+			assert.Contains(t, pair.New.Source, "y=2")
+		}
+	}
+	assert.Equal(t, 1, changedProofs)
+	assertNoOverlappingReviewBlocks(t, review)
+}
+
+func TestAlignReviewBlocksDescendsIntoListItemsWithoutListWrapper(t *testing.T) {
+	oldSrc := `\section{Intro}
+
+\begin{itemize}
+\item First item has enough shared words before the edit.
+\item Second item is unchanged.
+\end{itemize}
+`
+	newSrc := `\section{Intro}
+
+\begin{itemize}
+\item First item has enough shared words after the edit.
+\item Second item is unchanged.
+\end{itemize}
+`
+	review := buildReviewForTest(t, oldSrc, newSrc)
+
+	for _, pair := range review.Pairs {
+		for _, block := range []*parser.Block{pair.Old, pair.New} {
+			if block != nil && block.Kind == parser.KindOther && block.EnvName == "itemize" {
+				t.Fatalf("list wrapper %q should not be emitted alongside item rows", block.ID)
+			}
+		}
+	}
+	pair := requireParagraphPairContaining(t, review, "First item")
+	assert.Equal(t, Changed, pair.Status)
+	assert.Contains(t, pair.Old.Source, "before the edit")
+	assert.Contains(t, pair.New.Source, "after the edit")
+	assertNoOverlappingReviewBlocks(t, review)
+}
+
 func TestAlignFormatOnlyChangeDetectedSeparately(t *testing.T) {
 	oldSrc := `\section{Intro}
 
@@ -373,4 +471,51 @@ func indexOfPair(pairs []Pair, pred func(Pair) bool) int {
 		}
 	}
 	return -1
+}
+
+func hasAncestorKind(block *parser.Block, doc *parser.Document, kinds ...parser.Kind) bool {
+	if block == nil || doc == nil {
+		return false
+	}
+	want := map[parser.Kind]bool{}
+	for _, kind := range kinds {
+		want[kind] = true
+	}
+	for parentID := block.ParentID; parentID != ""; {
+		parent := doc.ByID[parentID]
+		if parent == nil {
+			return false
+		}
+		if want[parent.Kind] {
+			return true
+		}
+		parentID = parent.ParentID
+	}
+	return false
+}
+
+func assertNoOverlappingReviewBlocks(t *testing.T, review *Review) {
+	t.Helper()
+	assertNoOverlappingSide(t, review.Pairs, true)
+	assertNoOverlappingSide(t, review.Pairs, false)
+}
+
+func assertNoOverlappingSide(t *testing.T, pairs []Pair, oldSide bool) {
+	t.Helper()
+	lastEnd := 0
+	for _, pair := range pairs {
+		block := pair.New
+		if oldSide {
+			block = pair.Old
+		}
+		if block == nil || block.StartLine < 1 {
+			continue
+		}
+		if block.StartLine <= lastEnd {
+			t.Fatalf("overlapping review block on oldSide=%v: %q starts at %d before previous end %d", oldSide, block.ID, block.StartLine, lastEnd)
+		}
+		if block.EndLine > lastEnd {
+			lastEnd = block.EndLine
+		}
+	}
 }

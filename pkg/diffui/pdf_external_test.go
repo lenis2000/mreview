@@ -36,13 +36,13 @@ func TestDiffSkimHotkeyUsesSelectedNewLine(t *testing.T) {
 	m := New(review, Options{})
 	m.Cursor = pairIndexByID(m.Review, "changed")
 
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
 	nm, ok := next.(Model)
 	if !ok {
 		t.Fatalf("unexpected model type %T", next)
 	}
 	if cmd == nil {
-		t.Fatalf("s should start a Skim command")
+		t.Fatalf("S should start a Skim command")
 	}
 	if nm.Status != "opening new PDF in Skim" {
 		t.Fatalf("status = %q", nm.Status)
@@ -66,7 +66,7 @@ func TestDiffSkimHotkeyRequiresNewSourceLine(t *testing.T) {
 	m.Cursor = pairIndexByID(m.Review, "deleted")
 	m.Review.New = diffreview.Endpoint{Kind: diffreview.WorkingFile, Path: filepath.Join(t.TempDir(), "paper.tex")}
 
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
 	if cmd != nil {
 		t.Fatalf("deleted pair should not start a Skim command")
 	}
@@ -74,7 +74,7 @@ func TestDiffSkimHotkeyRequiresNewSourceLine(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", next)
 	}
-	if nm.Status != "s: cursor has no resolvable new source line" {
+	if nm.Status != "S: cursor has no resolvable new source line" {
 		t.Fatalf("status = %q", nm.Status)
 	}
 }

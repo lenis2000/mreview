@@ -128,7 +128,7 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openCompareEditor()
 	case "P":
 		return m.openPreviewPDF()
-	case "s":
+	case "S", "s":
 		return m.openSkimAtLine()
 	case "\\":
 		m.cycleLayout()
