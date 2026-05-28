@@ -10,6 +10,47 @@ import (
 	"mreview/pkg/persist"
 )
 
+type mouseWheelEdgeState struct {
+	Active           bool
+	Pane             Pane
+	Delta            int
+	CursorBlockID    string
+	SourceLineCursor int
+}
+
+func mouseWheelDelta(button tea.MouseButton) (int, bool) {
+	switch button {
+	case tea.MouseButtonWheelUp:
+		return -1, true
+	case tea.MouseButtonWheelDown:
+		return +1, true
+	default:
+		return 0, false
+	}
+}
+
+// ShouldDropMouseWheel reports whether msg repeats a mouse-wheel event that
+// already hit a scroll edge. It is intended for tea.WithFilter so the message
+// can be discarded before Bubble Tea recomputes the whole view.
+func (m Model) ShouldDropMouseWheel(msg tea.MouseMsg) bool {
+	if msg.Action != tea.MouseActionPress {
+		return false
+	}
+	delta, ok := mouseWheelDelta(msg.Button)
+	if !ok || !m.mouseWheelEdge.Active {
+		return false
+	}
+	pane, _, ok := paneAtPoint(m.Width, m.Height, m.Layout, msg.X, msg.Y)
+	if !ok {
+		return false
+	}
+	edge := m.mouseWheelEdge
+	return edge.Pane == pane &&
+		edge.Delta == delta &&
+		edge.CursorBlockID == m.CursorBlockID &&
+		edge.SourceLineCursor == m.SourceLineCursor
+}
+
 // handleMouse turns mouse events into focus, cursor moves, and source
 // scrolling. Click (left press): set focus, and on outline/source jump
 // the relevant cursor to the clicked row. Wheel up/down on the source
@@ -18,17 +59,21 @@ import (
 // Wheel up/down on the outline pane: move the block cursor.
 func (m Model) handleMouse(msg tea.MouseMsg) Model {
 	if msg.Action != tea.MouseActionPress {
+		m.mouseWheelEdge = mouseWheelEdgeState{}
 		return m
 	}
 	if m.Width <= 0 || m.Height <= 0 {
+		m.mouseWheelEdge = mouseWheelEdgeState{}
 		return m
 	}
 	pane, innerY, ok := paneAtPoint(m.Width, m.Height, m.Layout, msg.X, msg.Y)
 	if !ok {
+		m.mouseWheelEdge = mouseWheelEdgeState{}
 		return m
 	}
 	switch msg.Button {
 	case tea.MouseButtonLeft:
+		m.mouseWheelEdge = mouseWheelEdgeState{}
 		m.Focus = pane
 		switch pane {
 		case PaneOutline:
@@ -51,28 +96,37 @@ func (m Model) handleMouse(msg tea.MouseMsg) Model {
 				}
 			}
 		}
-	case tea.MouseButtonWheelUp:
+	case tea.MouseButtonWheelUp, tea.MouseButtonWheelDown:
+		delta, _ := mouseWheelDelta(msg.Button)
+		beforeID, beforeLine := m.CursorBlockID, m.SourceLineCursor
 		switch pane {
 		case PaneSource:
-			m = m.scrollSource(-1)
+			m = m.scrollSource(delta)
 		case PaneOutline:
-			id := PrevSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
+			var id string
+			if delta < 0 {
+				id = PrevSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
+			} else {
+				id = NextSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
+			}
 			if id != "" {
 				m.CursorBlockID = id
 				m.SourceLineCursor = 1
 			}
 		}
-	case tea.MouseButtonWheelDown:
-		switch pane {
-		case PaneSource:
-			m = m.scrollSource(+1)
-		case PaneOutline:
-			id := NextSibling(m.Doc, m.Sidecar, m.Filter, m.CursorBlockID, 1, m.ExternalIssues)
-			if id != "" {
-				m.CursorBlockID = id
-				m.SourceLineCursor = 1
+		if m.CursorBlockID == beforeID && m.SourceLineCursor == beforeLine {
+			m.mouseWheelEdge = mouseWheelEdgeState{
+				Active:           true,
+				Pane:             pane,
+				Delta:            delta,
+				CursorBlockID:    m.CursorBlockID,
+				SourceLineCursor: m.SourceLineCursor,
 			}
+		} else {
+			m.mouseWheelEdge = mouseWheelEdgeState{}
 		}
+	default:
+		m.mouseWheelEdge = mouseWheelEdgeState{}
 	}
 	return m
 }
@@ -93,11 +147,14 @@ func (m Model) scrollSource(delta int) Model {
 		return m
 	}
 	curAbs := b.StartLine + m.SourceLineCursor - 1
+	total := sourceLineTotal(m.Doc)
+	if (delta < 0 && curAbs == 1) || (delta > 0 && total > 0 && curAbs == total) {
+		return m
+	}
 	newAbs := curAbs + delta
 	if newAbs < 1 {
 		newAbs = 1
 	}
-	total := sourceLineTotal(m.Doc)
 	if total > 0 && newAbs > total {
 		newAbs = total
 	}

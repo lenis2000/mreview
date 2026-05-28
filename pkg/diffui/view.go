@@ -3,6 +3,7 @@ package diffui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -166,20 +167,26 @@ func (m Model) renderPaneRaw(title, body string, width, height int, focused bool
 	if innerH < 1 {
 		innerH = 1
 	}
-	content := title
-	if body != "" {
+	contentLines := []string{clipLine(title, innerW)}
+	bodyH := innerH - 1
+	if bodyH > 0 {
 		// Source panes pre-wrap and ANSI-style their rows before they get here.
-		// Do not horizontally clip them (that can split escape sequences), but do
-		// cap the row count to the pane body below the title. Otherwise lipgloss
-		// expands the pane to fit overlong content and the bottom borders of old
-		// and new panes visibly drift apart while scrolling.
-		content += "\n" + fitRawLines(body, innerH-1)
+		// Normalize every raw row to exactly the pane width and body height; any
+		// over-wide styled row would otherwise wrap at the terminal layer and push
+		// that pane's bottom border away from its sibling.
+		contentLines = append(contentLines, fitRawLines(body, innerW, bodyH)...)
+	}
+	for len(contentLines) < innerH {
+		contentLines = append(contentLines, strings.Repeat(" ", innerW))
+	}
+	for i := range contentLines {
+		contentLines[i] = padANSIToWidth(contentLines[i], innerW)
 	}
 	style := m.Styles.Pane
 	if focused {
 		style = m.Styles.PaneFocused
 	}
-	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(content)
+	return style.Width(innerW).Height(innerH).Border(lipgloss.NormalBorder()).Render(strings.Join(contentLines, "\n"))
 }
 
 func (m Model) renderPDFPane(width, height int, focusedOpt ...bool) string {
@@ -518,15 +525,122 @@ func fitLines(text string, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func fitRawLines(text string, height int) string {
+func fitRawLines(text string, width, height int) []string {
 	if height < 1 {
-		return ""
+		return nil
 	}
 	lines := strings.Split(text, "\n")
+	if text == "" {
+		lines = nil
+	}
 	if len(lines) > height {
 		lines = lines[:height]
 	}
-	return strings.Join(lines, "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		lines[i] = padANSIToWidth(lines[i], width)
+	}
+	return lines
+}
+
+func padANSIToWidth(s string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	s, w := truncateANSIToWidth(s, width)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func truncateANSIToWidth(s string, width int) (string, int) {
+	if width < 1 {
+		return "", 0
+	}
+	w := 0
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			j := skipANSIEscape(s, i)
+			b.WriteString(s[i:j])
+			i = j
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size <= 0 {
+			break
+		}
+		if r == utf8.RuneError && size == 1 {
+			if w+1 > width {
+				break
+			}
+			b.WriteByte(s[i])
+			i++
+			w++
+			continue
+		}
+		if w+1 > width {
+			break
+		}
+		b.WriteString(s[i : i+size])
+		i += size
+		w++
+	}
+	return b.String(), w
+}
+
+func ansiVisibleWidth(s string) int {
+	w := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			i = skipANSIEscape(s, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if size <= 0 {
+			break
+		}
+		if r == utf8.RuneError && size == 1 {
+			i++
+			w++
+			continue
+		}
+		w++
+		i += size
+	}
+	return w
+}
+
+func skipANSIEscape(s string, i int) int {
+	if i+1 >= len(s) {
+		return len(s)
+	}
+	switch s[i+1] {
+	case '[':
+		j := i + 2
+		for j < len(s) {
+			b := s[j]
+			j++
+			if b >= 0x40 && b <= 0x7e {
+				return j
+			}
+		}
+		return len(s)
+	case '_', ']', 'P', '^':
+		j := i + 2
+		for j+1 < len(s) {
+			if s[j] == '\x1b' && s[j+1] == '\\' {
+				return j + 2
+			}
+			j++
+		}
+		return len(s)
+	default:
+		return i + 2
+	}
 }
 
 func clipLine(line string, width int) string {

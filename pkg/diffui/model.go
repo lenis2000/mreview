@@ -205,6 +205,11 @@ type Model struct {
 	pendingG bool
 	quitting bool
 
+	// mouseWheelEdge remembers the last no-op wheel event at a scroll edge.
+	// cmd/mreview's Bubble Tea filter uses it to drop repeated same-direction
+	// mouse wheel messages before they force another full View recomputation.
+	mouseWheelEdge mouseWheelEdgeState
+
 	Popup    *AnnotationPopup
 	LineEdit *LineEditPopup
 	Pending  *PendingDelete
@@ -271,6 +276,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		PDFStatus:          opts.PDFStatus,
 		KittyAvailable:     opts.KittyAvailable,
 		SourceLineCursor:   1,
+		Layout:             LayoutNoPDF,
 		Focus:              PaneOutline,
 		OutlineFrac:        defaultOutlineFrac,
 		PDFFrac:            defaultPDFFrac,

@@ -197,14 +197,15 @@ On quit, mreview saves the sidecar and emits according to `--stdout`:
 
 ## TUI behavior
 
-The default diff layout is:
+The default diff layout is FileMerge-style source comparison:
 
 ```text
-Outline | Old source | New source | PDF(new)
+Outline | Old source | New source
 ```
 
+Press `\\` to cycle the occasional PDF pane in: side pane, bottom pane, hidden.
 On narrower terminals, old and new source can be combined into a single source
-diff pane. The PDF pane follows the selected new block. Deleted-only rows show:
+diff pane. When visible, the PDF pane follows the selected new block. Deleted-only rows show:
 
 ```text
 (deleted block — no new PDF location)

@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"mreview/pkg/diffreview"
+	"mreview/pkg/pdf"
+	"mreview/pkg/synctex"
 )
 
 func TestCursorMovementIsPairBased(t *testing.T) {
@@ -279,12 +281,12 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 	m.Height = 30
 
 	m = pressKey(t, m, "\\")
-	if m.Layout != LayoutStacked {
-		t.Fatalf("\\ should switch to stacked layout")
+	if m.Layout != LayoutThreeCol {
+		t.Fatalf("first \\ should show side PDF layout")
 	}
 	view := m.View()
 	if !strings.Contains(view, "Old source") || !strings.Contains(view, "New source") || !strings.Contains(view, "PDF") {
-		t.Fatalf("stacked view should retain old/new top panes and PDF pane:\n%s", view)
+		t.Fatalf("side-PDF view should retain old/new panes and PDF pane:\n%s", view)
 	}
 
 	oldSplit := m.SourceSplitFrac
@@ -305,6 +307,15 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 		t.Fatalf("> on old source should grow old side split: before %.2f after %.2f", oldSplit, m.SourceSplitFrac)
 	}
 
+	m = pressKey(t, m, "\\")
+	if m.Layout != LayoutStacked {
+		t.Fatalf("second \\ should switch to stacked layout")
+	}
+	view = m.View()
+	if !strings.Contains(view, "Old source") || !strings.Contains(view, "New source") || !strings.Contains(view, "PDF") {
+		t.Fatalf("stacked view should retain old/new top panes and PDF pane:\n%s", view)
+	}
+
 	m.Focus = PanePDF
 	oldTop := m.StackedTopFrac
 	m = pressKey(t, m, ">")
@@ -314,7 +325,7 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 
 	m = pressKey(t, m, "\\")
 	if m.Layout != LayoutNoPDF {
-		t.Fatalf("second \\ should hide PDF, got %v", m.Layout)
+		t.Fatalf("third \\ should hide PDF, got %v", m.Layout)
 	}
 	if m.Focus == PanePDF {
 		t.Fatalf("hidden PDF layout should move focus off PDF")
@@ -330,7 +341,7 @@ func TestLayoutToggleAndPaneResize(t *testing.T) {
 	}
 	m = pressKey(t, m, "\\")
 	if m.Layout != LayoutThreeCol {
-		t.Fatalf("third \\ should return to side-by-side layout")
+		t.Fatalf("fourth \\ should return to side-by-side layout")
 	}
 }
 
@@ -375,6 +386,7 @@ func TestMouseWheelScrollsPanesUnderPointer(t *testing.T) {
 	m := New(fixtureReview(), Options{})
 	m.Width = 140
 	m.Height = 30
+	m.Layout = LayoutThreeCol
 
 	m = mouseWheel(t, m, 1, 3, tea.MouseButtonWheelDown)
 	if currentID(m) != "added" {
@@ -409,6 +421,57 @@ func TestMouseWheelScrollsPanesUnderPointer(t *testing.T) {
 	m = mouseWheel(t, m, 120, 3, tea.MouseButtonWheelDown)
 	if currentID(m) != "added" {
 		t.Fatalf("PDF wheel should move pair, got %s", currentID(m))
+	}
+}
+
+func TestMouseWheelAtEdgeArmsDropFilterAndSkipsPDF(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m.Width = 140
+	m.Height = 30
+	m.Layout = LayoutThreeCol
+	m.PDF = &pdf.Doc{}
+	m.Synctex = &synctex.Index{}
+	m.KittyAvailable = true
+	m.moveToLast()
+	msg := tea.MouseMsg{X: 120, Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}
+
+	next, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatalf("edge mouse wheel returned PDF command")
+	}
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	if nm.pdfGen != 0 {
+		t.Fatalf("edge mouse wheel bumped pdfGen to %d", nm.pdfGen)
+	}
+	if !nm.ShouldDropMouseWheel(msg) {
+		t.Fatalf("repeated edge wheel should be dropped by the program filter")
+	}
+	up := tea.MouseMsg{X: 120, Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp}
+	if nm.ShouldDropMouseWheel(up) {
+		t.Fatalf("opposite-direction wheel must not be dropped")
+	}
+}
+
+func TestMouseWheelMovementDoesNotArmDropFilter(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m.Width = 140
+	m.Height = 30
+	m.Layout = LayoutThreeCol
+	msg := tea.MouseMsg{X: 120, Y: 3, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}
+
+	next, _ := m.Update(msg)
+	nm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("unexpected model type %T", next)
+	}
+	if currentID(nm) != "added" {
+		t.Fatalf("wheel should move to added pair, got %s", currentID(nm))
+	}
+	if nm.ShouldDropMouseWheel(msg) {
+		t.Fatalf("successful wheel motion should not arm the drop filter")
 	}
 }
 

@@ -14,6 +14,9 @@ import (
 // quit, filter cycling, (Task 11) vim-style navigation plus jump-stack
 // manipulation, and (Task 15) the debounced PDF-pane render pipeline.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(tea.MouseMsg); !ok {
+		m.mouseWheelEdge = mouseWheelEdgeState{}
+	}
 	if rm, ok := msg.(pdfRenderMsg); ok {
 		return m.handlePDFRender(rm)
 	}

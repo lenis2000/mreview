@@ -183,6 +183,11 @@ type Model struct {
 	// short-circuit during the final render frame.
 	quitting bool
 
+	// mouseWheelEdge remembers the last no-op wheel event at a scroll edge.
+	// cmd/mreview's Bubble Tea filter uses it to drop repeated same-direction
+	// mouse wheel messages before they force another full View recomputation.
+	mouseWheelEdge mouseWheelEdgeState
+
 	// PDF, Synctex are optional handles for the cursor-following PDF pane.
 	// When either is nil the pane shows a placeholder. Both are injected by
 	// the caller (cmd/mreview/main.go) after a successful build.
@@ -239,11 +244,11 @@ type Model struct {
 	// full-page manual viewer. The remaining Manual* fields only apply
 	// when PDFManual is true; they emulate the controls of LP's
 	// docviewer CLI so keyboard muscle memory carries over.
-	PDFManual     bool
-	ManualPDFPage int    // 0-based page index
-	ManualPDFZoom int    // 0 = fit, +N = zoom in one step per N
-	ManualPDFDual string // "" | "vertical" | "horizontal" — side-by-side/stacked
-	ManualPDFDark string // "" | "smart" | "invert" — matches docviewer's two dark modes
+	PDFManual      bool
+	ManualPDFPage  int    // 0-based page index
+	ManualPDFZoom  int    // 0 = fit, +N = zoom in one step per N
+	ManualPDFDual  string // "" | "vertical" | "horizontal" — side-by-side/stacked
+	ManualPDFDark  string // "" | "smart" | "invert" — matches docviewer's two dark modes
 	ManualPDFCropT float64
 	ManualPDFCropB float64
 	ManualPDFCropL float64
@@ -346,13 +351,13 @@ func New(doc *parser.Document, side *persist.Sidecar) Model {
 		filter = FilterAll
 	}
 	m := Model{
-		Doc:           doc,
-		Sidecar:       side,
-		CursorBlockID: cursor,
-		Filter:        filter,
-		Focus:         PaneOutline,
-		Keymap:        DefaultKeymap(),
-		Styles:        DefaultStyles(),
+		Doc:              doc,
+		Sidecar:          side,
+		CursorBlockID:    cursor,
+		Filter:           filter,
+		Focus:            PaneOutline,
+		Keymap:           DefaultKeymap(),
+		Styles:           DefaultStyles(),
 		pdfCache:         newPDFCropCache(pdfCropCacheMax),
 		pageLayout:       newPageLayoutCache(),
 		SoftWrap:         true,

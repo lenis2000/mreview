@@ -108,6 +108,7 @@ func runReviewTUI(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
+		tea.WithFilter(newMouseInputFilter()),
 	}
 	var ttyFile *os.File
 	if tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {

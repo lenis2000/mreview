@@ -18,6 +18,9 @@ const (
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(tea.MouseMsg); !ok {
+		m.mouseWheelEdge = mouseWheelEdgeState{}
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width

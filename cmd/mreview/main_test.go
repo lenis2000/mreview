@@ -30,6 +30,38 @@ func withStubTUI(t *testing.T) *tea.Model {
 	return &captured
 }
 
+func TestMouseInputFilterDropsMouseBufferedAfterKeyboard(t *testing.T) {
+	now := time.Unix(100, 0)
+	filter := newMouseInputFilterWithClock(func() time.Time { return now }, 150*time.Millisecond)
+	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	mouse := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}
+
+	if got := filter(nil, key); got == nil {
+		t.Fatalf("keyboard input must still pass through")
+	}
+	if got := filter(nil, mouse); got != nil {
+		t.Fatalf("mouse input immediately after keyboard should be dropped, got %#v", got)
+	}
+	now = now.Add(151 * time.Millisecond)
+	if got := filter(nil, mouse); got == nil {
+		t.Fatalf("mouse input after drain window should pass through")
+	}
+}
+
+func TestMouseInputFilterDropsClicksAfterKeyboardToo(t *testing.T) {
+	now := time.Unix(100, 0)
+	filter := newMouseInputFilterWithClock(func() time.Time { return now }, 150*time.Millisecond)
+	key := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+	click := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+
+	if got := filter(nil, key); got == nil {
+		t.Fatalf("keyboard input must still pass through")
+	}
+	if got := filter(nil, click); got != nil {
+		t.Fatalf("all mouse input during keyboard drain should be dropped, got %#v", got)
+	}
+}
+
 func TestRun_Version(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--version"}, &stdout, &stderr)

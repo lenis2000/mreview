@@ -8,16 +8,19 @@ import (
 	"mreview/pkg/pdf"
 )
 
-func TestWideViewUsesSeparateOldAndNewSourcePanes(t *testing.T) {
+func TestWideViewDefaultsToFileMergeLayoutWithoutPDFPane(t *testing.T) {
 	m := New(fixtureReview(), Options{})
 	m.Width = 160
 	m.Height = 24
 
 	view := m.View()
-	for _, want := range []string{"Outline", "Old source", "New source", "PDF"} {
+	for _, want := range []string{"Outline", "Old source", "New source"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("wide view missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "PDF") {
+		t.Fatalf("default diff view should hide PDF pane:\n%s", view)
 	}
 }
 
@@ -67,8 +70,24 @@ func TestSplitSourcePaneBordersStayAlignedWhenContentHeightsDiffer(t *testing.T)
 	}}}
 	m := New(review, Options{})
 	view := m.renderComparisonArea(100, 8)
-	if got := strings.Count(view, "\n") + 1; got != 8 {
+	lines := strings.Split(view, "\n")
+	if got := len(lines); got != 8 {
 		t.Fatalf("comparison area height = %d, want 8; borders may drift:\n%s", got, view)
+	}
+	bottom := lines[len(lines)-1]
+	if strings.Count(bottom, "└") != 2 || strings.Count(bottom, "┘") != 2 {
+		t.Fatalf("old/new bottom borders should land on the same final row, got %q in:\n%s", bottom, view)
+	}
+}
+
+func TestPadANSIToWidthTruncatesOverwideStyledRows(t *testing.T) {
+	line := "\x1b[31m" + strings.Repeat("x", 20) + "\x1b[0m"
+	fit := padANSIToWidth(line, 5)
+	if got := ansiVisibleWidth(fit); got != 5 {
+		t.Fatalf("visible width = %d, want 5 for %q", got, fit)
+	}
+	if strings.Count(fit, "x") != 5 {
+		t.Fatalf("expected truncation to five visible cells, got %q", fit)
 	}
 }
 

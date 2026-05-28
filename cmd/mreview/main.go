@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jessevdk/go-flags"
 
 	"mreview/pkg/build"
+	"mreview/pkg/diffui"
 	"mreview/pkg/format"
 	"mreview/pkg/parser"
 	"mreview/pkg/pdf"
@@ -77,11 +79,56 @@ var runTUI = func(model tea.Model, stdout, stderr io.Writer) (tea.Model, error) 
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
+		tea.WithFilter(newMouseInputFilter()),
 		tea.WithInput(tty),
 		tea.WithOutput(tty),
 	}
 	prog := tea.NewProgram(model, opts...)
 	return prog.Run()
+}
+
+// mouseBufferDrainAfterKey is long enough to drain wheel/cell-motion messages
+// already queued behind a keyboard event, but short enough that an intentional
+// mouse action immediately afterwards still works on human time scales.
+const mouseBufferDrainAfterKey = 150 * time.Millisecond
+
+func newMouseInputFilter() func(tea.Model, tea.Msg) tea.Msg {
+	return newMouseInputFilterWithClock(time.Now, mouseBufferDrainAfterKey)
+}
+
+func newMouseInputFilterWithClock(now func() time.Time, drain time.Duration) func(tea.Model, tea.Msg) tea.Msg {
+	var dropMouseUntil time.Time
+	return func(model tea.Model, msg tea.Msg) tea.Msg {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			dropMouseUntil = now().Add(drain)
+			return msg
+		case tea.MouseMsg:
+			if !dropMouseUntil.IsZero() {
+				if now().Before(dropMouseUntil) {
+					return nil
+				}
+				dropMouseUntil = time.Time{}
+			}
+			return mouseWheelEdgeFilter(model, msg)
+		default:
+			return msg
+		}
+	}
+}
+
+func mouseWheelEdgeFilter(model tea.Model, mouse tea.MouseMsg) tea.Msg {
+	switch m := model.(type) {
+	case ui.Model:
+		if m.ShouldDropMouseWheel(mouse) {
+			return nil
+		}
+	case diffui.Model:
+		if m.ShouldDropMouseWheel(mouse) {
+			return nil
+		}
+	}
+	return mouse
 }
 
 // version is the mreview release version. Overridable at build time via -ldflags.
