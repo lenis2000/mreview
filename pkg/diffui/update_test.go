@@ -99,11 +99,59 @@ func TestSectionNavigationUsesPairSectionPaths(t *testing.T) {
 	}
 }
 
+func TestOutlineFoldToggleHidesAndRestoresCurrentGroup(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	if currentID(m) != "changed" {
+		t.Fatalf("default cursor = %s, want changed", currentID(m))
+	}
+
+	m = pressKey(t, m, "z")
+	if !m.Collapsed[outlinePathKey([]string{"Intro"})] {
+		t.Fatalf("Intro group was not collapsed: %#v", m.Collapsed)
+	}
+	if currentID(m) != "changed" {
+		t.Fatalf("fold should keep source cursor on current pair, got %s", currentID(m))
+	}
+	if got := strings.Join(visibleIDs(m), ","); got != "changed,deleted,fmt,moved" {
+		t.Fatalf("visible ids after fold = %s", got)
+	}
+	outline := m.renderOutline(120, 10)
+	if !strings.Contains(outline, "▸ Intro") || strings.Contains(outline, "Alpha") {
+		t.Fatalf("folded outline should show collapsed Intro and hide child rows:\n%s", outline)
+	}
+
+	m = pressKey(t, m, "z")
+	if m.Collapsed[outlinePathKey([]string{"Intro"})] {
+		t.Fatalf("Intro group was not unfolded: %#v", m.Collapsed)
+	}
+	if got := strings.Join(visibleIDs(m), ","); got != "changed,added,deleted,fmt,moved" {
+		t.Fatalf("visible ids after unfold = %s", got)
+	}
+}
+
+func TestFoldedCursorNavigationDoesNotSkipNextVisiblePair(t *testing.T) {
+	m := New(fixtureReview(), Options{})
+	m = pressKey(t, m, "z")
+	m = pressKey(t, m, "j")
+	if currentID(m) != "deleted" {
+		t.Fatalf("j from folded Intro moved to %s, want deleted", currentID(m))
+	}
+	m = pressKey(t, m, "k")
+	if currentID(m) != "changed" {
+		t.Fatalf("k should move back to folded Intro group; got %s", currentID(m))
+	}
+	outline := m.renderOutline(120, 10)
+	if !strings.Contains(outline, "> ▸ Intro") {
+		t.Fatalf("folded group should be selectable after moving up:\n%s", outline)
+	}
+}
+
 func TestHelpIncludesDiffSpecificKeys(t *testing.T) {
 	help := RenderHelpBody(120, false)
 	for _, needle := range []string{
 		"e/E edit new file only when --allow-modifications is supplied",
 		"m toggle semantic/coalesced diff mode",
+		"z fold/unfold current outline group",
 		"ctrl+a edit annotation",
 		"d delete annotation",
 		"S sync/open new PDF in Skim at selected line (s also works)",

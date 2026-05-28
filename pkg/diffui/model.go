@@ -161,6 +161,7 @@ type Model struct {
 	Cursor     int
 	Filter     Filter
 	DiffRegime DiffRegime
+	Collapsed  map[string]bool
 	// SourceLineCursor is 1-based within the selected new block. The current
 	// diff skeleton does not expose source-line navigation yet, so it defaults
 	// to the first line and is kept here for edit anchoring.
@@ -255,6 +256,7 @@ func New(review *diffreview.Review, opts Options) Model {
 		Config:             opts.Config,
 		Filter:             opts.Filter,
 		DiffRegime:         opts.DiffRegime,
+		Collapsed:          map[string]bool{},
 		Status:             opts.Status,
 		Styles:             opts.Styles,
 		Sidecar:            side,
@@ -380,7 +382,7 @@ func (m Model) visibleTargets() []outlineTarget {
 	rows := m.outlineRows()
 	targets := make([]outlineTarget, 0, len(rows))
 	for _, row := range rows {
-		if row.Group || row.PairIndex < 0 {
+		if row.PairIndex < 0 || (row.Group && !row.Collapsed) {
 			continue
 		}
 		anchor := row.AnchorLine

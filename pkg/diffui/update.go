@@ -109,6 +109,9 @@ func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		m = m.toggleDiffRegime()
 		return m.withPDFRender()
+	case "z":
+		m.toggleOutlineFold()
+		return m, nil
 	case " ", "space":
 		m = m.toggleReviewed()
 		return m.withPDFRender()
@@ -513,6 +516,9 @@ func (m *Model) moveVisible(delta int) {
 		return
 	}
 	pos := m.visibleTargetPosition(targets)
+	if delta > 0 && !m.visibleTargetContainsCurrent(targets) {
+		pos--
+	}
 	pos += delta
 	if pos < 0 {
 		pos = 0
@@ -525,6 +531,15 @@ func (m *Model) moveVisible(delta int) {
 	m.SourceLineCursor = target.AnchorLine
 	m.snapSourceLine()
 	m.Status = ""
+}
+
+func (m Model) visibleTargetContainsCurrent(targets []outlineTarget) bool {
+	for _, target := range targets {
+		if outlineTargetContainsPair(target, m.Cursor) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) moveDiffChunkOrPair(delta int) {

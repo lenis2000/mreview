@@ -21,10 +21,13 @@ type OutlineRow struct {
 	Status            diffreview.PairStatus
 	Title             string
 	Section           string
+	GroupPath         []string
+	GroupKey          string
 	Reviewed          bool
 	Annotated         bool
 	Issues            bool
 	Group             bool
+	Collapsed         bool
 	Coalesced         bool
 	Depth             int
 }
@@ -50,16 +53,37 @@ func BuildOutlineWithRegime(
 	annotations map[string]string,
 	issues map[string][]string,
 ) []OutlineRow {
+	return BuildOutlineWithRegimeAndCollapsed(review, filter, regime, reviewed, annotations, issues, nil)
+}
+
+func BuildOutlineWithRegimeAndCollapsed(
+	review *diffreview.Review,
+	filter Filter,
+	regime DiffRegime,
+	reviewed map[string]bool,
+	annotations map[string]string,
+	issues map[string][]string,
+	collapsed map[string]bool,
+) []OutlineRow {
 	if review == nil {
 		return nil
 	}
 	rows := make([]OutlineRow, 0, len(review.Pairs))
+	groupRows := map[string]int{}
 	var currentPath []string
 	for i := 0; i < len(review.Pairs); i++ {
 		if regime == DiffRegimeCoalesced {
 			if group, ok := collectRewriteGroup(review, i, filter, reviewed, annotations, issues); ok {
 				path := outlinePairPath(review.Pairs[group[0]])
-				rows, currentPath = appendOutlineGroups(rows, currentPath, path)
+				visiblePath, collapsedKey := visibleOutlinePath(path, collapsed)
+				rows, currentPath = appendOutlineGroups(rows, currentPath, visiblePath, collapsed, groupRows)
+				if collapsedKey != "" {
+					for _, idx := range group {
+						rows = addCollapsedMember(rows, groupRows, collapsedKey, idx)
+					}
+					i = group[len(group)-1]
+					continue
+				}
 				rows = append(rows, outlineRewriteRow(review, group, len(path), reviewed, annotations, issues))
 				i = group[len(group)-1]
 				continue
@@ -70,11 +94,21 @@ func BuildOutlineWithRegime(
 			continue
 		}
 		if isSectionPair(pair) {
-			rows, currentPath = appendOutlineGroups(rows, currentPath, outlineSectionPairPath(pair))
+			path := outlineSectionPairPath(pair)
+			visiblePath, collapsedKey := visibleOutlinePath(path, collapsed)
+			rows, currentPath = appendOutlineGroups(rows, currentPath, visiblePath, collapsed, groupRows)
+			if collapsedKey != "" {
+				rows = addCollapsedMember(rows, groupRows, collapsedKey, i)
+			}
 			continue
 		}
 		path := outlinePairPath(pair)
-		rows, currentPath = appendOutlineGroups(rows, currentPath, path)
+		visiblePath, collapsedKey := visibleOutlinePath(path, collapsed)
+		rows, currentPath = appendOutlineGroups(rows, currentPath, visiblePath, collapsed, groupRows)
+		if collapsedKey != "" {
+			rows = addCollapsedMember(rows, groupRows, collapsedKey, i)
+			continue
+		}
 		info := outlinePairInfo(pair)
 		rows = append(rows, OutlineRow{
 			PairID:            pair.ID,
@@ -238,7 +272,7 @@ func StatusMarker(status diffreview.PairStatus) string {
 }
 
 func (m Model) outlineRows() []OutlineRow {
-	return BuildOutlineWithRegime(m.Review, m.Filter, m.DiffRegime, m.Reviewed, m.Annotations, m.Issues)
+	return BuildOutlineWithRegimeAndCollapsed(m.Review, m.Filter, m.DiffRegime, m.Reviewed, m.Annotations, m.Issues, m.Collapsed)
 }
 
 func (m Model) renderOutline(width, height int) string {
@@ -263,6 +297,48 @@ func (m Model) renderOutline(width, height int) string {
 		body = "(no pairs)"
 	}
 	return clipLine(header, width) + "\n" + body
+}
+
+func (m *Model) toggleOutlineFold() {
+	key, path, ok := m.currentFoldTarget()
+	if !ok {
+		m.Status = "z: no foldable outline group"
+		return
+	}
+	if m.Collapsed == nil {
+		m.Collapsed = map[string]bool{}
+	}
+	label := path[len(path)-1]
+	if m.Collapsed[key] {
+		delete(m.Collapsed, key)
+		m.Status = "unfolded " + label
+		return
+	}
+	m.Collapsed[key] = true
+	m.Status = "folded " + label
+}
+
+func (m Model) currentFoldTarget() (string, []string, bool) {
+	rows := m.outlineRows()
+	if len(rows) > 0 {
+		cursorRow := outlineCursorRow(rows, m.Cursor, m.SourceLineCursor)
+		if cursorRow >= 0 && cursorRow < len(rows) {
+			row := rows[cursorRow]
+			if row.Group && row.GroupKey != "" && len(row.GroupPath) > 0 {
+				return row.GroupKey, append([]string(nil), row.GroupPath...), true
+			}
+		}
+	}
+	pair := m.CurrentPair()
+	if pair == nil {
+		return "", nil, false
+	}
+	path := outlinePairPath(*pair)
+	if len(path) == 0 {
+		return "", nil, false
+	}
+	path = append([]string(nil), path...)
+	return outlinePathKey(path), path, true
 }
 
 // RenderOutline renders already-built outline rows. The cursor is the index
@@ -303,15 +379,15 @@ func RenderOutlineAt(rows []OutlineRow, cursorPairIndex, sourceLineCursor int, w
 	rendered := make([]string, 0, end-start)
 	for i, row := range rows[start:end] {
 		absoluteRow := start + i
-		if row.Group {
-			indent := strings.Repeat("  ", row.Depth)
-			line := fmt.Sprintf("  %s%s %s", indent, row.Marker, row.Title)
-			rendered = append(rendered, clipLine(line, width))
-			continue
-		}
 		cursor := " "
 		if absoluteRow == cursorRow {
 			cursor = ">"
+		}
+		if row.Group {
+			indent := strings.Repeat("  ", row.Depth)
+			line := fmt.Sprintf("%s %s%s %s", cursor, indent, row.Marker, row.Title)
+			rendered = append(rendered, clipLine(line, width))
+			continue
 		}
 		flags := "   "
 		if row.Reviewed || row.Annotated || row.Issues {
@@ -348,17 +424,20 @@ func outlineCursorRow(rows []OutlineRow, cursorPairIndex, sourceLineCursor int) 
 	best := -1
 	bestAnchor := -1
 	for i, row := range rows {
-		if row.Group || !outlineRowContainsPair(row, cursorPairIndex) {
+		if !outlineRowContainsPair(row, cursorPairIndex) {
 			continue
 		}
-		if fallback < 0 {
+		if row.Group && !row.Collapsed {
+			continue
+		}
+		if fallback < 0 || (row.Group && row.Collapsed) {
 			fallback = i
 		}
 		anchor := row.AnchorLine
 		if anchor < 1 {
 			anchor = 1
 		}
-		if anchor <= sourceLineCursor && anchor >= bestAnchor {
+		if !row.Group && anchor <= sourceLineCursor && anchor >= bestAnchor {
 			best = i
 			bestAnchor = anchor
 		}
@@ -389,18 +468,64 @@ func outlineRowContainsPair(row OutlineRow, pairIndex int) bool {
 	return false
 }
 
-func appendOutlineGroups(rows []OutlineRow, currentPath, nextPath []string) ([]OutlineRow, []string) {
+func appendOutlineGroups(rows []OutlineRow, currentPath, nextPath []string, collapsed map[string]bool, groupRows map[string]int) ([]OutlineRow, []string) {
 	common := commonStringPrefixLen(currentPath, nextPath)
 	for level := common; level < len(nextPath); level++ {
+		path := append([]string(nil), nextPath[:level+1]...)
+		key := outlinePathKey(path)
+		isCollapsed := collapsed[key]
+		marker := "▾"
+		if isCollapsed {
+			marker = "▸"
+		}
 		rows = append(rows, OutlineRow{
 			PairIndex: -1,
-			Marker:    "▾",
+			Marker:    marker,
 			Title:     nextPath[level],
+			GroupPath: path,
+			GroupKey:  key,
 			Group:     true,
+			Collapsed: isCollapsed,
 			Depth:     level,
 		})
+		if groupRows != nil {
+			groupRows[key] = len(rows) - 1
+		}
 	}
 	return rows, append([]string(nil), nextPath...)
+}
+
+func visibleOutlinePath(path []string, collapsed map[string]bool) ([]string, string) {
+	if len(path) == 0 {
+		return nil, ""
+	}
+	for i := range path {
+		prefix := append([]string(nil), path[:i+1]...)
+		key := outlinePathKey(prefix)
+		if collapsed[key] {
+			return prefix, key
+		}
+	}
+	return append([]string(nil), path...), ""
+}
+
+func addCollapsedMember(rows []OutlineRow, groupRows map[string]int, groupKey string, pairIndex int) []OutlineRow {
+	rowIndex, ok := groupRows[groupKey]
+	if !ok || rowIndex < 0 || rowIndex >= len(rows) || pairIndex < 0 {
+		return rows
+	}
+	if rows[rowIndex].PairIndex < 0 {
+		rows[rowIndex].PairIndex = pairIndex
+		rows[rowIndex].AnchorLine = 1
+	}
+	if !containsIndex(rows[rowIndex].MemberPairIndices, pairIndex) {
+		rows[rowIndex].MemberPairIndices = append(rows[rowIndex].MemberPairIndices, pairIndex)
+	}
+	return rows
+}
+
+func outlinePathKey(path []string) string {
+	return strings.Join(path, "\x00")
 }
 
 func commonStringPrefixLen(a, b []string) int {

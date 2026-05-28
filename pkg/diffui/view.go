@@ -480,6 +480,7 @@ func RenderHelpBody(width int, allowModifications bool) string {
 		"{/} previous/next section",
 		"f cycle filter",
 		"m toggle semantic/coalesced diff mode",
+		"z fold/unfold current outline group",
 		"space mark reviewed",
 		"a annotate pair",
 		"ctrl+a edit annotation",

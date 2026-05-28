@@ -11,7 +11,7 @@ import (
 func (m Model) currentOutlineRow() *OutlineRow {
 	rows := m.outlineRows()
 	for i := range rows {
-		if rows[i].Group {
+		if rows[i].Group && !rows[i].Collapsed {
 			continue
 		}
 		if outlineRowContainsPair(rows[i], m.Cursor) {
