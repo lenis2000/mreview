@@ -1,6 +1,18 @@
 # CLAUDE.md
 
-## Semantic diff review
+> ## ⚠️ DEPRECATED — work in mrevdiff instead
+>
+> This repo is deprecated. The semantic diff-review TUI described below was
+> peeled into a standalone, actively maintained repo:
+> **`/Users/leo/__code/mrevdiff`** (public, MIT — `github.com/lenis2000/mrevdiff`).
+>
+> **If you (or the user) launched a session here by accident, switch to
+> `../mrevdiff`.** New diff-UI features, fixes, and PDF work land there, not
+> here — do not implement new diff-mode changes in this repo. `mreview fmt`
+> (the LaTeX formatter/linter) still lives here, and mrevdiff reads the
+> `*.fmt-report.md` files it writes.
+
+## Semantic diff review (moved to mrevdiff — kept for historical reference)
 
 - `cmd/mreview/diff.go` implements `mreview diff`. It supports `--base REV path.tex` and explicit `OLD NEW` endpoints.
 - `pkg/diffreview` owns endpoint resolution/materialization, semantic alignment, pair IDs, diff sidecars, and stdout emit.

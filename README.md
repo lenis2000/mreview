@@ -1,12 +1,16 @@
 # mreview
 
-> **PRs welcome.** This is a single-developer tool built and tested on the
-> author's exact setup (see [Supported environment](#supported-environment)
-> below). Anyone wanting to make it work on iTerm2, WezTerm, Linux, Windows,
-> non-kitty graphics protocols, alternative PDF backends, etc. — please open
-> an issue or send a pull request. The architecture has hooks for
-> alternative renderers (see `pkg/pdf/`); they just haven't been written yet
-> because the author only uses one terminal.
+> ## ⚠️ Deprecated
+>
+> **mreview is deprecated and no longer actively developed.** Its semantic
+> diff-review TUI — the part that got the most use — has been extracted into
+> a standalone, actively maintained tool:
+> **[mrevdiff](https://github.com/lenis2000/mrevdiff)** (MIT). Use mrevdiff
+> to review paper revisions; new features and fixes land there, not here.
+>
+> This repository is kept for reference and history. (`mrevdiff` still reads
+> the `*.fmt-report.md` lint files that `mreview fmt` writes, so that
+> pairing continues to work if you keep using the formatter.)
 
 A LaTeX-aware terminal review tool for math papers. Parses `.tex` into semantic
 blocks (theorems, proofs, display math, figures, …), auto-follows a rendered PDF
