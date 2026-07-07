@@ -2,15 +2,12 @@
 
 > ## ⚠️ Deprecated
 >
-> **mreview is deprecated and no longer actively developed.** Its semantic
-> diff-review TUI — the part that got the most use — has been extracted into
-> a standalone, actively maintained tool:
-> **[mrevdiff](https://github.com/lenis2000/mrevdiff)** (MIT). Use mrevdiff
-> to review paper revisions; new features and fixes land there, not here.
->
-> This repository is kept for reference and history. (`mrevdiff` still reads
-> the `*.fmt-report.md` lint files that `mreview fmt` writes, so that
-> pairing continues to work if you keep using the formatter.)
+> **mreview is deprecated and fully superseded by
+> [mrevdiff](https://github.com/lenis2000/mrevdiff)** — a standalone, MIT,
+> actively maintained tool. Both halves moved there: the semantic
+> diff-review TUI is `mrevdiff`, and the LaTeX formatter/linter is now
+> `mrevdiff fmt`. Use mrevdiff; new features and fixes land there, not
+> here. This repository is kept for reference and history only.
 
 A LaTeX-aware terminal review tool for math papers. Parses `.tex` into semantic
 blocks (theorems, proofs, display math, figures, …), auto-follows a rendered PDF

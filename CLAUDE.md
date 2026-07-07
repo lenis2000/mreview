@@ -7,10 +7,10 @@
 > **`/Users/leo/__code/mrevdiff`** (public, MIT — `github.com/lenis2000/mrevdiff`).
 >
 > **If you (or the user) launched a session here by accident, switch to
-> `../mrevdiff`.** New diff-UI features, fixes, and PDF work land there, not
-> here — do not implement new diff-mode changes in this repo. `mreview fmt`
-> (the LaTeX formatter/linter) still lives here, and mrevdiff reads the
-> `*.fmt-report.md` files it writes.
+> `../mrevdiff`.** Both halves have moved: the diff-review TUI is
+> `mrevdiff`, and the LaTeX formatter/linter is now `mrevdiff fmt`
+> (`pkg/format` + `cmd/mrevdiff/fmt.go` in that repo). Do not implement
+> new features here — all new work lands in mrevdiff.
 
 ## Semantic diff review (moved to mrevdiff — kept for historical reference)
 
